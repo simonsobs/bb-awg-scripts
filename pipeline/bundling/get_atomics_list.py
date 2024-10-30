@@ -33,11 +33,37 @@ def get_atomic_maps_list(map_dir, queries_list, map_type="wmap", db_fpath=None,
         List with path prefixes to all atomic maps requested.
     """
     if db_fpath is None:
-        db_fpath = f"{map_dir}/atomic_maps.db"
+        fpath = f"{map_dir}/atomic_maps.db"
+        if os.path.isfile(fpath):
+            db_fpath = fpath
     if verbose:
-        print(f" Querying {db_fpath}")
+        if db_fpath:
+            print(f" Querying {db_fpath}")
+        else:
+            print("WARNING: No atomics database found. "
+                  "Ignoring ALL SQL queries.")
     assert map_type in ["wmap", "weights", "hits"]
 
+    if not db_fpath:
+        map_template = "atomic_*_[wafer_slot]_[freq_channel]_*_{map_type}.fits.gz"  # noqa
+
+        for query in queries_list:
+            # TODO: other props?
+            for prop in ["wafer_slot", "freq_channel"]:
+                if prop in query:
+                    prop_str = query.split(" ")[-1].strip("'")
+                else:
+                    prop_str = "*"
+                map_template = map_template.replace(f"[{prop}]", prop_str)
+
+        # Simply loop over all .fits.gz files with matching file names.
+        import glob
+
+        globbing = f"{map_dir}/**/{map_template.format(map_type=map_type)}"
+        return glob.glob(globbing, recursive=True)
+
+    # Otherwise, execute SQL query
+    atomic_maps_list = []
     query_target = "prefix_path"
     table_name = "atomic"
     where_statement = " AND ".join(queries_list)
@@ -58,12 +84,11 @@ def get_atomic_maps_list(map_dir, queries_list, map_type="wmap", db_fpath=None,
     result = cursor.fetchall()
     if verbose:
         print(f" Found {len(result)} matching entries.")
-    atomic_maps_list = []
 
     for r in result:
-        atomic_maps_list.append(
-            f"{map_dir}/{'/'.join(r[0].split('/')[-2:])}_{map_type}.fits"
-        )
+        fname = f"{map_dir}/{'/'.join(r[0].split('/')[-2:])}_{map_type}.fits"
+        if os.path.isfile(fname):
+            atomic_maps_list.append(fname)
     conn.commit()
     conn.close()
 
