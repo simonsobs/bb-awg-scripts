@@ -45,16 +45,21 @@ def get_atomic_maps_list(map_dir, queries_list, map_type="wmap", db_fpath=None,
     assert map_type in ["wmap", "weights", "hits"]
 
     if not db_fpath:
-        map_template = "atomic_*_[wafer_slot]_[freq_channel]_*_{map_type}.fits.gz"  # noqa
+        map_template = "atomic_*_{wafer_slot}_{freq_channel}_*_{map_type}.fits.gz"  # noqa
+
+        props = {}
 
         for query in queries_list:
             # TODO: other props?
-            for prop in ["wafer_slot", "freq_channel"]:
-                if prop in query:
-                    prop_str = query.split(" ")[-1].strip("'")
-                else:
-                    prop_str = "*"
-                map_template = map_template.replace(f"[{prop}]", prop_str)
+            prop_name, prop_value = query.split(" = ")
+            prop_value = prop_value.strip("'")
+            props[prop_name] = prop_value
+
+        for prop in ["wafer_slot", "freq_channel"]:
+            if prop not in props:
+                props[prop] = "*"
+
+        map_template = map_template.format(map_type=map_type, **props)
 
         # Simply loop over all .fits.gz files with matching file names.
         import glob
