@@ -43,3 +43,15 @@ example, consider adding ``*.png`` to ``.gitignore`` in
          ...
   /misc
 ```
+
+## Examples
+- a script to make list of focal plane splits w/ given configurations
+- a script to make atomic maps for data and simulations of left/right-going-scans, focalplane splits as well as full focalplane
+- a script to make lists of observations for null tests as well as regular bundles
+- a script to build bundles (coadd and sign-flipped)
+- a script to calculate pseudo Cls of all bundles
+- a script to calculate transfer functions from given pseudo Cls
+- a script to calculate null spectra of data
+- a script to calculate null spectra of sims and camculate covariance
+- a script to calculate chi and chi2 of null spectra
+- a script to accumulate chi and chi2 and evaluate their statistics
