@@ -1,0 +1,11 @@
+context: '/global/cfs/cdirs/sobs/users/rosenber/contexts/use_this_local_satp1_241031.yaml'
+site: so_sat1
+nside: 512
+query: 'obslist_satp1_RA+000_Dec-040_0030.txt'
+odir: '/global/cfs/cdirs/sobs/users/rosenber/atomics/satp1_241031/'
+atomic_db: '/global/cfs/cdirs/sobs/users/rosenber/atomics/satp1_241031/atomic_maps_satp1_241031.db'
+preprocess_config: 'minimal_preprocess.yaml'
+dtype_map: 'float32'
+freq: "f150"
+# wafer: "ws0"
+
