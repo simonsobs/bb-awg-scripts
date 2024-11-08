@@ -1,0 +1,207 @@
+context_file: '/global/cfs/cdirs/sobs/users/rosenber/contexts/use_this_local_satp1_241031.yaml'
+plot_dir: '/global/cfs/cdirs/sobs/users/rosenber/preprocess/plots'
+
+subobs:
+  use: ['wafer_slot', 'wafer.bandpass']
+  label: wafer_slot
+  
+archive:
+  index: '/global/cfs/cdirs/sobs/users/rosenber/preprocess/satp1_241031/minimal_process_archive.sqlite'
+  policy:
+    type: 'simple'
+    filename: '/global/cfs/cdirs/sobs/users/rosenber/preprocess/satp1_241031/minimal_preprocess_archive.h5'
+    
+process_pipe:
+    - name: "hwp_angle_model"
+      skip_on_sim: True
+      process: True
+      calc:
+        on_sign_ambiguous: 'fail'
+      save: True
+
+    - name: "flag_turnarounds"
+      process: 
+        method: "scanspeed"
+      calc:
+        method: "scanspeed"
+      save: True
+      
+    - name: "det_bias_flags"
+      calc: 
+        rfrac_range: [0.05, 0.9]
+        psat_range: [0, 20]
+      save: True
+      select: True
+      
+    - name: "detrend"
+      process:
+        method: "median"
+
+    - name: "estimate_hwpss"
+      skip_on_sim: True
+      calc:
+        hwpss_stats_name: "hwpss_stats"
+      save: True
+
+    - name: "subtract_hwpss"
+      skip_on_sim: True
+      process:
+        subtract_name: "signal"
+        
+    - name: "trends"
+      calc:
+        max_trend: 2.5
+        t_piece: 100
+      save: True
+      select:
+        kind: "any"
+        
+    - name: "jumps"
+      skip_on_sim: True
+      calc:
+        function: "twopi_jumps"
+      save:
+        jumps_name: "jumps_2pi"
+      select:
+        max_n_jumps: 5
+        
+    - name: "fix_jumps"
+      skip_on_sim: True
+      process:
+        jumps_aman: "jumps_2pi"
+
+    - name: "glitchfill"
+      skip_on_sim: True
+      flag_aman: "jumps_2pi"
+      flag: "jump_flag"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+
+    - name: "glitches"
+      calc:
+        t_glitch: 0.00001
+        buffer: 10
+        hp_fc: 1
+        n_sig: 10
+      save: True
+      select:
+        max_n_glitch: 10
+        sig_glitch: 10
+
+    - name: "glitchfill"
+      skip_on_sim: True
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        
+    - name: "detrend"
+      process:
+        method: "median"
+
+    - name : "ptp_flags"
+      calc:
+        signal_name: "signal"
+        kurtosis_threshold: 5
+      save: True
+      select: True
+        
+    - name: "calibrate"
+      skip_on_sim: True
+      process:
+        kind: "array"
+        cal_array: "det_cal.phase_to_pW"
+
+    - name: "fourier_filter"
+      skip_on_sim: True
+      wrap_name: "lpf_sig"
+      process:
+        filt_function: "low_pass_sine2"
+        trim_samps: 2000
+        filter_params:
+          cutoff: 1
+          width: 0.1 
+          
+    - name: "calibrate"
+      skip_on_sim: True
+      process:
+        kind: "array"
+        cal_array: "abscal.abscal_cmb"
+          
+    - name: "fourier_filter"
+      skip_on_sim: True
+      process:
+        filt_function: "iir_filter"
+        filter_params:
+          invert: True
+
+    - name: "fourier_filter"
+      skip_on_sim: True
+      process:
+        filt_function: "timeconst_filter"
+        filter_params:
+          timeconst: "det_cal.tau_eff"
+          invert: True
+
+    - name: "apodize"
+      process:
+        apodize_samps: 2000
+    
+    - name: "demodulate"
+      process:
+        trim_samps: 6000
+        demod_cfgs: {}
+        
+    - name : "psd"
+      signal: "demodQ"
+      wrap: "psdQ"
+      process:
+        max_samples: 524288 #2**19
+        merge: False
+        nperseg: 65536 #2**16
+      calc: True
+      save: False
+      
+    - name: "noise"
+      psd: "psdQ"
+      fit: True
+      calc:
+        fwhite: [1, 2]
+        f_max: 2
+        lowf: 0.1
+        merge_name: 'noise_fit_statsQ'
+      save:
+        wrap_name: "noiseQ_fit"
+      
+    - name: "fourier_filter"
+      signal_name: "demodQ"
+      wrap_name: "demodQ"
+      process:
+        filt_function: "counter_1_over_f"
+        trim_samps: 2000
+        noise_fit_params: True
+        noise_fit_array: "noiseQ_fit"
+        filter_params:
+          fk: "fknee"
+          n: "alpha"
+
+    - name: "fourier_filter"
+      signal_name: "demodU"
+      wrap_name: "demodU"
+      process:
+        filt_function: "counter_1_over_f"
+        trim_samps: 2000
+        noise_fit_params: True
+        noise_fit_array: "noiseQ_fit"
+        filter_params:
+          fk: "fknee"
+          n: "alpha"
+          
+    - name: "inv_var_flags"
+      calc:
+        signal_name: 'demodQ'
+        nsigma: 2
+      save: True
+      select: True
