@@ -5,6 +5,7 @@ nbundles=4
 python ../../pipeline/bundling/get_atomics_list.py \
     --map_dir /pscratch/sd/s/susannaz/shared/SO_ISO/satp3_maps/cmb_map_satp3_8May2024 \
     --queries_list "freq_channel = 'f090'" "elevation >= '50'" \
+    --ext "fits" \
     --outdir $outdir
 
 srun -n $nbundles python ../../pipeline/bundling/generate_map_bundles.py \

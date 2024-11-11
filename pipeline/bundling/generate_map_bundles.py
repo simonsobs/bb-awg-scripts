@@ -7,6 +7,7 @@ import random
 import coordinator
 import coadder
 import sys
+from astropy.io import fits
 
 sys.path.insert(1, '../../pipeline/misc')
 import mpi_utils as mpi  # noqa
@@ -99,7 +100,9 @@ def _coadd_maps_hp(map_list, sign_list=None, res=None, dec_cut=None,
 
     for f, s in zip(map_list, sign_list):
         m = float(s) * hp.read_map(f, field=range(3))
-        w = hp.read_map(f.replace("wmap", "weights"), field=[0, 4, 8])
+        nFields = fits.getheader(f.replace('wmap', 'weights'), 1)['TFIELDS']
+        field = (0, 4, 8) if (nFields == 9) else (0, 1, 2) # Check if old or new fmt
+        w = hp.read_map(f.replace("wmap", "weights"), field=field) # TT QQ UU
         h = hp.read_map(f.replace("wmap", "hits"))
         wmap += m
         weights += w

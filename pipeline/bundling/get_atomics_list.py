@@ -5,7 +5,7 @@ import os
 
 
 def get_atomic_maps_list(map_dir, queries_list, map_type="wmap", db_fpath=None,
-                         verbose=False):
+                         verbose=False, ext="fits.gz"):
     """
     Outputs list of atomic maps
     (e.g. "{map_dir}/17107/atomic_1710705196_ws0_f090_full_{map_type}.fits")
@@ -45,7 +45,7 @@ def get_atomic_maps_list(map_dir, queries_list, map_type="wmap", db_fpath=None,
     assert map_type in ["wmap", "weights", "hits"]
 
     if not db_fpath:
-        map_template = "atomic_*_{wafer_slot}_{freq_channel}_*_{map_type}.fits.gz"  # noqa
+        map_template = "atomic_*_{wafer_slot}_{freq_channel}_*_{map_type}.{ext}"  # noqa
 
         props = {}
 
@@ -59,7 +59,7 @@ def get_atomic_maps_list(map_dir, queries_list, map_type="wmap", db_fpath=None,
             if prop not in props:
                 props[prop] = "*"
 
-        map_template = map_template.format(map_type=map_type, **props)
+        map_template = map_template.format(map_type=map_type, ext=ext, **props)
 
         # Simply loop over all .fits.gz files with matching file names.
         import glob
@@ -91,7 +91,7 @@ def get_atomic_maps_list(map_dir, queries_list, map_type="wmap", db_fpath=None,
         print(f" Found {len(result)} matching entries.")
 
     for r in result:
-        fname = f"{map_dir}/{'/'.join(r[0].split('/')[-2:])}_{map_type}.fits"
+        fname = f"{map_dir}/{'/'.join(r[0].split('/')[-2:])}_{map_type}.{ext}"
         if os.path.isfile(fname):
             atomic_maps_list.append(fname)
     conn.commit()
@@ -109,7 +109,7 @@ def main(args):
     os.makedirs(args.outdir, exist_ok=True)
     atomic_maps_list = {}
     atomic_maps_list["wmap"] = get_atomic_maps_list(
-        args.map_dir, args.queries_list, map_type="wmap", verbose=args.verbose
+        args.map_dir, args.queries_list, map_type="wmap", verbose=args.verbose, db_fpath=args.db_fpath, ext=args.ext
     )
 
     for typ in ["weights", "hits"]:
@@ -132,6 +132,10 @@ if __name__ == "__main__":
                         help="Verbose output?")
     parser.add_argument("--outdir",
                         help="Output directory for atomic maps list.")
+    parser.add_argument("--db_fpath", default=None,
+                        help="Path to atomic map db.")
+    parser.add_argument("--ext", default="fits.gz",
+                        help="File extension for the maps.")
 
     args = parser.parse_args()
     main(args)
