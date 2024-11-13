@@ -99,7 +99,7 @@ def _coadd_maps_hp(map_list, sign_list=None, res=None, dec_cut=None,
 
     for f, s in zip(map_list, sign_list):
         m = float(s) * hp.read_map(f, field=range(3))
-        w = hp.read_map(f.replace("wmap", "weights"), field=[0, 4, 8])
+        w = hp.read_map(f.replace("wmap", "weights"), field=[0, 1, 2])
         h = hp.read_map(f.replace("wmap", "hits"))
         wmap += m
         weights += w
