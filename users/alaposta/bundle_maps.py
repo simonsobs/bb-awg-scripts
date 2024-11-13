@@ -16,7 +16,11 @@ def main(args):
 
     for bundle_id in bundle_ids:
         bundled_map, hits_map = bundler.bundle(bundle_id, null_prop_val=args.null_prop_val)
-        out_fname = os.path.join(out_dir, f"satp1_{args.freq_channel}_bundle{bundle_id}_map.fits")
+        if args.null_prop_val is not None:
+            name_tag = f"{args.freq_channel}_{args.null_prop_val}"
+        else:
+            name_tag = f"{args.freq_channel}"
+        out_fname = os.path.join(out_dir, f"satp1_{name_tag}_bundle{bundle_id}_map.fits")
         hp.write_map(out_fname, bundled_map, overwrite=True)
         hp.write_map(out_fname.replace("map.fits", "hits.fits"), hits_map, overwrite=True)
 
