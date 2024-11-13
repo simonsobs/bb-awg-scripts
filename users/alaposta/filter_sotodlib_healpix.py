@@ -1,6 +1,7 @@
-import sotodlib.mapmaking.demod_mapmaker as dmm                                                                                                                                      
 from sotodlib.mapmaking.noise_model import NmatUnit
 from sotodlib.site_pipeline import preprocess_tod
+import sotodlib.mapmaking.demod_mapmaker as dmm                                                                                                                                      
+from coordinator import BundleCoordinator
 from pixell import enmap, utils, enplot
 from sotodlib.core import Context
 from sotodlib.coords import demod
@@ -10,10 +11,11 @@ import healpy as hp
 import numpy as np
 import argparse
 import logging
+import sqlite3
 import yaml
+import so3g
 import os
 import re
-import so3g
 
 
 def erik_make_map(obs, shape=None, wcs=None, nside=None, site=None):
@@ -21,8 +23,12 @@ def erik_make_map(obs, shape=None, wcs=None, nside=None, site=None):
     """
     obs.wrap("weather", np.full(1, "toco"))                                                                                                                                                                    
     obs.wrap("site",    np.full(1, site))
-    obs.flags.wrap('glitch_flags', obs.preprocess.turnaround_flags.turnarounds 
-                       + obs.preprocess.jumps_2pi.jump_flag + obs.preprocess.glitches.glitch_flags, )
+    obs.flags.wrap(
+        'glitch_flags',
+        (obs.preprocess.turnaround_flags.turnarounds
+         + obs.preprocess.jumps_2pi.jump_flag
+         + obs.preprocess.glitches.glitch_flags)
+    )
     mapmaker = dmm.setup_demod_map(NmatUnit(), shape=shape, wcs=wcs, nside=nside)
     mapmaker.add_obs('signal', obs)
     wmap = mapmaker.signals[0].rhs[0]
@@ -46,7 +52,8 @@ def get_logger(fmt=None, datefmt=None, debug=False, **kwargs):
     debug: bool
       debug flag
     """
-    fmt = fmt or "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s" # noqa
+    #fmt = fmt or "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s" # noqa
+    fmt = fmt or "%(asctime)s - %(message)s"
     datefmt = datefmt or "%d-%b-%y %H:%M:%S"
     logging.basicConfig(
         format=fmt,
@@ -67,32 +74,46 @@ def main(args):
 
     # ArgumentParser
     out_dir = args.output_directory
+    os.makedirs(out_dir, exist_ok=True)
+
     plot_dir = f"{out_dir}/plots"
     os.makedirs(plot_dir, exist_ok=True)
-    atomic_maps_list = args.atomic_maps_list
+
+    # Databases
+    atom_db = args.atomic_db
+    bundle_db = args.bundle_db
+
+    # Config files
     preprocess_config = args.preprocess_config
+
+    # Sim related arguments
     map_dir = args.map_dir
     map_template = args.map_template
     sim_ids = args.sim_ids
 
-    os.makedirs(out_dir, exist_ok=True)
-    with open(atomic_maps_list, "r") as f:
-        atomic_maps_list = f.read().splitlines()
-    atomic_maps_list = atomic_maps_list
+    # Bundle query arguments
+    freq_channel = args.freq_channel
+    null_prop = args.null_prop
+    bundle_id = args.bundle_id
+
+    # Extract list of ctimes from bundle database for the given bundle_id - null split combination
+    bundle_db = BundleCoordinator.from_dbfile(bundle_db, bundle_id=bundle_id, null_prop_val=null_prop)
+    ctimes = bundle_db.get_ctimes(bundle_id=bundle_id, null_prop_val=null_prop)
+
+    # Extract list of atomic metadata for the observations defined above
+    atomic_metadata = []
+    db_con = sqlite3.connect(atom_db)
+    db_cur = db_con.cursor()
+    for ctime in ctimes:
+        res = db_cur.execute(f"SELECT obs_id, wafer FROM atomic WHERE freq_channel == '{freq_channel}' AND ctime == '{ctime}'")
+        res = res.fetchall()
+        for obs_id, wafer in res:
+            atomic_metadata.append((obs_id, wafer, freq_channel))
+    db_con.close()
 
     config = yaml.safe_load(open(preprocess_config, "r"))
     context = config["context_file"]
     ctx = Context(context)
-
-    atomic_metadata = []
-    for atom in atomic_maps_list:
-        map_id = re.findall(r"[0-9]{10}", atom)[0]
-        wafer = re.findall(r"ws[0-9]{1}", atom)[0]
-        freq = re.findall(r"f[0-9]{3}", atom)[0]
-
-        query = ctx.obsdb.query(f"cast(timestamp as int) == '{map_id}'")
-        obs_id = query[0]["obs_id"]
-        atomic_metadata.append((obs_id, wafer, freq))
 
     metas = {}
     for obs_id, wafer, freq in atomic_metadata:
@@ -286,18 +307,55 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--atomic-maps-list",
-                        help="List of obs ids included")
-    parser.add_argument("--preprocess-config",
-                        help="Preprocess config file")
-    parser.add_argument("--map-dir",
-                        help="Map to filter")
-    parser.add_argument("--map-template",
-                        help="Map template")
-    parser.add_argument("--sim-ids",
-                        help="Sim id")
-    parser.add_argument("--output-directory",
-                        help="Name of the filtered map directory")
+    parser.add_argument(
+        "--atomic-db",
+        help="Path to the atomic maps database",
+        type=str
+    )
+    parser.add_argument(
+        "--bundle-db",
+        help="Path to the bundle database",
+        type=str
+    )
+    parser.add_argument(
+        "--preprocess-config",
+        help="Path to the preprocessing config file",
+        type=str
+    )
+    parser.add_argument(
+        "--map-dir",
+        help="Directory containing the maps to filter",
+        type=str
+    )
+    parser.add_argument(
+        "--map-template",
+        help="Template file for the map to filter",
+        type=str
+    )
+    parser.add_argument(
+        "--sim-ids",
+        help="Comma separated list of simulation ids",
+        type=str
+    )
+    parser.add_argument(
+        "--output-directory",
+        help="Output directory for the filtered maps",
+        type=str
+    )
+    parser.add_argument(
+        "--freq-channel",
+        help="Frequency channel to filter",
+        type=str
+    )
+    parser.add_argument(
+        "--bundle-id",
+        help="Bundle ID to filter",
+    )
+    parser.add_argument(
+        "--null-prop",
+        help="Null property to filter",
+        default=None
+    )
 
     args = parser.parse_args()
 
