@@ -46,7 +46,7 @@ if __name__ == "__main__":
     parser.add_argument("--nside", type=int, help="Healpix nside")
     parser.add_argument("--smooth_fwhm", type=float, help="Smooth scale FWHM in arcmin")
     parser.add_argument("--n_sims", type=int, help="Number of simulations")
-    parser.add_argument("--out_dir", type="str", help="Output directory")
+    parser.add_argument("--out_dir", type=str, help="Output directory")
 
     args = parser.parse_args()
 
