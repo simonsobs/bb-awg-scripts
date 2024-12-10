@@ -118,7 +118,7 @@ def distribute_tasks(size, rank, ntasks, logger=None):
         local_start = rank * (ntasks // size)
         local_stop = local_start + (ntasks // size)
 
-    local_task_ids = np.arange(ntasks)[local_start:local_stop]
+    local_task_ids = list(range(ntasks))[local_start:local_stop]
 
     if rank >= ntasks:
         local_task_ids = []
@@ -131,8 +131,8 @@ def distribute_tasks(size, rank, ntasks, logger=None):
         local_task_ids.append(leftover[rank])
 
     if logger is not None:
-        logger.info(f"Rank {rank} has {len(local_task_ids)} "
-                    f"{local_task_ids}")
+        logger.info(f"Rank {rank} has {len(local_task_ids)} tasks")
         logger.info(f"Total number of tasks is {ntasks}")
+    print("local_task_ids", np.array(local_task_ids, dtype=int))
 
     return local_task_ids

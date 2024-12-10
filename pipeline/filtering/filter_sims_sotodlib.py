@@ -111,6 +111,7 @@ def main(args):
     preprocess_config = args.preprocess_config
 
     # Sim related arguments
+    nside = args.nside  # FIXME: generalize to CAR adn/or HEALPix
     map_dir = args.map_dir
     map_template = args.map_template
     sim_ids = args.sim_ids
@@ -144,7 +145,7 @@ def main(args):
     db_con.close()
 
     # Load preprocessing pipeline and extract from it list of preprocessing
-    # metadata (detectors, samples, etc.) corresponding to each atomic map  
+    # metadata (detectors, samples, etc.) corresponding to each atomic map
     config = yaml.safe_load(open(preprocess_config, "r"))
     context = config["context_file"]
     ctx = Context(context)
@@ -161,7 +162,11 @@ def main(args):
         metas[obs_id, wafer, freq] = meta
 
     # Distribute [natomics x nsims] tasks among [size] workers
-    id_min, id_max = sim_ids.split(",")
+    if "," in sim_ids:
+        id_min, id_max = sim_ids.split(",")
+    else:
+        id_min = sim_ids
+        id_max = id_min
     id_min = int(id_min)
     id_max = int(id_max)
 
@@ -170,7 +175,7 @@ def main(args):
 
     log = get_logger()
     task_ids = distribute_tasks(size, rank, len(mpi_shared_list), logger=log)
-    local_mpi_list = mpi_shared_list[task_ids]
+    local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
     # Loop over local tasks (sim_id, atomic_id). For each of these, do:
     # * read simulated map
@@ -216,7 +221,7 @@ def main(args):
         # w = np.moveaxis(w.diagonal(), -1, 0)
 
         # HEALPix version
-        wmap, w = erik_make_map(aman, nside=256, site="so_sat1")
+        wmap, w = erik_make_map(aman, nside=nside, site="so_sat1")
 
         local_wmaps.append(wmap)
         local_weights.append(w)
@@ -319,7 +324,8 @@ def main(args):
                 min=-1.7,
                 max=1.7,
                 cbar=True,
-                nest=True
+                nest=True,
+                unit=r"$\mu$K"
             )
             plt.savefig(
                 f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}.png"
@@ -377,6 +383,11 @@ if __name__ == "__main__":
         "--null-prop",
         help="Null property to filter",
         default=None
+    )
+    parser.add_argument(
+        "--nside",
+        help="Nside parameter for HEALPIX mapmaker",
+        type=int, default=512
     )
 
     args = parser.parse_args()
