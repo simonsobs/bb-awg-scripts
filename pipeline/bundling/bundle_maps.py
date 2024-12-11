@@ -14,7 +14,7 @@ def main(args):
     if args.pix_type != "hp":
         raise NotImplementedError("Only accepting hp as input for now.")
 
-    if args.null_prop_val == "None":
+    if args.null_prop_val in ["None", "none", "science"]:
         args.null_prop_val = None
 
     out_dir = args.output_dir
@@ -52,7 +52,7 @@ def main(args):
         if args.null_prop_val is not None:
             name_tag = f"{args.freq_channel}_{args.null_prop_val}"
         else:
-            name_tag = f"{args.freq_channel}"
+            name_tag = f"{args.freq_channel}_science"
         out_fname = os.path.join(
             out_dir,
             args.map_string_format.format(name_tag=name_tag,
