@@ -17,8 +17,8 @@ from mpi4py import MPI
 
 sys.path.append("../bundling")
 sys.path.append("../misc")
-from coordinator import BundleCoordinator
-from mpi_utils import distribute_tasks
+from coordinator import BundleCoordinator  # noqa
+from mpi_utils import distribute_tasks  # noqa
 
 
 def erik_make_map(obs, shape=None, wcs=None, nside=None, site=None):
@@ -150,16 +150,17 @@ def main(args):
     context = config["context_file"]
     ctx = Context(context)
 
-    metas = {}
-    for obs_id, wafer, freq in atomic_metadata:
-        dets = {"wafer_slot": wafer, "wafer.bandpass": freq}
-        meta = ctx.get_meta(obs_id, dets=dets)
-        # Missing pointing not cut in preprocessing
-        meta.restrict(
-            "dets",
-            meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
-        )
-        metas[obs_id, wafer, freq] = meta
+    # NOTE: This was the old configuration and has been moved to the task loop
+    # metas = {}
+    # for obs_id, wafer, freq in atomic_metadata:
+    #     dets = {"wafer_slot": wafer, "wafer.bandpass": freq}
+    #     meta = ctx.get_meta(obs_id, dets=dets)
+    #     # Missing pointing not cut in preprocessing
+    #     meta.restrict(
+    #         "dets",
+    #         meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
+    #     )
+    #     metas[obs_id, wafer, freq] = meta
 
     # Distribute [natomics x nsims] tasks among [size] workers
     if "," in sim_ids:
@@ -192,16 +193,24 @@ def main(args):
 
         # FIXME: CAR version
         # sim = enmap.read_map(map_file)
+
         # HEALPix version
         sim = hp.read_map(map_file, field=[0, 1, 2])
 
         log.info(f"***** Doing {obs_id} {wafer} {freq} "
                  f"and SIMULATION {sim_id} *****")
+        dets = {"wafer_slot": wafer, "wafer.bandpass": freq}
+        meta = ctx.get_meta(obs_id, dets=dets)
+        # Missing pointing not cut in preprocessing
+        meta.restrict(
+            "dets", meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
+        )
         aman = preprocess_tod.load_preprocess_tod_sim(
             obs_id,
             sim_map=sim,
             configs=config,
-            meta=metas[obs_id, wafer, freq],
+            # meta=metas[obs_id, wafer, freq],  # NOTE: This was the old setup
+            meta=meta,
             modulated=True,
             site="so_sat1",  # new field required from new from_map function
             ordering="RING"  # new field required for healpix
@@ -268,6 +277,7 @@ def main(args):
     for index, sim_id in enumerate(out_labs):
         wmap = out_wmaps[index]
         w = out_weights[index]
+
         # FIXME: CAR version
         # templates[sim_id][0] = enmap.insert(
         #    templates[sim_id][0],
@@ -292,7 +302,7 @@ def main(args):
 
         out_fname = map_template.format(sim_id=sim_id).replace(
             ".fits",
-            "_filtered.fits"
+            f"_bundle{bundle_id}_filtered.fits"
         )
         out_file = f"{out_dir}/{out_fname}"
 
@@ -330,6 +340,7 @@ def main(args):
             plt.savefig(
                 f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}.png"
             )
+            plt.close()
 
 
 if __name__ == "__main__":
