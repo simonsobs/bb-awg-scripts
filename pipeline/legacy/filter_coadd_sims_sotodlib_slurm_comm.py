@@ -1,3 +1,4 @@
+
 import numpy as np
 import healpy as hp
 import argparse
@@ -7,6 +8,7 @@ import os
 import yaml
 import sys
 import sotodlib.mapmaking.demod_mapmaker as dmm
+import matplotlib.pyplot as plt
 
 from sotodlib.mapmaking.noise_model import NmatUnit
 from sotodlib.core import Context
@@ -151,6 +153,18 @@ def main(args):
     context = config["context_file"]
     ctx = Context(context)
 
+    # NOTE: This was the old configuration and has been moved to the task loop
+    # metas = {}
+    # for obs_id, wafer, freq in atomic_metadata:
+    #     dets = {"wafer_slot": wafer, "wafer.bandpass": freq}
+    #     meta = ctx.get_meta(obs_id, dets=dets)
+    #     # Missing pointing not cut in preprocessing
+    #     meta.restrict(
+    #         "dets",
+    #         meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
+    #     )
+    #     metas[obs_id, wafer, freq] = meta
+
     # Distribute [natomics x nsims] tasks among [size] workers
     if "," in sim_ids:
         id_min, id_max = sim_ids.split(",")
@@ -198,6 +212,7 @@ def main(args):
             obs_id,
             sim_map=sim,
             configs=config,
+            # meta=metas[obs_id, wafer, freq],  # NOTE: This was the old setup
             meta=meta,
             modulated=True,
             site="so_sat1",  # new field required from new from_map function
@@ -224,20 +239,111 @@ def main(args):
         local_weights.append(w)
         local_labels.append(sim_id)
 
-        # Saving filtered atomics to disk
-        log.info(f"Rank {rank} saving labels {local_labels}")
-        atomic_fname = map_template.format(sim_id=sim_id).replace(
+    # Sending filtered atomics from all ranks != 0 to rank 0
+    if rank != 0:
+        log.info(f"Rank {rank} sending labels {local_labels}")
+        comm.send(local_wmaps, dest=0, tag=0)
+        comm.send(local_weights, dest=0, tag=1)
+        comm.send(local_labels, dest=0, tag=2)
+        return
+
+    # Receiving filtered atomics from all ranks != 0 at rank 0
+    out_labs = []
+    out_wmaps = []
+    out_weights = []
+
+    for src_rank in range(0, size):
+        if src_rank == 0:
+            out_labs += local_labels
+            out_wmaps += local_wmaps
+            out_weights += local_weights
+        else:
+            wmaps = comm.recv(source=src_rank, tag=0)
+            weights = comm.recv(source=src_rank, tag=1)
+            labels = comm.recv(source=src_rank, tag=2)
+            log.info(f"Rank {src_rank} sent labels {labels}")
+
+            out_labs += labels
+            out_wmaps += wmaps
+            out_weights += weights
+
+    # Co-adding all atomics with the same sim_id
+    log.info(out_labs)
+    for i in range(id_min, id_max+1):
+        log.info(f"Count for sim_id={i} is {out_labs.count(i)}")
+
+    templates = {
+        sim_id: [sim.copy() * 0., sim.copy() * 0.]
+        for sim_id in range(id_min, id_max+1)
+    }
+
+    for index, sim_id in enumerate(out_labs):
+        wmap = out_wmaps[index]
+        w = out_weights[index]
+
+        # FIXME: CAR version
+        # templates[sim_id][0] = enmap.insert(
+        #    templates[sim_id][0],
+        #    wmap,
+        #    op=np.ndarray.__iadd__
+        # )
+        # templates[sim_id][1] = enmap.insert(
+        #    templates[sim_id][1],
+        #    w,
+        #    op=np.ndarray.__iadd__
+        # )
+
+        # HEALPix version
+        templates[sim_id][0] += wmap
+        templates[sim_id][1] += w
+
+    # Writing coadded bundle maps to disk, and plotting them
+    for sim_id in range(id_min, id_max + 1):
+        # Setting zero-weight weight pixels to infinity
+        templates[sim_id][1][templates[sim_id][1] == 0] = np.inf
+        filtered_sim = templates[sim_id][0] / templates[sim_id][1]
+
+        out_fname = map_template.format(sim_id=sim_id).replace(
             ".fits",
-            f"_obsid{obs_id}_{wafer}_{freq_channel}.fits"
+            f"_bundle{bundle_id}_filtered.fits"
         )
-        hp.write_map(
-            f"{atomics_dir}/{atomic_fname.replace('.fits', '_wmap.fits')}",
-            wmap, dtype=np.float32, overwrite=True, nest=True
-        )
-        hp.write_map(
-            f"{atomics_dir}/{atomic_fname.replace('.fits', '_w.fits')}", w,
-            dtype=np.float32, overwrite=True, nest=True
-        )
+        out_file = f"{out_dir}/{out_fname}"
+
+        # FIXME: CAR version
+        # enmap.write_map(out_file, filtered_sim)
+
+        # HEALPix version
+        hp.write_map(out_file, filtered_sim, overwrite=True, nest=True)
+
+        for i, f in zip([0, 1, 2], ["I", "Q", "U"]):
+            # FIXME: CAR version
+            # plot = enplot.plot(
+            #    filtered_sim[i],
+            #    color="planck",
+            #    ticks=10,
+            #    range=1.7,
+            #    colorbar=True
+            # )
+            # enplot.write(
+            #    f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}",
+            #    plot
+            # )
+
+            # HEALPix version
+            plt.figure()
+            hp.mollview(
+                filtered_sim[i],
+                cmap="RdYlBu_r",
+                min=-1.7,
+                max=1.7,
+                cbar=True,
+                nest=True,
+                unit=r"$\mu$K"
+            )
+            plt.savefig(
+                f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}.png"
+            )
+            plt.close()
 
 
 if __name__ == "__main__":
