@@ -96,7 +96,7 @@ class BundleCoordinator:
         if bundle_id is not None:
             keyword = "WHERE" if add_query == "" else "AND"
             add_query += f" {keyword} bundle_id = {bundle_id}"
-        if null_prop_val is not None:
+        if null_prop_val not in [None, "science"]:
             keyword = "WHERE" if add_query == "" else "AND"
             null_prop_name = null_prop_val.split("_")[1]
             add_query += f" {keyword} {null_prop_name} = '{null_prop_val}'"
@@ -134,7 +134,7 @@ class BundleCoordinator:
         """
         filter = (self.bundle_id == bundle_id)
         ctimes = self.ctime[filter]
-        if null_prop_val is not None:
+        if null_prop_val not in [None, "science"]:
             name_prop = null_prop_val.split("_")[1]
             prop_val = getattr(self, name_prop)[filter]
             filter = prop_val == null_prop_val
