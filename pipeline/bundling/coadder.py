@@ -3,10 +3,11 @@ import sqlite3
 import os
 from bundling_utils import read_map, coadd_maps
 from coordinator import BundleCoordinator
+import re
 
 
 class _Coadder:
-    def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
+    def __init__(self, atomic_db, bundle_db, freq_channel, split_label="full", wafer=None,
                  pix_type="hp"):
         """
         Constructor for the _Coadder class. Reads in map information from
@@ -62,7 +63,7 @@ class _Coadder:
         obs_ids = bundle_coord.obs_id
         return obs_ids
 
-    def _obsid2fnames(self, obs_id, return_weights=False):
+    def _obsid2fnames(self, obs_id, return_weights=False, split_label="full"):
         """
         Given an obs_id, infer the file names of the corresponding atomic maps.
 
@@ -80,7 +81,7 @@ class _Coadder:
                 List of strings with file paths.
         """
         map_dir = os.path.dirname(self.atomic_db)
-
+        #print(split_label)
         # For now, assume HEAPix maps are gzipped fits and CAR maps are fits.
         # This may be generalized at some point in the future.
         suffix = ".fits.gz" if self.pix_type == "hp" else ".fits"
@@ -103,7 +104,7 @@ class _Coadder:
             fnames = [
                 os.path.join(
                     map_dir, f"{str(ctime)[:5]}",
-                    f"atomic_{ctime}_{wafer}_{freq_channel}_full_wmap{suffix}"
+                    f"atomic_{ctime}_{wafer}_{freq_channel}_{split_label}_wmap{suffix}"
                 )
                 for ctime, wafer, freq_channel, _ in result
             ]
@@ -113,7 +114,7 @@ class _Coadder:
             fnames = [
                 os.path.join(
                     map_dir, f"{str(ctime)[:5]}",
-                    f"atomic_{ctime}_{wafer}_{freq_channel}_full_wmap{suffix}"
+                    f"atomic_{ctime}_{wafer}_{freq_channel}_{split_label}_wmap{suffix}"
                 )
                 for ctime, wafer, freq_channel in result
             ]
@@ -142,7 +143,7 @@ class _Coadder:
             maps_exist = hits_exist and maps_exist
         return maps_exist
 
-    def _get_fnames(self, bundle_id, null_prop_val=None, return_weights=False):
+    def _get_fnames(self, bundle_id, null_prop_val=None, split_label="full", return_weights=False):
         """
         Return file names (and, optionally, mean polarization weights) given a
         bundle_id and a null property.
@@ -164,6 +165,7 @@ class _Coadder:
             List of strings with file paths.
         """
         obs_ids = self._get_obs_ids(bundle_id, null_prop_val)
+        #print(obs_ids)
         fnames = []
         if return_weights:
             weights = []
@@ -171,7 +173,7 @@ class _Coadder:
         for obs_id in obs_ids:
             if return_weights:
                 fname_list, weight_list = self._obsid2fnames(
-                    obs_id, return_weights=return_weights
+                    obs_id, return_weights=return_weights, split_label=split_label
                 )
                 for fname, weight in zip(fname_list, weight_list):
                     if self._check_maps_exist(fname):
@@ -179,15 +181,14 @@ class _Coadder:
                         weights.append(weight)
             else:
                 fname_list = self._obsid2fnames(
-                    obs_id, return_weights=return_weights
+                    obs_id, return_weights=return_weights, split_label=split_label
                 )
                 for fname in fname_list:
                     if self._check_maps_exist(fname):
                         fnames.append(fname)
-
         if return_weights:
             return fnames, weights
-        return fnames
+        return fnames #, split_label
 
 
 class Bundler(_Coadder):
@@ -195,7 +196,47 @@ class Bundler(_Coadder):
     Child class of _Coadder, with the purpose of coadding atomic maps for the
     purpose of generating map bundles and bundled hits maps.
     """
-    def bundle(self, bundle_id, null_prop_val=None):
+    def get_abscal_factors(self):
+        calibration_factors = {
+            'ws0': {'f090': 14.6, 'f150': 10.2},
+            'ws1': {'f090': 12.8, 'f150': 12.2},
+            'ws2': {'f090': 13.6, 'f150': 9.6},
+            'ws3': {'f090': 13.6, 'f150': 10.4},
+            'ws4': {'f090': 13.6, 'f150': 14.5},
+            'ws5': {'f090': 11.2, 'f150': 10.2},
+            'ws6': {'f090': 17.1, 'f150': 12.7},
+            }
+        return calibration_factors
+
+    def get_abfac(self, fname, abscal=True):
+        self.abscal_factors = self.get_abscal_factors() if abscal else 1
+        ws, freq = self.extract_ws_freq(fname)
+        abfac = self.abscal_factors[ws][freq] * 1e6 if abscal else 1
+        return abfac
+
+    def extract_ws_freq(self, input_str):
+        """
+        Extract 'ws' and 'freq' from the input string.
+
+        Parameters
+        ----------
+        input_str: str
+            Input string containing 'ws' and 'freq' information.
+
+        Returns
+        -------
+        ws: str
+            Extracted 'ws' value.
+        freq: str
+            Extracted 'freq' value.
+        """
+        pattern = r'ws\d+|f\d+'
+        matches = re.findall(pattern, input_str)
+        ws = next((match for match in matches if match.startswith('ws')), None)
+        freq = next((match for match in matches if match.startswith('f')), None)
+        return ws, freq
+
+    def bundle(self, bundle_id, split_label, null_prop_val=None, abscal=True):
         """
         Make a map bundle given a bundle ID and, optionally, null properties.
 
@@ -214,9 +255,10 @@ class Bundler(_Coadder):
         hits: np.array
             Output bundled hits map.
         """
-        fnames = self._get_fnames(bundle_id, null_prop_val)
+        fnames = self._get_fnames(bundle_id, null_prop_val, split_label)
         wmaps_list = [read_map(fname, pix_type=self.pix_type,
-                               fields_hp=self.fields_hp)
+                               fields_hp=self.fields_hp) \
+                                * self.get_abfac(fname, abscal)
                       for fname in fnames]
         weights_list = [read_map(fname.replace("wmap", "weights"),
                                  pix_type=self.pix_type,

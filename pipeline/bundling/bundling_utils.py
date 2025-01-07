@@ -1,5 +1,5 @@
 import numpy as np
-from pixell import enmap
+from pixell import enmap, utils
 import healpy as hp
 from astropy.io import fits
 import h5py
@@ -57,6 +57,7 @@ def read_map(map_file, pix_type='hp', fields_hp=None, convert_K_to_muK=False,
         kwargs = {"field": fields_hp} if fields_hp is not None else {}
         m = hp.read_map(map_file, **kwargs)
     else:
+        #print(map_file)
         m = enmap.read_map(map_file, geometry=geometry)
         if is_weights:
             # Read only TT, QQ, UU weights
@@ -91,9 +92,8 @@ def write_map(map_file, map, dtype=None, pix_type='hp',
     else:
         enmap.write_map(map_file, map)
 
-
 def _coadd_maps_car(maps_list, weights_list, hits_list=None, sign_list=None,
-                    res=10, dec_cut=(-75, 25)):
+                    res=5, dec_cut=(-75, 25), abscal=True):
     """
     Coadd a list of atomics maps in CAR format. See function `coadd_maps` for
     documentation.
@@ -107,27 +107,56 @@ def _coadd_maps_car(maps_list, weights_list, hits_list=None, sign_list=None,
     else:
         assert len(sign_list) == len(maps_list)
 
-    print("dec_cut", dec_cut)
-    template_geom = enmap.band_geometry(
-        (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
-        res=np.deg2rad(res/60)
-    )
-    atom_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
-    weight_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
+    #print("dec_cut", dec_cut)
+    #template_geom = enmap.band_geometry(
+    #    (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
+    #    res=res*utils.arcmin #np.deg2rad(res/60)
+    #)
+    #atom_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
+    #weight_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
+    shape, wcs = enmap.fullsky_geometry(res=res*utils.arcmin, proj="car", variant="fejer1")
+    atom_coadd = enmap.zeros((3,)+shape, wcs=wcs)
+    weight_coadd = enmap.zeros((3,)+shape, wcs=wcs)
+    #weight_coadd_kcmb = enmap.zeros((3,)+shape, wcs=wcs)
     if hits_list is not None:
-        hits_coadd = enmap.zeros(*template_geom)
+        #hits_coadd = enmap.zeros(*template_geom)
+        hits_coadd = enmap.zeros(shape, wcs=wcs)
 
     for i, (atom, weight) in enumerate(zip(maps_list, weights_list)):
-        atom_coadd = enmap.insert(atom_coadd, atom * float(sign_list[i]),
-                                  op=np.ndarray.__iadd__)
-        weight_coadd = enmap.insert(weight_coadd, weight,
-                                    op=np.ndarray.__iadd__)
+        #atom_coadd = enmap.insert(atom_coadd, atom * float(sign_list[i]),
+        #                          op=np.ndarray.__iadd__)
+        #weight_coadd = enmap.insert(weight_coadd, weight,
+        #                            op=np.ndarray.__iadd__)
+        #if hits_list is not None:
+        #    hits_coadd = enmap.insert(hits_coadd, np.squeeze(hits_list[i]),
+        #                              op=np.ndarray.__iadd__)
+        #m_ = enmap.read_map(atom) #* abfac
+        m_ = atom #* abfac
+        mask = np.isfinite(m_)
+        m_[~mask] = 0.0
+        m_ = enmap.extract(m_, shape, wcs)
+
+        #ivar = enmap.read_map(weight)
+        ivar = weight
+        mask = np.isfinite(ivar)
+        ivar[~mask] = 0.0
+        ivar = enmap.extract(ivar, shape, wcs)             
+        #ivar2 = ivar * abfac
+
         if hits_list is not None:
-            hits_coadd = enmap.insert(hits_coadd, np.squeeze(hits_list[i]),
-                                      op=np.ndarray.__iadd__)
+            #hits = enmap.read_map(hits_list[i])
+            hits = hits_list[i]
+            mask = np.isfinite(hits)
+            hits[~mask] = 0.0
+            hits = enmap.extract(hits, shape, wcs)
+            hits_coadd += hits
+
+        atom_coadd += m_
+        weight_coadd += ivar
+        #weight_coadd_kcmb += ivar2
 
     # Cut zero-weight pixels
-    weight_coadd[weight_coadd == 0] = np.inf
+    #weight_coadd[weight_coadd == 0] = np.inf
     atom_coadd /= weight_coadd
 
     if hits_list is not None:
@@ -178,7 +207,7 @@ def _coadd_maps_hp(maps_list, weights_list, hits_list=None, sign_list=None):
 
 
 def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
-               pix_type="hp", res_car=10, dec_cut_car=(-75, 25)):
+               pix_type="hp", res_car=5, dec_cut_car=(-75, 25)):
     """
     Coadd a list of weighted maps, a list of map weights, and
     (optionally) a list of hits maps corresponding to a set of atomics.
