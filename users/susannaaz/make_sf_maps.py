@@ -2,7 +2,6 @@ import os
 import numpy as np
 import pandas as pd
 import sqlite3 as sq
-import matplotlib.pyplot as plt
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from sotodlib import coords
@@ -119,50 +118,13 @@ def write_db_including_ivar(df: pd.DataFrame, db_file: str) -> None:
         df.to_sql('results', conn, if_exists='append', index=False)
         print(f"DataFrame written to {db_file} successfully.")
 
-        
-def plot_centers_of_maps(dataframe: pd.DataFrame, figax=None, **kwargs) -> tuple:
-    """
-    Plot the centers of each map based on right ascension (RA) and declination (DEC).
-    
-    Parameters:
-    - dataframe (pd.DataFrame): DataFrame containing 'ra_centre' and 'dec_centre' columns.
-    - figax (tuple, optional): A tuple of (fig, ax) to use for plotting. If None, a new figure is created.
-    - **kwargs: Additional keyword arguments for the plot.
-    
-    Returns:
-    - tuple: A tuple containing the figure and axes objects.
-    """
-    if figax is None:
-        fig, ax = plt.subplots(figsize=(12, 4))
-        ax.set_title('Centre of Each Atomic Map', fontsize=16, fontname='serif')
-        ax.set_xlim(-180, 180)
-        ax.set_ylim(-90, 90)
-        ax.set_xticks(np.arange(-180, 181, 20))
-        ax.set_yticks(np.arange(-90, 91, 30))
-        ax.invert_xaxis()
-        ax.set_xlabel('RA [deg]', fontsize=14, fontname='serif')
-        ax.set_ylabel('DEC [deg]', fontsize=14, fontname='serif')
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.axhline(0, color='black', linewidth=0.8, linestyle='-')  # Adding equator line
-        ax.axvline(0, color='black', linewidth=0.8, linestyle='-')  # Adding prime meridian line
-    else:
-        fig, ax = figax
-
-    # Convert RA and DEC from radians to degrees and plot
+    # Convert RA and DEC from radians to degrees
     ra_deg = np.rad2deg(dataframe['ra_centre'])
     dec_deg = np.rad2deg(dataframe['dec_centre'])
     
     scatter = ax.scatter(ra_deg, dec_deg, s=10, **kwargs)  # Set size of scatter points to 10
 
-    # Optionally add a color bar if the plot is color-coded
-    if 'c' in kwargs:
-        cbar = plt.colorbar(scatter, ax=ax)
-        cbar.set_label('Color Scale', fontsize=12, fontname='serif')
-
-    # Optional: Add gridlines
-    ax.grid(True, linestyle='--', alpha=0.5)
-
-    return fig, ax
+    return
 
 def get_location_dict(dataframe: pd.DataFrame, 
                       ra_bin_edges: np.ndarray, 
