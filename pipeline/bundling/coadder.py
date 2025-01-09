@@ -7,7 +7,7 @@ from coordinator import BundleCoordinator
 
 class _Coadder:
     def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
-                 pix_type="hp"):
+                 pix_type="hp", atomic_list=None, car_map_template=None):
         """
         Constructor for the _Coadder class. Reads in map information from
         atomic_db and bundling information from bundle_db.
@@ -26,6 +26,11 @@ class _Coadder:
             If no wafer is provided, coadd maps made for all the wafers.
         pix_type : str
             Pixelization type. Admissible values are "hp", "car.
+        atomics_list: list
+            External list of string tuples (obs_id, wafer, freq_channel) of
+            atomic maps that are to be used for the bundling.
+            All other atomics in atomic_db will be left out.
+            Ignore if None (default).
         """
         assert pix_type in ["hp", "car"]
         self.pix_type = pix_type
@@ -35,6 +40,8 @@ class _Coadder:
         self.bundle_db = bundle_db
         self.freq_channel = freq_channel
         self.wafer = wafer
+        self.atomic_list = atomic_list
+        self.car_map_template = car_map_template
 
     def _get_obs_ids(self, bundle_id, null_prop_val=None):
         """
@@ -60,10 +67,23 @@ class _Coadder:
             null_prop_val=null_prop_val
         )
         obs_ids = bundle_coord.obs_id
+
+        # # Restrict list of atomics in atomic_db
+        # if self.atomic_list is not None:
+        #     obs_ids_restricted = []
+        #     for obs_id, _, _ in self.atomic_list:
+        #         if obs_id in obs_ids:
+        #             obs_ids_restricted.append(obs_id)
+        #     obs_ids = obs_ids_restricted
+
         return obs_ids
 
     def _obsid2fnames(self, obs_id, return_weights=False):
         """
+        TODO: If an atomics_list is given (w/ entries (obs_id, wafer, freq)),
+        select only fnames corresponding to these atomics.
+        Make this and attribute of _Coadder, and call it in __init__.
+
         Given an obs_id, infer the file names of the corresponding atomic maps.
 
         Parameters
@@ -98,6 +118,23 @@ class _Coadder:
         if self.wafer is not None:
             query += f" AND wafer = '{self.wafer}'"
         result = cursor.execute(query).fetchall()
+
+        # Restrict list of atomics in atomic_db
+        if self.atomic_list is not None:
+            obs_ids = [k[0] for k in self.atomic_list]
+            if obs_id not in obs_ids:
+                if return_weights:
+                    return [], []
+                else:
+                    return []
+            else:
+                result_restricted = []
+                for o, w, f in self.atomic_list:
+                    for r in result:
+                        if o == obs_id and w == r[1] and f == r[2]:
+                            result_restricted.append(r)
+                result = result_restricted
+
         con.close()
         if return_weights:
             fnames = [
@@ -215,6 +252,10 @@ class Bundler(_Coadder):
             Output bundled hits map.
         """
         fnames = self._get_fnames(bundle_id, null_prop_val)
+        # DEBUG
+        print(
+            f"{len(list(set(fnames)))} atomic file names (bundle {bundle_id})"
+        )
         wmaps_list = [read_map(fname, pix_type=self.pix_type,
                                fields_hp=self.fields_hp)
                       for fname in fnames]
@@ -226,8 +267,10 @@ class Bundler(_Coadder):
         hits_list = [read_map(fname.replace("wmap", "hits"),
                               pix_type=self.pix_type)
                      for fname in fnames]
-        signal, hits = coadd_maps(wmaps_list, weights_list, hits_list,
-                                  pix_type=self.pix_type)
+        signal, hits = coadd_maps(
+            wmaps_list, weights_list, hits_list, pix_type=self.pix_type,
+            car_template_map=self.car_map_template
+        )
 
         return signal, hits
 
@@ -319,8 +362,9 @@ class SignFlipper(_Coadder):
         pm_one = np.random.choice([-1, 1])
         sign_list = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
 
-        signflip_noise = coadd_maps(maps_list, weights_list,
-                                    pix_type=self.pix_type,
-                                    sign_list=sign_list)
+        signflip_noise = coadd_maps(
+            maps_list, weights_list, pix_type=self.pix_type,
+            sign_list=sign_list, car_map_template=self.car_map_template
+        )
 
         return signflip_noise
