@@ -2,17 +2,28 @@ import argparse
 from coadder import Bundler
 import os
 import healpy as hp
+from pixell import enmap, enplot, reproject
 import numpy as np
 from coordinator import BundleCoordinator
 
 import matplotlib.pyplot as plt
 
 
+def car2healpix(norm_hits_map):
+    """
+    Tranforms an intensive spin-0 map (e.g. hits map normalized to maximum 1)
+    into a healpix map.
+    """
+    return reproject.map2healpix(norm_hits_map, spin=[0])
+
+
 def main(args):
     """
     """
-    if args.pix_type != "hp":
-        raise NotImplementedError("Only accepting hp as input for now.")
+    if args.pix_type not in ["hp", "car"]:
+        raise ValueError(
+            "Unknown pixel type, must be 'car' or 'hp'."
+        )
 
     if args.null_prop_val in ["None", "none", "science"]:
         args.null_prop_val = None
@@ -20,7 +31,9 @@ def main(args):
     out_dir = args.output_dir
     os.makedirs(out_dir, exist_ok=True)
 
-    if os.path.isfile(args.bundle_db):
+    car_map_template = args.car_map_template
+
+    if os.path.isfile(args.bundle_db) and args.overwrite is False:
         print(f"Loading from {args.bundle_db}.")
         bundle_coordinator = BundleCoordinator.from_dbfile(
             args.bundle_db, null_prop_val=args.null_prop_val
@@ -32,15 +45,23 @@ def main(args):
             seed=1234, null_props=["pwv", "elevation"]
         )
         bundle_coordinator.save_db(args.bundle_db)
-        print("Median PWV:", bundle_coordinator.null_props_stats["pwv"])
+
+    atomic_list = None
+    if args.atomic_list is not None:
+        atomic_list = np.load(args.atomic_list)["atomic_list"]
 
     bundler = Bundler(
         atomic_db=args.atomic_db,
         bundle_db=args.bundle_db,
         freq_channel=args.freq_channel,
         wafer=args.wafer,
-        pix_type=args.pix_type
+        pix_type=args.pix_type,
+        atomic_list=atomic_list,
+        car_map_template=car_map_template
     )
+
+    # DEBUG
+    print("len(bundler.atomic_list) =", len(bundler.atomic_list))
 
     bundle_ids = range(args.n_bundles)
 
@@ -58,40 +79,92 @@ def main(args):
             args.map_string_format.format(name_tag=name_tag,
                                           bundle_id=bundle_id)
         )
-        # FIXME: Generalize to CAR input
 
-        # HEALPix input
-        hp.write_map(out_fname, bundled_map, overwrite=True, dtype=np.float32)
-        hp.write_map(out_fname.replace("map.fits", "hits.fits"), hits_map,
-                     overwrite=True, dtype=np.float32)
-        for ip, p in enumerate(["Q", "U"]):
-            val = args.null_prop_val
-            label = "" if val is None else f", {val}"
-            hp.mollview(
-                bundled_map[ip+1]*1e6, cmap="RdYlBu_r",
-                title=f"{p} Bundle {bundle_id}{label}",
-                min=-100, max=100, unit=r"$\mu$K"
+        if args.pix_type == "car":
+            enmap.write_map(out_fname, bundled_map)
+            enmap.write_map(out_fname.replace("map.fits", "hits.fits"),
+                            hits_map)
+            plot = enplot.plot(
+                bundled_map*1e6, colorbar=True,
+                min=-100, max=100, ticks=10
             )
-            plt.savefig(out_fname.replace(".fits", f"{p}.png"))
+            enplot.write(
+                out_fname.replace(".fits", "_hits"),
+                enplot.plot(
+                    hits_map, colorbar=True,
+                    min=-1, max=1, ticks=10
+                )
+            )
+            enplot.write(
+                out_fname.replace(".fits", "_norm_hits"),
+                enplot.plot(
+                    hits_map/np.max(hits_map, axis=(0, 1)), colorbar=True,
+                    min=-1, max=1, ticks=10
+                )
+            )
+            hp.mollview(
+                car2healpix(hits_map/np.max(hits_map, axis=(0, 1))),
+                min=-1, max=1, title="Norm. hits", cmap="RdYlBu_r",
+            )
+            plt.savefig(out_fname.replace(".fits", "_norm_hits_hp.png"))
             plt.close()
+
+            for ip, p in enumerate(["Q", "U"]):
+                val = args.null_prop_val
+                label = "" if val is None else f", {val}"
+                enplot.write(
+                    out_fname.replace(".fits", f"{p}.png"),
+                    plot[ip+1]
+                )
+
+        elif args.pix_type == "hp":
+            hp.write_map(
+                out_fname, bundled_map, overwrite=True, dtype=np.float32
+            )
+            hp.write_map(
+                out_fname.replace("map.fits", "_norm_hits.fits"), hits_map,
+                overwrite=True, dtype=np.float32
+            )
+            for ip, p in enumerate(["Q", "U"]):
+                val = args.null_prop_val
+                label = "" if val is None else f", {val}"
+                hp.mollview(
+                    bundled_map[ip+1]*1e6, cmap="RdYlBu_r",
+                    title=f"{p} Bundle {bundle_id}{label}",
+                    min=-100, max=100, unit=r"$\mu$K"
+                )
+                plt.savefig(out_fname.replace(".fits", f"{p}.png"))
+                plt.close()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled maps")
     parser.add_argument("--bundle_db", help="Bundle database")
     parser.add_argument("--atomic_db", help="Atomic database")
+    parser.add_argument(
+        "--atomic_list",
+        help="List of atomic maps to optionally restrict the atomic_db",
+        default=None
+    )
     parser.add_argument("--freq_channel", help="Frequency channel")
     parser.add_argument("--wafer", help="Wafer", default=None)
     parser.add_argument("--n_bundles", help="Number of bundles", type=int,
                         required=True)
     parser.add_argument("--null_prop_val", help="Null property value",
                         default=None)
-    parser.add_argument("--pix_type", help="Pixel type, either hp or car",
+    parser.add_argument("--pix_type", help="Pixel type, either 'hp' or 'car'",
                         default="hp")
     parser.add_argument("--output_dir", help="Output directory")
     parser.add_argument("--map_string_format",
                         help="String formatting. Must contain {name_tag}"
                              " and {bundle_id}.")
+    parser.add_argument("--overwrite", type=bool, default=True,
+                        help="Overwrite bundle database in any case?")
+    parser.add_argument(
+        "--car_map_template",
+        help="path to CAR coadded (hits) map to be used as geometry template",
+        default=None
+    )
 
     args = parser.parse_args()
 
