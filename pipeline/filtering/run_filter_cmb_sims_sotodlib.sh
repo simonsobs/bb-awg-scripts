@@ -1,12 +1,11 @@
-null_split=science
-sim_ids=26,29
+null_split=science  # For null splits, replace "science" by "low_pwv" or "high_pwv"
+sim_ids=0,4  # A stable option is to loop over 5 sims and 2 bundles for each run
 freq_channel="f150"
-bundle_ids=(0)
+bundle_ids=(0 1)
 nside=512
 
 atomic_db="/pscratch/sd/r/rosenber/so_pwg/hp_mapmaker/satp1_241031/atomic_maps_satp1_241031.db"
 bundle_db="/global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/bundling/bundles_${null_split}.db"
-#bundle_db="/global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/bundling/bundles_science.db"
 preprocess_config="/global/cfs/cdirs/sobs/users/rosenber/preprocess/satp1_241031/minimal_preprocess.yaml"
 map_dir="/global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/cmb_sims"
 map_template="cmb_nside512_fwhm30.0_sim{sim_id:04d}.fits"

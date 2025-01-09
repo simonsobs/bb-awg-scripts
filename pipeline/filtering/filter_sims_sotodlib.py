@@ -11,10 +11,12 @@ import sotodlib.mapmaking.demod_mapmaker as dmm
 from sotodlib.mapmaking.noise_model import NmatUnit
 from sotodlib.core import Context
 from sotodlib.site_pipeline import preprocess_tod
+from sotodlib.coords import demod
+from pixell import enmap, utils
 from mpi4py import MPI
 
-sys.path.append("../bundling")
-sys.path.append("../misc")
+sys.path.append("/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/bundling")
+sys.path.append("/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/misc")
 from coordinator import BundleCoordinator  # noqa
 from mpi_utils import distribute_tasks  # noqa
 
@@ -89,6 +91,10 @@ def get_logger(fmt=None, datefmt=None, debug=False, **kwargs):
 def main(args):
     """
     """
+    if args.pix_type not in ["hp", "car"]:
+        raise ValueError(
+            "Unknown pixel type, must be 'car' or 'hp'."
+        )
 
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
@@ -112,10 +118,24 @@ def main(args):
     preprocess_config = args.preprocess_config
 
     # Sim related arguments
-    nside = args.nside  # FIXME: generalize to CAR adn/or HEALPix
     map_dir = args.map_dir
     map_template = args.map_template
     sim_ids = args.sim_ids
+
+    # Pixelization arguments
+    pix_type = args.pix_type
+    if pix_type == "hp":
+        nside = args.nside
+        mfmt = ".fits"  # TODO: fits.gz for HEALPix
+    elif pix_type == "car":
+        car_map_template = args.car_map_template
+        nside = None
+        mfmt = ".fits"
+
+    if pix_type == "car" and car_map_template is not None:
+        w = enmap.read_map(car_map_template)
+        # shape = w.shape[-2:]
+        wcs = w.wcs
 
     # Bundle query arguments
     freq_channel = args.freq_channel
@@ -124,26 +144,42 @@ def main(args):
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id - null split combination
-    bundle_db = BundleCoordinator.from_dbfile(
-        bundle_db, bundle_id=bundle_id, null_prop_val=null_prop
-    )
-    ctimes = bundle_db.get_ctimes(bundle_id=bundle_id, null_prop_val=null_prop)
-
-    # Extract list of atomic-map metadata (obs_id, wafer, freq_channel)
-    # for the observations defined above
-    atomic_metadata = []
-    db_con = sqlite3.connect(atom_db)
-    db_cur = db_con.cursor()
-    for ctime in ctimes:
-        res = db_cur.execute(
-            "SELECT obs_id, wafer FROM atomic WHERE "
-            f"freq_channel == '{freq_channel}' AND ctime == '{ctime}'"
+    if os.path.isfile(bundle_db) and not args.overwrite:
+        print(f"Loading from {bundle_db}.")
+        bundle_coordinator = BundleCoordinator.from_dbfile(
+            bundle_db, bundle_id=bundle_id, null_prop_val=null_prop
         )
-        res = res.fetchall()
-        for obs_id, wafer in res:
-            print("obs_id", obs_id, "wafer", wafer, freq_channel)
-            atomic_metadata.append((obs_id, wafer, freq_channel))
-    db_con.close()
+    else:
+        print(f"Writing to {args.bundle_db}.")
+        bundle_coordinator = BundleCoordinator(
+            atom_db, n_bundles=args.n_bundles,
+            seed=args.seed, null_props=["pwv", "elevation"]
+        )
+        bundle_coordinator.save_db(args.bundle_db)
+
+    ctimes = bundle_coordinator.get_ctimes(
+        bundle_id=bundle_id, null_prop_val=null_prop
+    )
+
+    # Read list of atomic-map metadata (obs_id, wafer, freq_channel) from file,
+    # or extract it for the observations defined above
+    # FIXME: Minimize number of parser arguments needed to run all stages.
+    if args.atomic_list is not None:
+        atomic_metadata = np.load(args.atomic_list)["atomic_list"]
+    else:
+        atomic_metadata = []
+        db_con = sqlite3.connect(atom_db)
+        db_cur = db_con.cursor()
+        for ctime in ctimes:
+            res = db_cur.execute(
+                "SELECT obs_id, wafer FROM atomic WHERE "
+                f"freq_channel == '{freq_channel}' AND ctime == '{ctime}'"
+            )
+            res = res.fetchall()
+            for obs_id, wafer in res:
+                print("obs_id", obs_id, "wafer", wafer, freq_channel)
+                atomic_metadata.append((obs_id, wafer, freq_channel))
+        db_con.close()
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
@@ -180,16 +216,16 @@ def main(args):
         map_fname = map_template.format(sim_id=sim_id)
         map_file = f"{map_dir}/{map_fname}"
 
-        # FIXME: CAR version
-        # sim = enmap.read_map(map_file)
-
-        # HEALPix version
-        sim = hp.read_map(map_file, field=[0, 1, 2])
+        try:
+            sim = enmap.read_map(map_file)
+        except ValueError:  # if map is not enmap
+            sim = hp.read_map(map_file, field=[0, 1, 2])
 
         log.info(f"***** Doing {obs_id} {wafer} {freq} "
                  f"and SIMULATION {sim_id} *****")
         dets = {"wafer_slot": wafer, "wafer.bandpass": freq}
         meta = ctx.get_meta(obs_id, dets=dets)
+
         # Missing pointing not cut in preprocessing
         meta.restrict(
             "dets", meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
@@ -208,17 +244,17 @@ def main(args):
         if aman.dets.count <= 1:
             continue
 
-        # FIXME: CAR version
-        # filtered_sim = demod.make_map(
-        #     aman,
-        #     res=10*utils.arcmin,
-        #     wcs_kernel=sim.wcs,
-        # )
-        # wmap, w = filtered_sim["weighted_map"], filtered_sim["weight"]
-        # w = np.moveaxis(w.diagonal(), -1, 0)
+        if pix_type == "car":
+            filtered_sim = demod.make_map(
+                aman,
+                res=10*utils.arcmin,
+                wcs_kernel=wcs,
+            )
+            wmap, w = filtered_sim["weighted_map"], filtered_sim["weight"]
+            w = np.moveaxis(w.diagonal(), -1, 0)
 
-        # HEALPix version
-        wmap, w = erik_make_map(aman, nside=nside, site="so_sat1")
+        elif pix_type == "hp":
+            wmap, w = erik_make_map(aman, nside=nside, site="so_sat1")
 
         local_wmaps.append(wmap)
         local_weights.append(w)
@@ -227,17 +263,23 @@ def main(args):
         # Saving filtered atomics to disk
         log.info(f"Rank {rank} saving labels {local_labels}")
         atomic_fname = map_template.format(sim_id=sim_id).replace(
-            ".fits",
-            f"_obsid{obs_id}_{wafer}_{freq_channel}.fits"
+            mfmt,
+            f"_obsid{obs_id}_{wafer}_{freq_channel}{mfmt}"
         )
-        hp.write_map(
-            f"{atomics_dir}/{atomic_fname.replace('.fits', '_wmap.fits')}",
-            wmap, dtype=np.float32, overwrite=True, nest=True
-        )
-        hp.write_map(
-            f"{atomics_dir}/{atomic_fname.replace('.fits', '_w.fits')}", w,
-            dtype=np.float32, overwrite=True, nest=True
-        )
+        f_wmap = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
+        f_w = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_w' + mfmt)}"
+
+        if pix_type == "car":
+            enmap.write_map(f_wmap, wmap)
+            enmap.write_map(f_w, w)
+
+        elif pix_type == "hp":
+            hp.write_map(
+                f_wmap, wmap, dtype=np.float32, overwrite=True, nest=True
+            )
+            hp.write_map(
+                f_w, w, dtype=np.float32, overwrite=True, nest=True
+            )
 
 
 if __name__ == "__main__":
@@ -249,9 +291,24 @@ if __name__ == "__main__":
         type=str
     )
     parser.add_argument(
+        "--atomic_list",
+        help="List of atomic maps to optionally restrict the atomic_db to",
+        default=None
+    )
+    parser.add_argument(
         "--bundle-db",
         help="Path to the bundle database",
         type=str
+    )
+    parser.add_argument(
+        "--overwrite", action="store_true",
+        help="Overwrite bundle database in any case?"
+    )
+    parser.add_argument(
+        "--n_bundles", help="Number of bundles", type=int
+    )
+    parser.add_argument(
+        "--seed", help="Random seed to reproduce bundling", type=int
     )
     parser.add_argument(
         "--preprocess-config",
@@ -296,6 +353,14 @@ if __name__ == "__main__":
         "--nside",
         help="Nside parameter for HEALPIX mapmaker",
         type=int, default=512
+    )
+    parser.add_argument(
+        "--pix_type", help="Pixelization type; 'hp' or 'car", default='hp'
+    )
+    parser.add_argument(
+        "--car_map_template",
+        help="path to CAR coadded (hits) map to be used as geometry template",
+        default=None
     )
 
     args = parser.parse_args()

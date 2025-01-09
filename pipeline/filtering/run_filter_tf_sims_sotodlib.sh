@@ -1,4 +1,4 @@
-null_split=science
+null_split=science  # For null splits, replace "science" by "low_pwv" or "high_pwv"
 sim_ids=0,4
 freq_channel="f150"
 bundle_id=0
@@ -25,8 +25,8 @@ do
         --output-directory ${output_directory} \
         --freq-channel ${freq_channel} \
         --bundle-id ${bundle_id} \
-        --nside ${nside}
-        #--null-prop ${null_split}
+        --nside ${nside} \
+        --null-prop ${null_split}
 
     time python coadd_filtered_sims.py \
         --atomic-db ${atomic_db} \
@@ -36,6 +36,6 @@ do
         --output-directory ${output_directory} \
         --freq-channel ${freq_channel} \
         --bundle-id ${bundle_id} \
-        --nside ${nside}
-        #--null-prop ${null_split}
+        --nside ${nside} \
+        --null-prop ${null_split}
 done
