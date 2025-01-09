@@ -18,8 +18,8 @@ def _check_pix_type(pix_type):
         raise ValueError(f"Unknown pixelisation type {pix_type}.")
 
 
-def read_map(map_file, pix_type='hp', fields_hp=None, convert_K_to_muK=False,
-             geometry=None, is_weights=False):
+def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
+             convert_K_to_muK=False, geometry=None, is_weights=False):
     """
     Read a map from a file, which can be either in HEALPix or CAR format.
 
@@ -31,6 +31,8 @@ def read_map(map_file, pix_type='hp', fields_hp=None, convert_K_to_muK=False,
         Pixellization type.
     fields_hp: tuple, optional
         Fields to read from a HEALPix map.
+    nest_hp: boolean
+        Optional; whether to assume nested ording for HEALPix maps.
     convert_K_to_muK: bool, optional
         Convert K to muK.
     geometry: enmap.geometry, optional
@@ -54,7 +56,7 @@ def read_map(map_file, pix_type='hp', fields_hp=None, convert_K_to_muK=False,
             num_fields = fits.getheader(map_file, 1)['TFIELDS']
             # Read only TT, QQ, UU weights
             fields_hp = (0, 4, 8) if (num_fields == 9) else (0, 1, 2)
-        kwargs = {"field": fields_hp} if fields_hp is not None else {}
+        kwargs = {"field": fields_hp, } if fields_hp is not None else {}
         m = hp.read_map(map_file, **kwargs)
     else:
         m = enmap.read_map(map_file, geometry=geometry)
@@ -93,7 +95,7 @@ def write_map(map_file, map, dtype=None, pix_type='hp',
 
 
 def _coadd_maps_car(maps_list, weights_list, hits_list=None, sign_list=None,
-                    res=10, dec_cut=(-75, 25)):
+                    res=10, template_map=None, dec_cut=None):  # (-75, 25)
     """
     Coadd a list of atomics maps in CAR format. See function `coadd_maps` for
     documentation.
@@ -107,11 +109,21 @@ def _coadd_maps_car(maps_list, weights_list, hits_list=None, sign_list=None,
     else:
         assert len(sign_list) == len(maps_list)
 
-    print("dec_cut", dec_cut)
-    template_geom = enmap.band_geometry(
-        (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
-        res=np.deg2rad(res/60)
-    )
+    if template_map is not None:
+        w = enmap.read_map(template_map)
+        _shape = w.shape[-2:]
+        geometry = (_shape, w.wcs)
+        template_geom = geometry
+        print("geometry", geometry)
+    elif dec_cut is not None:
+        print("dec_cut", dec_cut)
+        template_geom = enmap.band_geometry(
+            (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
+            res=np.deg2rad(res/60)
+        )
+    else:
+        raise ValueError("Either geometry or dec_cut required.")
+
     atom_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
     weight_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
     if hits_list is not None:
@@ -178,7 +190,8 @@ def _coadd_maps_hp(maps_list, weights_list, hits_list=None, sign_list=None):
 
 
 def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
-               pix_type="hp", res_car=10, dec_cut_car=(-75, 25)):
+               pix_type="hp", res_car=10, car_template_map=None,
+               dec_cut_car=None):
     """
     Coadd a list of weighted maps, a list of map weights, and
     (optionally) a list of hits maps corresponding to a set of atomics.
@@ -218,7 +231,7 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     elif pix_type == "car":
         return _coadd_maps_car(
             maps_list, weights_list, hits_list=hits_list, sign_list=sign_list,
-            res=res_car, dec_cut=dec_cut_car
+            res=res_car, template_map=car_template_map, dec_cut=dec_cut_car
         )
 
 
