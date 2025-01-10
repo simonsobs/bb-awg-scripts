@@ -22,10 +22,9 @@ class BundleCoordinator:
         seed: int
             Seed for the random number generator.
         null_props: list of str
-            List of properties that will be used to
-            separate the atomic maps into two groups
-            based on their median values.
-            e.g. ["pwv", ...]
+            List of (inter-observation null test) properties
+            that will be used to separate the atomic maps into two groups
+            based on their median values, e.g. ["pwv", ...]
         """
         if atomic_db is not None:
             self.atomic_db = sqlite3.connect(atomic_db)
@@ -42,7 +41,6 @@ class BundleCoordinator:
             if null_props is not None:
                 self.null_props_stats = {}
                 for null_prop in null_props:
-                    print("Selected prop: ",null_prop)
                     if null_prop in db_props:
                         self.to_query[null_prop] = "TEXT"
                     else:
@@ -52,13 +50,14 @@ class BundleCoordinator:
                     res = np.asarray(
                         cursor.execute(query).fetchall()
                     ).flatten()
-                    #print(res)
-                    if np.all(res == None):
-                        raise ValueError(f"All values for property {null_prop} are None.")
+                    if np.all(res == None):  # noqa
+                        raise ValueError(
+                            f"All values for property {null_prop} are None."
+                        )
                     if np.issubdtype(res.dtype, np.number):
                         self.null_props_stats[null_prop] = np.median(res)
                     elif np.issubdtype(res.dtype, np.str_):
-                        self.null_props_stats[null_prop] = np.unique(res).tolist()
+                        self.null_props_stats[null_prop] = np.unique(res).tolist()  # noqa
 
             query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic"
             res = np.asarray(cursor.execute(query).fetchall())
@@ -119,7 +118,6 @@ class BundleCoordinator:
             raise ValueError("Query returned no results.")
 
         for i, prop in enumerate(db_props):
-            #print(i, prop)
             setattr(bundle_coord, prop, results[:, i])
 
         return bundle_coord
@@ -181,13 +179,17 @@ class BundleCoordinator:
             dbrow = []
             for id_prop, prop in enumerate(self.to_query):
                 if prop in self.null_props_stats:
-                    if np.issubdtype(type(row[id_prop]), np.number):
-                        if np.float64(row[id_prop]) <= self.null_props_stats[prop]:
+                    try:
+                        val = np.float64(row[id_prop])
+                    except:  # noqa
+                        val = row[id_prop]
+                    if np.issubdtype(type(val), np.number):
+                        if val <= self.null_props_stats[prop]:
                             null_name = f"low_{prop}"
                         else:
                             null_name = f"high_{prop}"
                     else:
-                        null_name = row[id_prop]
+                        null_name = val
                     dbrow.append(null_name)
                 else:
                     dbrow.append(row[id_prop])
