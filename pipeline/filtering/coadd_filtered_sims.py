@@ -6,8 +6,8 @@ import os
 import sys
 import matplotlib.pyplot as plt
 
-sys.path.append("../bundling")
-sys.path.append("../misc")
+sys.path.append("/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/bundling")
+sys.path.append("/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/misc")
 from coordinator import BundleCoordinator  # noqa
 
 
@@ -88,8 +88,18 @@ def main(args):
                 f"{atomics_dir}/{atomic_fname.replace('.fits', f'_{s}.fits')}"
                 for s in ("wmap", "w")
             )
+
+            # Observations can vanish if the FP thinning and the detector cuts
+            # conspire such that no detectors are left. Since this is a rare
+            # case, it is acceptable to just ignor those when coadding.
+            if not (os.path.isfile(fname_wmap) and os.path.isfile(fname_w)):
+                print(f"WARNING: {obs_id}_{wafer}_{freq_channel} is missing. "
+                      "SKIPPING in coadder.")
+                continue
+
             coadd_wmap += hp.read_map(fname_wmap, field=range(3), nest=True)
             coadd_w += hp.read_map(fname_w, field=range(3), nest=True)
+
             os.remove(fname_wmap)
             os.remove(fname_w)
 

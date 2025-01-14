@@ -6,6 +6,7 @@ import sqlite3
 import os
 import yaml
 import sys
+import time
 import sotodlib.mapmaking.demod_mapmaker as dmm
 
 from sotodlib.mapmaking.noise_model import NmatUnit
@@ -13,8 +14,8 @@ from sotodlib.core import Context
 from sotodlib.site_pipeline import preprocess_tod
 from mpi4py import MPI
 
-sys.path.append("../bundling")
-sys.path.append("../misc")
+sys.path.append("/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/bundling")
+sys.path.append("/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/misc")
 from coordinator import BundleCoordinator  # noqa
 from mpi_utils import distribute_tasks  # noqa
 
@@ -176,7 +177,7 @@ def main(args):
     local_labels = []
 
     for sim_id, (obs_id, wafer, freq) in local_mpi_list:
-
+        start = time.time()
         map_fname = map_template.format(sim_id=sim_id)
         map_file = f"{map_dir}/{map_fname}"
 
@@ -190,10 +191,19 @@ def main(args):
                  f"and SIMULATION {sim_id} *****")
         dets = {"wafer_slot": wafer, "wafer.bandpass": freq}
         meta = ctx.get_meta(obs_id, dets=dets)
+
+        # Focal plane thinning
+        if args.fp_thin is not None:
+            fp_thin = int(args.fp_thin)
+            thinned = [m for im, m in enumerate(meta.dets.vals)
+                       if im % fp_thin == 0]
+            meta.restrict("dets", thinned)
+
         # Missing pointing not cut in preprocessing
         meta.restrict(
             "dets", meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
         )
+
         aman = preprocess_tod.load_preprocess_tod_sim(
             obs_id,
             sim_map=sim,
@@ -238,6 +248,8 @@ def main(args):
             f"{atomics_dir}/{atomic_fname.replace('.fits', '_w.fits')}", w,
             dtype=np.float32, overwrite=True, nest=True
         )
+        end = time.time()
+        print(f"*** ELAPSED TIME for filtering: {end - start} seconds. ***")
 
 
 if __name__ == "__main__":
@@ -296,6 +308,11 @@ if __name__ == "__main__":
         "--nside",
         help="Nside parameter for HEALPIX mapmaker",
         type=int, default=512
+    )
+    parser.add_argument(
+        "--fp-thin",
+        help="Focal plane thinning factor",
+        default=None
     )
 
     args = parser.parse_args()
