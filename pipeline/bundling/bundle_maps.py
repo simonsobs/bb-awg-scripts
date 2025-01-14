@@ -20,7 +20,7 @@ def main(args):
     out_dir = args.output_dir
     os.makedirs(out_dir, exist_ok=True)
 
-    if os.path.isfile(args.bundle_db):
+    if os.path.isfile(args.bundle_db) and not args.overwrite:
         print(f"Loading from {args.bundle_db}.")
         bundle_coordinator = BundleCoordinator.from_dbfile(
             args.bundle_db,
@@ -30,9 +30,12 @@ def main(args):
         print(f"Writing to {args.bundle_db}.")
         bundle_coordinator = BundleCoordinator(
             args.atomic_db, n_bundles=args.n_bundles,
-            seed=1234, null_props=["pwv", "elevation"]
+            seed=args.seed, null_props=args.null_props
         )
         bundle_coordinator.save_db(args.bundle_db)
+
+    if args.only_make_db:
+        return
 
     bundler = Bundler(
         atomic_db=args.atomic_db,
@@ -105,6 +108,15 @@ if __name__ == "__main__":
     parser.add_argument("--map_string_format",
                         help="String formatting. Must contain {name_tag}"
                              " and {bundle_id}.")
+    parser.add_argument("--seed", help="Pixel type, either hp or car",
+                        type=int, default=1234)
+    parser.add_argument("--null_props", nargs="*", default=None,
+                        help="Null properties for bundling database, e.g. "
+                             "'pwv'")
+    parser.add_argument("--only_make_db", action="store_true",
+                        help="Only make bundling database; don't bundle maps.")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Overwrite database if exists.")
 
     args = parser.parse_args()
 
