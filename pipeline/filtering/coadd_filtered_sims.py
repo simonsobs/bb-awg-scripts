@@ -32,7 +32,7 @@ def main(args):
     bundle_db = args.bundle_db
 
     # Sim related arguments
-    map_template = args.map_template
+    map_string_format = args.map_string_format
     sim_ids = args.sim_ids
 
     # Pixelization arguments
@@ -57,15 +57,21 @@ def main(args):
 
     # Bundle query arguments
     freq_channel = args.freq_channel
-    null_prop = args.null_prop
+    null_prop_val_inter_obs = args.null_prop_val_inter_obs
     bundle_id = args.bundle_id
+    if args.split_label_intra_obs is not None:
+        raise NotImplementedError(
+            "Intra-obs splits have not been implemented yet."
+        )
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id - null split combination
     bundle_db = BundleCoordinator.from_dbfile(
-        bundle_db, bundle_id=bundle_id, null_prop_val=null_prop
+        bundle_db, bundle_id=bundle_id, null_prop_val=null_prop_val_inter_obs
     )
-    ctimes = bundle_db.get_ctimes(bundle_id=bundle_id, null_prop_val=null_prop)
+    ctimes = bundle_db.get_ctimes(
+        bundle_id=bundle_id, null_prop_val=null_prop_val_inter_obs
+    )
 
     # Extract list of atomic-map metadata (obs_id, wafer, freq_channel)
     # for the observations defined above
@@ -99,7 +105,7 @@ def main(args):
     #     for id, (obs_id, wafer, freq_channel) in enumerate(atomic_metadata):
     #         if id % 10 == 0:
     #             print("    id", id)
-    #         atomic_fname = map_template.format(sim_id=sim_id).replace(
+    #         atomic_fname = map_string_format.format(sim_id=sim_id).replace(
     #             ".fits",
     #             f"_obsid{obs_id}_{wafer}_{freq_channel}.fits"
     #         )
@@ -123,13 +129,22 @@ def main(args):
         for id, (obs_id, wafer, freq_channel) in enumerate(atomic_metadata):
             if id % 10 == 0:
                 print("    id", id)
-            atomic_fname = map_template.format(sim_id=sim_id).replace(
+            atomic_fname = map_string_format.format(sim_id=sim_id).replace(
                 mfmt, f"_obsid{obs_id}_{wafer}_{freq_channel}{mfmt}"
             )
             fname_wmap, fname_w = (
                 f"{atomics_dir}/{atomic_fname.replace(mfmt, f'_{s}{mfmt}')}"
                 for s in ("wmap", "w")
             )
+
+            # Observations can vanish if the FP thinning and the detector cuts
+            # conspire such that no detectors are left. Since this is a rare
+            # case, it is acceptable to just ignore those when coadding.
+            if not (os.path.isfile(fname_wmap) and os.path.isfile(fname_w)):
+                print(f"WARNING: {obs_id}_{wafer}_{freq_channel} is missing. "
+                      "SKIPPING in coadder.")
+                continue
+
             if pix_type == "car":
                 wmap = enmap.read_map(fname_wmap)
                 w = enmap.read_map(fname_w)
@@ -149,7 +164,7 @@ def main(args):
             car_template_map=car_template_map
         )
 
-        out_fname = map_template.format(sim_id=sim_id).replace(
+        out_fname = map_string_format.format(sim_id=sim_id).replace(
             ".fits", f"_bundle{bundle_id}_filtered.fits"
         )
         out_file = f"{out_dir}/{out_fname}"
@@ -190,28 +205,25 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--atomic-db",
-        help="Path to the atomic maps database",
+        help="Path to the atomic maps database.",
         type=str
     )
     parser.add_argument(
         "--bundle-db",
-        help="Path to the bundle database",
+        help="Path to the bundling database.",
         type=str
     )
     parser.add_argument(
-        "--map-template",
-        help="Template file for the map to filter",
-        type=str
+        "--map_string_format",
+        help="String formatting; must contain {sim_id}."
     )
     parser.add_argument(
         "--sim-ids",
-        help="Comma separated list of simulation ids",
-        type=str
+        help="String of format 'sim_id_min,sim_id_max', or only 'sim_id'."
     )
     parser.add_argument(
         "--output-directory",
-        help="Output directory for the filtered maps",
-        type=str
+        help="Output directory for the filtered maps."
     )
     parser.add_argument(
         "--freq-channel",
@@ -223,8 +235,13 @@ if __name__ == "__main__":
         help="Bundle ID to filter",
     )
     parser.add_argument(
-        "--null-prop",
-        help="Null property to filter",
+        "--null_prop_val_inter_obs",
+        help="Null property value for inter-obs splits, e.g. 'pwv_low'.",
+        default=None
+    )
+    parser.add_argument(
+        "--split_label_intra_obs",
+        help="Split label for intra-obs splits, e.g. 'scans_left'.",
         default=None
     )
     parser.add_argument(
@@ -234,12 +251,14 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--nside",
-        help="Nside parameter for HEALPIX mapmaker",
-        type=int, default=512
+        help="Nside parameter for HEALPIX mapmaker.",
+        type=int,
+        default=512
     )
     parser.add_argument(
-        "--car_template_map", default=None,
-        help="CAR map used to get the geometry for the coadded maps",
+        "--car_template_map",
+        default=None,
+        help="CAR map used to get the geometry for the coadded CAR maps."
     )
 
     args = parser.parse_args()

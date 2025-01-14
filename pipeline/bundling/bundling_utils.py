@@ -59,6 +59,7 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
         kwargs = {"field": fields_hp, } if fields_hp is not None else {}
         m = hp.read_map(map_file, **kwargs)
     else:
+        # print(map_file)
         m = enmap.read_map(map_file, geometry=geometry)
         if is_weights:
             # Read only TT, QQ, UU weights
@@ -124,22 +125,48 @@ def _coadd_maps_car(maps_list, weights_list, hits_list=None, sign_list=None,
     else:
         raise ValueError("Either geometry or dec_cut required.")
 
+    shape, wcs = template_geom
     atom_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
     weight_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
+
     if hits_list is not None:
-        hits_coadd = enmap.zeros(*template_geom)
+        hits_coadd = enmap.zeros(shape, wcs=wcs)
 
     for i, (atom, weight) in enumerate(zip(maps_list, weights_list)):
-        atom_coadd = enmap.insert(atom_coadd, atom * float(sign_list[i]),
-                                  op=np.ndarray.__iadd__)
-        weight_coadd = enmap.insert(weight_coadd, weight,
-                                    op=np.ndarray.__iadd__)
-        if hits_list is not None:
-            hits_coadd = enmap.insert(hits_coadd, np.squeeze(hits_list[i]),
-                                      op=np.ndarray.__iadd__)
+        # atom_coadd = enmap.insert(atom_coadd, atom * float(sign_list[i]),
+        #                           op=np.ndarray.__iadd__)
+        # weight_coadd = enmap.insert(weight_coadd, weight,
+        #                             op=np.ndarray.__iadd__)
+        # if hits_list is not None:
+        #     hits_coadd = enmap.insert(hits_coadd, np.squeeze(hits_list[i]),
+        #                               op=np.ndarray.__iadd__)
+        # m_ = enmap.read_map(atom) #* abfac
+        m_ = atom  # * abfac
+        mask = np.isfinite(m_)
+        m_[~mask] = 0.0
+        m_ = enmap.extract(m_, shape, wcs)
 
-    # Cut zero-weight pixels
-    weight_coadd[weight_coadd == 0] = np.inf
+        # ivar = enmap.read_map(weight)
+        ivar = weight
+        mask = np.isfinite(ivar)
+        ivar[~mask] = 0.0
+        ivar = enmap.extract(ivar, shape, wcs)
+        # ivar2 = ivar * abfac
+
+        if hits_list is not None:
+            # hits = enmap.read_map(hits_list[i])
+            hits = hits_list[i]
+            mask = np.isfinite(hits)
+            hits[~mask] = 0.0
+            hits = enmap.extract(hits, shape, wcs)
+            hits_coadd += hits
+
+        atom_coadd += m_
+        weight_coadd += ivar
+        # weight_coadd_kcmb += ivar2
+
+    # # Cut zero-weight pixels
+    # weight_coadd[weight_coadd == 0] = np.inf
     atom_coadd /= weight_coadd
 
     if hits_list is not None:

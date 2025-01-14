@@ -6,6 +6,7 @@ import sqlite3
 import os
 import yaml
 import sys
+import time
 import sotodlib.mapmaking.demod_mapmaker as dmm
 
 from sotodlib.mapmaking.noise_model import NmatUnit
@@ -212,7 +213,7 @@ def main(args):
     local_labels = []
 
     for sim_id, (obs_id, wafer, freq) in local_mpi_list:
-
+        start = time.time()
         map_fname = map_template.format(sim_id=sim_id)
         map_file = f"{map_dir}/{map_fname}"
 
@@ -226,10 +227,18 @@ def main(args):
         dets = {"wafer_slot": wafer, "wafer.bandpass": freq}
         meta = ctx.get_meta(obs_id, dets=dets)
 
+        # Focal plane thinning
+        if args.fp_thin is not None:
+            fp_thin = int(args.fp_thin)
+            thinned = [m for im, m in enumerate(meta.dets.vals)
+                       if im % fp_thin == 0]
+            meta.restrict("dets", thinned)
+
         # Missing pointing not cut in preprocessing
         meta.restrict(
             "dets", meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
         )
+
         aman = preprocess_tod.load_preprocess_tod_sim(
             obs_id,
             sim_map=sim,
@@ -280,6 +289,8 @@ def main(args):
             hp.write_map(
                 f_w, w, dtype=np.float32, overwrite=True, nest=True
             )
+        end = time.time()
+        print(f"*** ELAPSED TIME for filtering: {end - start} seconds. ***")
 
 
 if __name__ == "__main__":
@@ -287,43 +298,44 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--atomic-db",
-        help="Path to the atomic maps database",
-        type=str
+        help="Path to the atomic maps database."
     )
     parser.add_argument(
         "--atomic_list",
-        help="List of atomic maps to optionally restrict the atomic_db to",
+        help="Npz file with list of atomic maps to restrict the atomic_db to.",
         default=None
     )
     parser.add_argument(
         "--bundle-db",
-        help="Path to the bundle database",
-        type=str
+        help="Path to the bundling database."
     )
     parser.add_argument(
-        "--overwrite", action="store_true",
+        "--overwrite",
+        action="store_true",
         help="Overwrite bundle database in any case?"
     )
     parser.add_argument(
-        "--n_bundles", help="Number of bundles", type=int
+        "--n_bundles",
+        help="Number of bundles.",
+        type=int
     )
     parser.add_argument(
-        "--seed", help="Random seed to reproduce bundling", type=int
+        "--seed",
+        help="Random seed to reproduce bundling.",
+        default=1234,
+        type=int
     )
     parser.add_argument(
         "--preprocess-config",
-        help="Path to the preprocessing config file",
-        type=str
+        help="Path to the preprocessing config file."
     )
     parser.add_argument(
         "--map-dir",
-        help="Directory containing the maps to filter",
-        type=str
+        help="Directory containing the maps to filter."
     )
     parser.add_argument(
         "--map-template",
-        help="Template file for the map to filter",
-        type=str
+        help="Template file for the map to filter."
     )
     parser.add_argument(
         "--sim-ids",
@@ -355,14 +367,19 @@ if __name__ == "__main__":
         type=int, default=512
     )
     parser.add_argument(
-        "--pix_type", help="Pixelization type; 'hp' or 'car", default='hp'
+        "--pix_type",
+        help="Pixelization type; 'hp' or 'car",
+        default='hp'
     )
     parser.add_argument(
         "--car_map_template",
-        help="path to CAR coadded (hits) map to be used as geometry template",
+        help="path to CAR coadded (hits) map to be used as geometry template"
+    )
+    parser.add_argument(
+        "--fp-thin",
+        help="Focal plane thinning factor",
         default=None
     )
 
     args = parser.parse_args()
-
     main(args)
