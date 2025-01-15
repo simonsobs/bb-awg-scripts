@@ -12,6 +12,7 @@ import sotodlib.mapmaking.demod_mapmaker as dmm
 from sotodlib.mapmaking.noise_model import NmatUnit
 from sotodlib.core import Context
 from sotodlib.site_pipeline import preprocess_tod
+from sotodlib.core.metadata import loader
 from sotodlib.coords import demod
 from pixell import enmap, utils
 from mpi4py import MPI
@@ -112,7 +113,6 @@ def main(args):
     os.makedirs(atomics_dir, exist_ok=True)
 
     # Databases
-    atom_db = args.atomic_db
     bundle_db = args.bundle_db
 
     # Config files
@@ -120,7 +120,7 @@ def main(args):
 
     # Sim related arguments
     map_dir = args.map_dir
-    map_template = args.map_template
+    map_string_format = args.map_string_format
     sim_ids = args.sim_ids
 
     # Pixelization arguments
@@ -140,36 +140,35 @@ def main(args):
 
     # Bundle query arguments
     freq_channel = args.freq_channel
-    null_prop = args.null_prop
+    null_prop_val_inter_obs = args.null_prop_val_inter_obs
     bundle_id = args.bundle_id
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id - null split combination
-    if os.path.isfile(bundle_db) and not args.overwrite:
+    if os.path.isfile(bundle_db):
         print(f"Loading from {bundle_db}.")
         bundle_coordinator = BundleCoordinator.from_dbfile(
-            bundle_db, bundle_id=bundle_id, null_prop_val=null_prop
+            bundle_db, bundle_id=bundle_id,
+            null_prop_val=null_prop_val_inter_obs
         )
     else:
-        print(f"Writing to {args.bundle_db}.")
-        bundle_coordinator = BundleCoordinator(
-            atom_db, n_bundles=args.n_bundles,
-            seed=args.seed, null_props=["pwv", "elevation"]
-        )
-        bundle_coordinator.save_db(args.bundle_db)
+        raise ValueError(f"DB file does not exist: {bundle_db}")
 
     ctimes = bundle_coordinator.get_ctimes(
-        bundle_id=bundle_id, null_prop_val=null_prop
+        bundle_id=bundle_id, null_prop_val=null_prop_val_inter_obs
     )
 
     # Read list of atomic-map metadata (obs_id, wafer, freq_channel) from file,
-    # or extract it for the observations defined above
-    # FIXME: Minimize number of parser arguments needed to run all stages.
+    # or extract it for the observations defined above.
+
+    # FIXME: If an atomic map from atomic_list is not listed in bundle_db, this
+    # is currently only caught when trying to load_preprocess_tod_sim().
+    # We should exclude this case earlier.
     if args.atomic_list is not None:
         atomic_metadata = np.load(args.atomic_list)["atomic_list"]
     else:
         atomic_metadata = []
-        db_con = sqlite3.connect(atom_db)
+        db_con = sqlite3.connect(args.atom_db)
         db_cur = db_con.cursor()
         for ctime in ctimes:
             res = db_cur.execute(
@@ -214,7 +213,7 @@ def main(args):
 
     for sim_id, (obs_id, wafer, freq) in local_mpi_list:
         start = time.time()
-        map_fname = map_template.format(sim_id=sim_id)
+        map_fname = map_string_format.format(sim_id=sim_id)
         map_file = f"{map_dir}/{map_fname}"
 
         try:
@@ -238,17 +237,22 @@ def main(args):
         meta.restrict(
             "dets", meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
         )
-
-        aman = preprocess_tod.load_preprocess_tod_sim(
-            obs_id,
-            sim_map=sim,
-            configs=config,
-            meta=meta,
-            modulated=True,
-            site="so_sat1",  # new field required from new from_map function
-            ordering="RING"  # new field required for healpix
-        )
-        log.info(f"Loaded {obs_id}, {wafer}, {freq}")
+        try:
+            # FIXME: see fixme item above related to atomic_list.
+            aman = preprocess_tod.load_preprocess_tod_sim(
+                obs_id,
+                sim_map=sim,
+                configs=config,
+                meta=meta,
+                modulated=True,
+                site="so_sat1",  # new field required from new from_map()
+                ordering="RING"  # new field required for healpix
+            )
+            log.info(f"Loaded {obs_id}, {wafer}, {freq}")
+        except loader.LoaderError:
+            print(f"ERROR: {obs_id} {wafer} {freq} metadata is not there. "
+                  "SKIPPING.")
+            continue
 
         if aman.dets.count <= 1:
             continue
@@ -271,7 +275,7 @@ def main(args):
 
         # Saving filtered atomics to disk
         log.info(f"Rank {rank} saving labels {local_labels}")
-        atomic_fname = map_template.format(sim_id=sim_id).replace(
+        atomic_fname = map_string_format.format(sim_id=sim_id).replace(
             mfmt,
             f"_obsid{obs_id}_{wafer}_{freq_channel}{mfmt}"
         )
@@ -310,22 +314,6 @@ if __name__ == "__main__":
         help="Path to the bundling database."
     )
     parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite bundle database in any case?"
-    )
-    parser.add_argument(
-        "--n_bundles",
-        help="Number of bundles.",
-        type=int
-    )
-    parser.add_argument(
-        "--seed",
-        help="Random seed to reproduce bundling.",
-        default=1234,
-        type=int
-    )
-    parser.add_argument(
         "--preprocess-config",
         help="Path to the preprocessing config file."
     )
@@ -334,37 +322,35 @@ if __name__ == "__main__":
         help="Directory containing the maps to filter."
     )
     parser.add_argument(
-        "--map-template",
-        help="Template file for the map to filter."
+        "--map_string_format",
+        help="String formatting; must contain {sim_id}."
     )
     parser.add_argument(
         "--sim-ids",
-        help="Comma separated list of simulation ids",
-        type=str
+        help="String of format 'sim_id_min,sim_id_max', or only 'sim_id'."
     )
     parser.add_argument(
         "--output-directory",
-        help="Output directory for the filtered maps",
-        type=str
+        help="Output directory for the filtered maps."
     )
     parser.add_argument(
         "--freq-channel",
-        help="Frequency channel to filter",
-        type=str
+        help="Frequency channel to filter."
     )
     parser.add_argument(
         "--bundle-id",
-        help="Bundle ID to filter",
+        help="Bundle ID to filter.",
     )
     parser.add_argument(
-        "--null-prop",
-        help="Null property to filter",
+        "--null_prop_val_inter_obs",
+        help="Null property value for inter-obs splits, e.g. 'pwv_low'.",
         default=None
     )
     parser.add_argument(
         "--nside",
-        help="Nside parameter for HEALPIX mapmaker",
-        type=int, default=512
+        help="Nside parameter for HEALPIX mapmaker.",
+        type=int,
+        default=512
     )
     parser.add_argument(
         "--pix_type",
@@ -373,7 +359,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--car_map_template",
-        help="path to CAR coadded (hits) map to be used as geometry template"
+        help="path to CAR coadded (hits) map to be used as geometry template",
+        default=None
     )
     parser.add_argument(
         "--fp-thin",
