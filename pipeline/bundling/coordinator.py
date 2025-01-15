@@ -4,7 +4,7 @@ import sqlite3
 
 class BundleCoordinator:
     def __init__(self, atomic_db=None, n_bundles=None, seed=None,
-                 null_props=None):
+                 null_props=None, bundle_id=None):
         """
         Constructor for the BundleCoordinator class.
         If no atomic database path is provided, the
@@ -37,6 +37,9 @@ class BundleCoordinator:
             print("Available info atomic_maps.db: ", db_props)
             self.to_query = {"obs_id": "INTEGER",
                              "ctime": "INTEGER"}
+
+            self.bundle_id = bundle_id
+            self.null_props_stats = None
 
             if null_props is not None:
                 self.null_props_stats = {}
@@ -118,7 +121,14 @@ class BundleCoordinator:
             raise ValueError("Query returned no results.")
 
         for i, prop in enumerate(db_props):
-            setattr(bundle_coord, prop, results[:, i])
+            if prop == "bundle_id":
+                setattr(bundle_coord, "bundle_ids", results[:, i])
+            else:
+                setattr(bundle_coord, prop, results[:, i])
+
+        # bundle_coord.to_query = db_props
+        bundle_coord.relevant_props = results
+        bundle_coord.n_bundles = len(list(set(bundle_coord.bundle_ids)))
 
         return bundle_coord
 
@@ -143,7 +153,7 @@ class BundleCoordinator:
     def get_ctimes(self, bundle_id, null_prop_val=None):
         """
         """
-        filter = (self.bundle_id == bundle_id)
+        filter = (self.bundle_ids == bundle_id)
         ctimes = self.ctime[filter]
         if null_prop_val not in [None, "science"]:
             name_prop = null_prop_val.split("_")[1]
@@ -178,21 +188,23 @@ class BundleCoordinator:
         for id_row, row in enumerate(self.shuffled_props):
             dbrow = []
             for id_prop, prop in enumerate(self.to_query):
-                if prop in self.null_props_stats:
+                null_stats = self.null_props_stats
+                if null_stats is None or prop not in null_stats:
+                    dbrow.append(row[id_prop])
+                else:
                     try:
                         val = np.float64(row[id_prop])
                     except:  # noqa
                         val = row[id_prop]
                     if np.issubdtype(type(val), np.number):
-                        if val <= self.null_props_stats[prop]:
+                        if val <= null_stats[prop]:
                             null_name = f"low_{prop}"
                         else:
                             null_name = f"high_{prop}"
                     else:
                         null_name = val
                     dbrow.append(null_name)
-                else:
-                    dbrow.append(row[id_prop])
+
             dbrow.append(int(self.bundle_ids[id_row]))
             db_data.append(dbrow)
 
