@@ -158,7 +158,7 @@ def _coadd_maps_car(maps_list, weights_list, hits_list=None, sign_list=None,
             hits = hits_list[i]
             mask = np.isfinite(hits)
             hits[~mask] = 0.0
-            hits = enmap.extract(hits, shape, wcs)
+            hits = np.squeeze(enmap.extract(hits, shape, wcs))
             hits_coadd += hits
 
         atom_coadd += m_

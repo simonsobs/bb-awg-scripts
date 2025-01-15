@@ -64,29 +64,30 @@ def main(args):
         car_map_template=car_map_template
     )
 
-    # DEBUG
-    print("len(bundler.atomic_list) =", len(bundler.atomic_list))
-
     bundle_ids = range(args.n_bundles)
 
     for bundle_id in bundle_ids:
         print(" - bundle_id", bundle_id)
+        split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
+                                            args.null_prop_val_inter_obs)
         bundled_map, hits_map = bundler.bundle(
             bundle_id,
-            split_label=args.split_label_intra_obs,
-            null_prop_val=args.null_prop_val_inter_obs
+            split_label=split_intra_obs,
+            null_prop_val=split_inter_obs
         )
-        if args.null_prop_val_inter_obs is not None:
-            name_tag = f"{args.freq_channel}_{args.null_prop_val_inter_obs}"
-        elif args.split_label_intra_obs is not None:
-            name_tag = f"{args.freq_channel}_{args.split_label_intra_obs}"
-        elif (args.null_prop_val_inter_obs is not None and
-              args.split_label_intra_obs is not None):
+
+        # Map naming convention
+        if (split_intra_obs, split_inter_obs) == (None, None):
+            name_tag = f"{args.freq_channel}_science"
+        elif (split_intra_obs is not None) and (split_inter_obs is not None):
             raise ValueError(
                 "Both split types cannot be selected at the same time."
             )
-        else:
-            name_tag = f"{args.freq_channel}_science"
+        elif split_intra_obs is not None:
+            name_tag = f"{args.freq_channel}_{split_intra_obs}"
+        elif split_inter_obs is not None:
+            name_tag = f"{args.freq_channel}_{split_inter_obs}"
+
         out_fname = os.path.join(
             out_dir,
             args.map_string_format.format(name_tag=name_tag,
@@ -116,8 +117,6 @@ def main(args):
                 )
             )
             for ip, p in enumerate(["Q", "U"]):
-                val = args.null_prop_val
-                label = "" if val is None else f", {val}"
                 enplot.write(
                     out_fname.replace(".fits", f"{p}.png"),
                     plot[ip+1]
@@ -132,11 +131,9 @@ def main(args):
                 overwrite=True, dtype=np.float32
             )
             for ip, p in enumerate(["Q", "U"]):
-                val = args.null_prop_val
-                label = "" if val is None else f", {val}"
                 hp.mollview(
                     bundled_map[ip+1]*1e6, cmap="RdYlBu_r",
-                    title=f"{p} Bundle {bundle_id}{label}",
+                    title=f"{p} Bundle {bundle_id} {name_tag}",
                     min=-100, max=100, unit=r"$\mu$K"
                 )
                 plt.savefig(out_fname.replace(".fits", f"{p}.png"))
