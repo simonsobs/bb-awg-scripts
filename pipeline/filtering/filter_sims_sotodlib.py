@@ -114,6 +114,7 @@ def main(args):
 
     # Databases
     bundle_db = args.bundle_db
+    atom_db = args.atomic_db
 
     # Config files
     preprocess_config = args.preprocess_config
@@ -158,28 +159,35 @@ def main(args):
         bundle_id=bundle_id, null_prop_val=null_prop_val_inter_obs
     )
 
-    # Read list of atomic-map metadata (obs_id, wafer, freq_channel) from file,
-    # or extract it for the observations defined above.
-
-    # FIXME: If an atomic map from atomic_list is not listed in bundle_db, this
-    # is currently only caught when trying to load_preprocess_tod_sim().
-    # We should exclude this case earlier.
+    # Read restrictive list of atomic-map metadata
+    # (obs_id, wafer, freq_channel) from file, and intersect it with the
+    # metadata in the bundling database.
+    atomic_restrict = []
     if args.atomic_list is not None:
-        atomic_metadata = np.load(args.atomic_list)["atomic_list"]
-    else:
-        atomic_metadata = []
-        db_con = sqlite3.connect(args.atom_db)
-        db_cur = db_con.cursor()
-        for ctime in ctimes:
-            res = db_cur.execute(
-                "SELECT obs_id, wafer FROM atomic WHERE "
-                f"freq_channel == '{freq_channel}' AND ctime == '{ctime}'"
-            )
-            res = res.fetchall()
-            for obs_id, wafer in res:
-                print("obs_id", obs_id, "wafer", wafer, freq_channel)
+        atomic_restrict = list(
+            map(tuple, np.load(args.atomic_list)["atomic_list"])
+        )
+
+    atomic_metadata = []
+    db_con = sqlite3.connect(atom_db)
+    db_cur = db_con.cursor()
+    for ctime in ctimes:
+        res = db_cur.execute(
+            "SELECT obs_id, wafer FROM atomic WHERE "
+            f"freq_channel == '{freq_channel}' AND ctime == '{ctime}'"
+        )
+        res = res.fetchall()
+        for obs_id, wafer in res:
+            atom_id = (obs_id, wafer, freq_channel)
+            restrict = (args.atomic_list is not None
+                        and (atom_id not in atomic_restrict))
+            if not restrict and atom_id not in atomic_metadata:
                 atomic_metadata.append((obs_id, wafer, freq_channel))
-        db_con.close()
+    db_con.close()
+
+    print(
+        f"{len(atomic_metadata)} atomic file names (bundle {bundle_id})"
+    )
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
@@ -238,7 +246,6 @@ def main(args):
             "dets", meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
         )
         try:
-            # FIXME: see fixme item above related to atomic_list.
             aman = preprocess_tod.load_preprocess_tod_sim(
                 obs_id,
                 sim_map=sim,
@@ -339,6 +346,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--bundle-id",
+        type=int,
+        default=0,
         help="Bundle ID to filter.",
     )
     parser.add_argument(

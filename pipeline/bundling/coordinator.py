@@ -122,7 +122,7 @@ class BundleCoordinator:
 
         for i, prop in enumerate(db_props):
             if prop == "bundle_id":
-                setattr(bundle_coord, "bundle_ids", results[:, i])
+                setattr(bundle_coord, "bundle_ids", results[:, i].astype(int))
             else:
                 setattr(bundle_coord, prop, results[:, i])
 

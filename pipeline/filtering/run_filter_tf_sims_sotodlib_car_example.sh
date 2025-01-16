@@ -20,7 +20,6 @@ do
     time srun -n 32 -c 32 --cpu_bind=cores python ../../../pipeline/filtering/filter_sims_sotodlib.py \
         --atomic-db ${atomic_db} \
         --bundle-db ${bundle_db} \
-        --n_bundles ${n_bundles} \
         --preprocess-config ${preprocess_config}\
         --map-dir ${map_dir} \
         --map_string_format ${map_string_format}\
