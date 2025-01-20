@@ -225,7 +225,6 @@ def main(args):
         map_fname = map_string_format.format(sim_id=sim_id)
         map_file = f"{map_dir}/{map_fname}"
 
-        sim = enmap.read_map(map_file)
         if args.pix_type == "car":
             print("Loading CAR")
             sim = enmap.read_map(map_file)
