@@ -165,8 +165,8 @@ def _coadd_maps_car(maps_list, weights_list, hits_list=None, sign_list=None,
         weight_coadd += ivar
         # weight_coadd_kcmb += ivar2
 
-    # # Cut zero-weight pixels
-    # weight_coadd[weight_coadd == 0] = np.inf
+    # Cut zero-weight pixels
+    weight_coadd[weight_coadd == 0] = np.inf
     atom_coadd /= weight_coadd
 
     if hits_list is not None:

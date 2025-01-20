@@ -78,7 +78,7 @@ def get_logger(fmt=None, datefmt=None, debug=False, **kwargs):
         debug: bool
         debug flag
     """
-    #fmt = fmt or "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s" # noqa
+    # fmt = fmt or "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s" # noqa
     fmt = fmt or "%(asctime)s - %(message)s"
     datefmt = datefmt or "%d-%b-%y %H:%M:%S"
     logging.basicConfig(
@@ -104,6 +104,7 @@ def main(args):
 
     # ArgumentParser
     out_dir = args.output_directory
+    print("out_dir", out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
     plot_dir = f"{out_dir}/plots"
@@ -224,10 +225,16 @@ def main(args):
         map_fname = map_string_format.format(sim_id=sim_id)
         map_file = f"{map_dir}/{map_fname}"
 
-        try:
+        sim = enmap.read_map(map_file)
+        if args.pix_type == "car":
+            print("Loading CAR")
             sim = enmap.read_map(map_file)
-        except ValueError:  # if map is not enmap
+            print("sim.geometry", sim.geometry)
+        elif args.pix_type == "hp":
+            print("Loading HEALPix")
             sim = hp.read_map(map_file, field=[0, 1, 2])
+        else:
+            raise ValueError("pix_type must be hp or car")
 
         log.info(f"***** Doing {obs_id} {wafer} {freq} "
                  f"and SIMULATION {sim_id} *****")
@@ -245,6 +252,7 @@ def main(args):
         meta.restrict(
             "dets", meta.dets.vals[~np.isnan(meta.focal_plane.gamma)]
         )
+        # FIXME: Adapt this function to the 2-stage preprocessing in sotodlib.
         try:
             aman = preprocess_tod.load_preprocess_tod_sim(
                 obs_id,
@@ -252,8 +260,8 @@ def main(args):
                 configs=config,
                 meta=meta,
                 modulated=True,
-                site="so_sat1",  # new field required from new from_map()
-                ordering="RING"  # new field required for healpix
+                # site="so_sat1",  # new field required from new from_map()
+                # ordering="RING"  # new field required for healpix
             )
             log.info(f"Loaded {obs_id}, {wafer}, {freq}")
         except loader.LoaderError:
@@ -264,6 +272,7 @@ def main(args):
         if aman.dets.count <= 1:
             continue
 
+        # FIXME: Unify the mapmaking function to accomodate hp or car.
         if pix_type == "car":
             filtered_sim = demod.make_map(
                 aman,
@@ -300,6 +309,7 @@ def main(args):
             hp.write_map(
                 f_w, w, dtype=np.float32, overwrite=True, nest=True
             )
+
         end = time.time()
         print(f"*** ELAPSED TIME for filtering: {end - start} seconds. ***")
 

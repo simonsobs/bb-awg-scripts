@@ -153,7 +153,7 @@ class BundleCoordinator:
     def get_ctimes(self, bundle_id, null_prop_val=None):
         """
         """
-        filter = (self.bundle_ids == bundle_id)
+        filter = (self.bundle_ids == int(bundle_id))
         ctimes = self.ctime[filter]
         if null_prop_val not in [None, "science"]:
             name_prop = null_prop_val.split("_")[1]

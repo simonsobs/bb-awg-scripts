@@ -232,6 +232,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--bundle-id",
+        type=int,
         help="Bundle ID to filter",
     )
     parser.add_argument(
