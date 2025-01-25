@@ -1,0 +1,296 @@
+# context_file: "/global/cfs/cdirs/sobs/metadata/satp3/contexts/use_this_local.yaml"
+context_file: "/global/homes/k/kwolz/bbdev/bb-awg-scripts/users/kwolz/configs/contexts_satp3_use_this_local_20241124.yaml"
+plot_dir: '/global/cfs/projectdirs/sobs/sat-iso/preprocessing/satp3_20250108_init/preprocess_plots'
+
+subobs:
+  use: ['wafer_slot', 'wafer.bandpass']
+  label: wafer_slot
+  
+archive:
+  index: '/global/cfs/cdirs/sobs/sat-iso/preprocessing/satp3_20250108_init/process_archive.sqlite'
+  policy:
+    type: 'simple'
+    filename: '/global/cfs/cdirs/sobs/sat-iso/preprocessing/satp3_20250108_init/preprocess_archive.h5'
+
+process_pipe:
+    - name: "pointing_model"
+      process: True
+
+    - name: "hwp_angle_model"
+      process: True
+      calc:
+        on_sign_ambiguous: 'fail'
+      save: True
+
+    - name: "dark_dets"
+      signal: "signal"
+      calc: True
+      save: True
+      select: True
+
+    - name : "fp_flags"
+      calc:
+        merge: False
+      save: True
+      select: True
+
+    - name: "flag_turnarounds"
+      process: 
+        method: "scanspeed"
+        t_buffer: 4. 
+      calc:
+        method: "scanspeed"
+      save: True
+      
+    - name: "det_bias_flags"
+      calc: 
+        rfrac_range: [0.2, 0.8]
+        #psat_range: [0.1, 10]  
+      save: True
+      select: True
+
+    - name: "detrend"
+      process:
+        method: "median"
+
+    - name: "estimate_hwpss"
+      calc:
+        hwpss_stats_name: "hwpss_stats"
+      save: True
+
+    - name: "subtract_hwpss"
+      process:
+        subtract_name: "signal"
+
+    - name: "trends"
+      calc:
+        max_trend: 2.5
+        t_piece: 10
+      save: True
+      select:
+        kind: "any"
+
+    - name: "jumps"
+      calc:
+        function: "slow_jumps"
+        jump_configs:
+          win_size: 800
+          thresh: 20.0
+      save:
+        jumps_name: "jumps_slow"
+      select:
+        max_n_jumps: 5
+
+    - name: "fix_jumps"
+      process:
+        jumps_aman: "jumps_slow"
+
+    - name: "glitchfill"
+      flag_aman: "jumps_slow"
+      flag: "jump_flag"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"
+
+    - name: "jumps"
+      calc:
+        function: "twopi_jumps"
+        jump_configs:
+          win_size: 30
+          nsigma: 10.0
+      save:
+        jumps_name: "jumps_2pi"
+      select:
+        max_n_jumps: 20
+
+    - name: "fix_jumps"
+      process:
+        jumps_aman: "jumps_2pi"
+        nbuf: 10
+        use_pca: False
+        modes: 1
+
+    - name: "glitchfill"
+      flag_aman: "jumps_2pi"
+      flag: "jump_flag"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"
+
+    - name: "glitches"
+      calc:
+        t_glitch: 0.007
+        buffer: 100
+        hp_fc: 6.0
+        n_sig: 10
+      save: True
+      select:
+        max_n_glitch: 50000
+        sig_glitch: 10
+
+    - name: "glitchfill"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"
+
+    - name: "detrend"
+      process:
+        method: "median"
+
+    - name : "ptp_flags"
+      calc:
+        signal_name: "signal"
+        kurtosis_threshold: 5
+      save: True
+      select: True
+
+    - name: "calibrate" 
+      process:
+        kind: "array"
+        cal_array: "det_cal.phase_to_pW"
+      
+    - name: "psd"
+      signal: "signal"
+      wrap: "Pxx_raw"
+      calc:
+        max_samples: 524288 #2**19
+        merge: False
+        nperseg: 65536 #2**16
+        noverlap: 0
+      save: True
+    
+    - name: "noise"
+      psd: "Pxx_raw"
+      fit: True
+      calc:
+        fwhite: [5, 20]
+        lowf: 0.1
+        f_max: 50
+      save:
+        wrap_name: "noise_signal_fit"
+    
+    - name: "noise"
+      psd: "Pxx_raw"
+      fit: False
+      calc:
+        low_f: 5 
+        high_f: 20 
+      save:
+        wrap_name: "white_noise_nofit"
+      select:
+        min_noise: 2e-6
+        max_noise: 80e-6
+
+    - name: "pca_relcal"
+      signal: "lpf_sig"
+      calc:
+        pca:
+          xfac: 2
+          yfac: 1.5
+          calc_good_medianw: True
+        lpf:
+          type: "sine2"
+          cutoff: 1
+          trans_width: 0.1
+        trim_samps: 2000
+      save: True
+
+    - name: "calibrate"
+      process:
+        kind: "array"
+        proc_aman_cal: True
+        cal_array: "lpf_sig_run1.relcal"
+
+    - name: "fourier_filter"
+      process:
+        filt_function: "iir_filter"
+        filter_params:
+          invert: True
+
+    - name: "fourier_filter"
+      process:
+        filt_function: "timeconst_filter"
+        filter_params:
+          timeconst: "det_cal.tau_eff"
+          invert: True
+
+    - name: "apodize"
+      process:
+        apodize_samps: 2000
+    
+    - name: "demodulate"
+      process:
+        trim_samps: 6000
+        demod_cfgs: {}
+
+    - name : "rotate_qu"
+      process:
+        sign: 1 
+        offset: 0 
+        update_focal_plane: False
+    
+    - name: "psd"
+      signal: "demodQ"
+      wrap: "psdQ"
+      calc:
+        max_samples: 524288 #2**19
+        merge: False
+        nperseg: 65536 #2**16
+        noverlap: 0
+      save: True
+
+    - name: "psd"
+      signal: "demodU"
+      wrap: "psdU"
+      calc:
+        max_samples: 524288 #2**19
+        merge: False
+        nperseg: 65536 #2**16
+        noverlap: 0
+      save: True
+      
+    - name: "noise"
+      psd: "psdQ"
+      fit: True
+      calc:
+        fwhite: [1, 2]
+        f_max: 2
+        lowf: 0.1
+        merge_name: 'noise_fit_statsQ'
+      save:
+        wrap_name: "noiseQ_fit"
+
+    - name: "noise"
+      psd: "psdQ"
+      fit: False
+      calc:
+        low_f: 1
+        high_f: 2
+      save:
+        wrap_name: "noiseQ_nofit"
+      
+    - name: "noise"
+      psd: "psdU"
+      fit: True
+      calc:
+        fwhite: [1, 2]
+        f_max: 2
+        lowf: 0.1
+        merge_name: 'noise_fit_statsT'
+      save:
+        wrap_name: "noiseU_fit"
+
+    - name: "noise"
+      psd: "psdU"
+      fit: False
+      calc:
+        low_f: 1
+        high_f: 2
+      save:
+        wrap_name: "noiseU_nofit"

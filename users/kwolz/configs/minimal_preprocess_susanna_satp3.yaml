@@ -1,0 +1,456 @@
+context_file: "/global/cfs/cdirs/sobs/metadata/satp3/contexts/use_this_local.yaml"
+# plot_dir: '/global/cfs/cdirs/sobs/users/rosenber/preprocess/plots'
+
+subobs:
+  use: ['wafer_slot', 'wafer.bandpass']
+  label: wafer_slot
+  
+archive:
+  index: '/global/cfs/cdirs/sobs/users/msilvafe/preprocess/satp3_240712/process_archive.sqlite'
+  policy:
+    type: 'simple'
+    filename: '/global/cfs/cdirs/sobs/users/msilvafe/preprocess/satp3_240712/preprocess_archive.h5'
+    
+process_pipe:
+    - name: "pointing_model"
+      process: True
+
+    - name: "hwp_angle_model"
+      skip_on_sim: True  # TODO: keep?
+      process: True
+      calc:
+        on_sign_ambiguous: 'fail'
+      save: True
+
+    - name: "dark_dets"
+      skip_on_sim: True  # TODO: keep
+      signal: "signal"
+      calc: True
+      save: True
+      select: True
+
+    - name : "fp_flags"
+      skip_on_sim: True  # TODO: keep
+      calc: 
+        merge: False
+      save: True
+      select: True
+
+    - name: "flag_turnarounds"
+      process: 
+        method: "scanspeed"
+        t_buffer: 4. 
+      calc:
+        method: "scanspeed"
+        merge_subscans: True
+      save: True
+
+    - name: "det_bias_flags"
+      skip_on_sim: True
+      calc: 
+        rfrac_range: [0.2, 0.8]
+        psat_range: [0.1, 10]
+      save: True
+      select: True
+    
+    #- name : "source_flags"
+    #  signal: "signal" # optional
+    #  calc:
+    #    mask: {'shape': 'circle',
+    #           'xyr': (0, 0, 5.)}
+    #    center_on: 'moon'
+    #    res: 0.006 # np.radians(20/60)
+    #    #max_pix: XX 
+    #  save: True
+
+    # - name: "calibrate"
+    #   skip_on_sim: True
+    #   process:
+    #     kind: "array"
+    #     cal_array: "det_cal.phase_to_pW"
+
+    ### Moved this block before noise estimation to minimize bias in noise fit ###
+    - name: "estimate_hwpss"
+      skip_on_sim: True
+      calc:
+        hwpss_stats_name: "hwpss_stats"
+      save: True
+
+    - name: "subtract_hwpss"
+      skip_on_sim: True
+      process:
+        subtract_name: "signal"
+
+    - name : "ptp_flags"
+      skip_on_sim: True  # TODO: keep
+      calc:
+        signal_name: "signal"
+        kurtosis_threshold: 5
+      save: True
+      select: True
+
+    - name: "trends"
+      skip_on_sim: True
+      calc:
+        max_trend: 2.5
+        t_piece: 10
+      save: True
+      select:
+        kind: "any"
+
+    - name: "detrend"
+      # Maybe skip_on_sim
+      process:
+        method: "median"
+
+    - name: "psd"
+      signal: "signal"
+      wrap: "Pxx_raw"
+      calc:
+        max_samples: 524288 #2**19
+        merge: False
+        nperseg: 65536 #2**16
+      save: True
+    
+    - name: "noise"
+      skip_on_sim: True
+      psd: "Pxx_raw"
+      fit: True
+      calc:
+        fwhite: [1, 2]
+        f_max: 2
+        lowf: 0.1
+        merge_name: 'noise_fit_stats_signal'
+      save:
+        wrap_name: "noise_signal_fit"
+      select:
+        max_fknee: 6 # Added here
+
+    - name: "noise"
+      skip_on_sim: True
+      psd: "Pxx_raw"
+      fit: False
+      calc:
+        low_f: 5 
+        high_f: 20 
+      save:
+        wrap_name: "noise_signal_nofit"
+      select:
+         max_noise: 60e-6
+         min_noise: 2e-6 
+
+    ### Updated jumps to match K Wolz testing ###
+    - name: "jumps"
+      skip_on_sim: True
+      calc:
+        function: "slow_jumps"
+        jump_configs:
+          win_size: 800
+          thresh: 20.0
+      save:
+        jumps_name: "jumps_slow"
+      select:
+        max_n_jumps: 5
+        
+    - name: "fix_jumps"
+      skip_on_sim: True
+      process:
+        jumps_aman: "jumps_slow"
+
+    - name: "glitchfill"
+      skip_on_sim: True
+      flag_aman: "jumps_slow"
+      flag: "jump_flag"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"
+
+    - name: "jumps"
+      skip_on_sim: True
+      calc:
+        function: "twopi_jumps"
+        jump_configs:
+          win_size: 30
+          nsigma: 10.0
+      save:
+        jumps_name: "jumps_2pi"
+      select:
+        max_n_jumps: 20
+        
+    - name: "fix_jumps"
+      skip_on_sim: True
+      process:
+        jumps_aman: "jumps_2pi"
+    
+    - name: "glitchfill"
+      skip_on_sim: True
+      flag_aman: "jumps_2pi"
+      flag: "jump_flag"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"
+
+    - name: "glitches"
+      skip_on_sim: True
+      calc:
+        t_glitch: 0.007
+        buffer: 100 
+        hp_fc: 6.0
+        n_sig: 10
+      save: True
+      select: 
+        max_n_glitch: 50000
+        sig_glitch: 10 
+
+    - name: "glitchfill"
+      skip_on_sim: True
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+
+    - name: "detrend"
+      process:
+        method: "median"
+
+    ### Updated pca_relcal to new calc_and_save method
+    - name: "pca_relcal"
+      skip_on_sim: True
+      signal: "lpf_sig"
+      calc:
+          pca:
+              xfac: 2
+              yfac: 1.5
+              calc_good_medianw: True
+          lpf:
+              type: "sine2"
+              cutoff: 1
+              trans_width: 0.1
+          trim_samps: 2000
+      save: True
+
+    - name: "calibrate"
+      skip_on_sim: True
+      process:
+        kind: "array"
+        proc_aman_cal: True
+        cal_array: "lpf_sig_run1.relcal"
+
+    - name: "fourier_filter"
+      skip_on_sim: False  # Check
+      process:
+        filt_function: "iir_filter"
+        filter_params:
+          invert: True
+
+    - name: "fourier_filter"
+      skip_on_sim: False  # Check
+      process:
+        filt_function: "timeconst_filter"
+        filter_params:
+          timeconst: "det_cal.tau_eff"
+          invert: True
+
+    - name: "apodize"
+      process:
+        apodize_samps: 2000
+
+    - name: "demodulate"
+      process:
+        trim_samps: 6000
+        demod_cfgs: {}
+    
+    ### updated from old deproject method
+    - name: "rotate_qu"
+      process:
+        sign: 1
+        offset: 0
+        update_focal_plane: False
+
+    ### updated
+    - name : 'subtract_qu_common_mode'
+      signal_name_Q: 'demodQ'
+      signal_name_U: 'demodU'
+      process:
+        subtract: False
+      calc: True
+      save: True
+  
+    - name: "estimate_t2p"
+      calc: {}
+      save: True
+
+    - name: "subtract_t2p"
+      process: {} 
+
+    - name: "inv_var_flags"
+      calc:
+        signal_name: 'demodQ'
+        nsigma: 2
+      save: True
+      select: True
+
+    - name : "tod_stats"
+      signal: "dsT" 
+      wrap: "tod_stats_T" 
+      calc:
+        stat_names: ["std", "ptp"]
+        split_subscans: True 
+      save: True
+
+    - name : "tod_stats"
+      signal: "demodQ"
+      wrap: "tod_stats_Q"
+      calc:
+        stat_names: ["median", "std", "skew", "kurtosis", "ptp"]
+        split_subscans: True
+      save: True
+
+    - name : "tod_stats"
+      signal: "demodU"
+      wrap: "tod_stats_U"
+      calc:
+        stat_names: ["median", "std", "skew", "kurtosis", "ptp"]
+        split_subscans: True
+      save: True      
+    
+    ### updated
+    - name : "noisy_subscan_flags"
+      skip_on_sim: True  # small detector cuts, may want to keep?
+      stats_name: tod_stats
+      calc: 
+        subscan_stats: ["demodQ", "dsT"] 
+        nstd_lim: 3.0
+        ptp_lim: 0.8
+        kurt_lim: 0.5
+        skew_lim: 0.5
+        noisy_detector_lim: 0.5
+        merge: False
+      save: True
+      select: True
+
+    ### updated 
+    - name: "union_flags"
+      skip_on_sim: True
+      process:
+        flag_labels: ['noisy_subscan_flags.valid_subscans'] 
+        total_flags_label: 'valid_subscans'
+
+    - name: "sub_polyf"
+      process:
+        degree: 0
+        method: "polyfit"
+        in_place: True
+
+    ### updated
+    # DEBUG (KW): removed
+    # - name: "azss"
+    #   azss_stats_name: 'azss_statsT'
+    #   azss_model_name: 'azss_modelT'
+    #   proc_aman_turnaround_info: 'turnaround_flags'
+    #   calc:
+    #     signal: 'dsT'
+    #     frange: [-3.141592, 7.85398]
+    #     bins: 126 #1262
+    #     left_right: True
+    #     apodize_flags: True
+    #     apodize_edges: True
+    #     apodize_edges_samps: 20000
+    #     apodize_flags_samps: 200
+    #     flags: ['valid_subscans']  #,'turnarounds']  
+    #   save: True
+    #   process:
+    #     subtract: True
+
+    # - name: "azss"
+    #   azss_stats_name: 'azss_statsQ'
+    #   azss_model_name: 'azss_modelQ'
+    #   proc_aman_turnaround_info: 'turnaround_flags'
+    #   calc:
+    #     signal: 'demodQ'
+    #     frange: [-3.141592, 7.85398]
+    #     bins: 126 #1262
+    #     left_right: True
+    #     apodize_flags: True
+    #     apodize_edges: True
+    #     apodize_edges_samps: 20000
+    #     apodize_flags_samps: 200
+    #     flags: ['valid_subscans'] #,'turnarounds']  
+    #   save: True
+    #   process:
+    #     subtract: True
+
+    # - name: "azss"
+    #   azss_stats_name: 'azss_statsU'
+    #   azss_model_name: 'azss_modelU'
+    #   proc_aman_turnaround_info: 'turnaround_flags'
+    #   calc:
+    #     signal: 'demodU'
+    #     frange: [-3.141592, 7.85398]
+    #     bins: 126 #1262
+    #     left_right: True
+    #     apodize_flags: True
+    #     apodize_edges: True
+    #     apodize_edges_samps: 20000
+    #     apodize_flags_samps: 200
+    #     flags: ['valid_subscans'] #,'turnarounds']  
+    #   save: True
+    #   process:
+    #     subtract: True
+
+    - name: "union_flags"
+      process:
+        flag_labels: ['jumps_2pi.jump_flag', 'glitches.glitch_flags', 'turnaround_flags.turnarounds'] # DEBUG (KW):, 'jumps_slow.jump_flag', noisy_subscan_flags.valid_subscans] #, 'sources.source_flags']
+        total_flags_label: 'exclude'
+ 
+    - name: "sub_polyf"
+      process:
+        signal_name: "dsT"
+        degree: 9
+        in_place: True
+        mask: "exclude"
+
+    - name: "sub_polyf"
+      process:
+        signal_name: "demodQ"
+        degree: 1
+        in_place: True
+        mask: "exclude"
+
+    - name: "sub_polyf"
+      process:
+        signal_name: "demodU"
+        degree: 1
+        in_place: True
+        mask: "exclude"
+
+    - name: "rotate_qu"
+      process:
+        sign: -1
+        offset: 0
+        update_focal_plane: False
+
+    # DEBUG (KW): remove
+    # - name: "union_flags"
+    #   process:
+    #     flag_labels: ['jumps_2pi.jump_flag', 'glitches.glitch_flags', 'turnaround_flags.turnarounds'] # DEBUG (KW):, 'jumps_slow.jump_flag'] #, 'sources.source_flags']
+    #     total_flags_label: 'glitch_flags'
+
+    - name: "split_flags"
+      calc:
+        right_focal_plane: 0
+        top_focal_plane: 0
+        central_pixels: 0.071
+        high_gain: 0.115
+        high_noise: 3.5e-5
+        high_tau: 1.5e-3
+        det_A: A
+        pol_angle: 35
+        det_top: B
+        high_leakage: 1.0e-3
+        high_2f: 1.5e-3
+      save: True
