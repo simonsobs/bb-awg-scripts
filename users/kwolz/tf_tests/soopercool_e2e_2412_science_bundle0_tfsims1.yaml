@@ -1,0 +1,144 @@
+## General output directory where all products are stored
+output_directory: &out_dir /pscratch/sd/k/kwolz/bbdev/bb-awg-scripts/tf_tests/end_to_end_2412_fp_thin8_seed2345/science_bundle0_tfsims1  ## Replace by your own path
+
+#########################
+# Map sets to correlate #
+#########################
+# Map sets are broadly defined as the maps that we want to compute power
+# spectra from. Examples are "planck_f100", "planck_f143", "satp1_f093" etc.
+map_sets:
+  # Each map set contains several attributed listed below. Every one of them
+  # can be accessed using the convenience member function
+  # get_{attribute}_from_map_set(map_set) of the class soopercool.BBmeta
+  satp1_f150_science:
+    # Directory where the data maps are stored
+    map_dir: /global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/maps
+    # Directory where beam window functions are stored
+    beam_dir: /global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/beams
+    # The file name template for maps. The parameter id_bundle will be
+    # recognized when written inside braces, and interpreted during python
+    # string formatting. Similarly, {par1|par2} will be replaced by the string
+    # "par1" if the file contains a map, and by "par2" if the file contains a
+    # hits map.
+    map_template: satp1_f150_bundle{id_bundle}_{map|hits}.fits
+    beam_file: beam_unity.dat
+    # Every map set contains n_bundles bundles that are assumed to have
+    # compatible but independent noise properties such that cross-bundle
+    # splits do not contain noise bias.
+    n_bundles: 2          # Number of bundles
+    freq_tag: 150         # Frequency in GHz (e.g. useful for coadding
+                          # channels)
+    exp_tag: SATp1        # Experiment tag (useful to get noise-bias free
+                          # cross-split spectra)
+    # Filtering tags are labels that we associate to a given filter. Different
+    # map sets can be associated to different filters, defined below under the
+    # key "filtering" below.
+    filtering_tag: science
+
+####################
+# Masking metadata #
+####################
+masks:
+  analysis_mask: /global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/science_bundle0_tfsims1/masks/analysis_mask.fits
+
+  # Use global hits map instead of searching over bundle-specific hits
+  # (not recommended to use on real SAT data)
+  # global_hits: /global/cfs/projectdirs/sobs/www/users/so_bb/norm_nHits_SA_35FOV_ns512.fits
+  global_hits:
+
+  # Path to products (binary)
+  galactic_mask: null  # "/path/to/galactic_mask.fits"
+  point_source_catalog: null
+  # point_source_mask: /pscratch/sd/k/kwolz/share/SOOPERCOOL/masks/npipe_mask_ecliptic_nside512.fits
+  point_source_mask: null
+
+  external_mask: null
+
+  apod_radius: 10.0
+  apod_radius_point_source: 1.0
+  apod_type: "C2"
+
+####################################
+# Metadata related to the analysis #
+####################################
+## General parameters
+general_pars:
+  pix_type: hp
+  nside: 512
+  lmin: 30
+  lmax: 600
+  binning_file: /global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/binning/binning_hp_lmax1535_deltal10.npz
+  pure_B: False
+  # Where the beam window is lower than beam_floor, set it to beam_floor
+  beam_floor: 1.e-5
+
+## Filtering-related parameters
+filtering:
+
+  ## Define filtering tags
+  tags_settings:
+
+    # This is a dummy filter that leaves power spectra unchanged
+    low_pwv:
+      # Filtering parameters
+      filtering_type: "sotodlib"
+    high_pwv:
+      filtering_type: "sotodlib"
+
+## Transfer-function-related metadata
+transfer_settings:
+  transfer_directory: !path [*out_dir, transfer_functions]
+
+  # For estimation
+  ## Number of sims for tf estimation
+  tf_est_num_sims: 1
+
+  ## Parameters of the Gaussian power-law sims used for TF estimation
+  power_law_pars_tf_est:
+    amp: 1.0
+    delta_ell: 10
+    power_law_index: 2.
+
+  ## Optional beams applied on TF sims
+  # If true, beams will not be applied on the transfer estimation simulations. 
+  # By default (False), beams are applied to account for potential effect of
+  # the beam on the TF (e.g. commutativity)
+  do_not_beam_est_sims: True
+  beams_list: ["satp1_f150_science"]
+
+  ## Path to the sims for TF estimation
+  unfiltered_map_dir:
+    science: /global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/tf_sims
+  # The file name template for transfer estimation sims. The parameters
+  # pure_type and id_sim will be recognized when written inside braces,
+  # and interpreted during python string formatting.
+  unfiltered_map_template:
+    science: "{pure_type}_nside512_fwhm30.0_sim{id_sim:04d}.fits"
+  filtered_map_dir:
+    science: /pscratch/sd/k/kwolz/bbdev/bb-awg-scripts/tf_tests/end_to_end_2412_fp_thin8_seed2345/tf_sims/filtered_science
+  filtered_map_template:
+    science: "{pure_type}_nside512_fwhm30.0_sim{id_sim:04d}_bundle0_filtered.fits"
+
+# Covariance-related parameters
+covariance:
+  ## Number of sims for covariance estimation
+  cov_num_sims: 50
+
+  ## Directories and file names of simulated noise maps
+  noise_map_sims_dir:
+    satp1_f150_science: /global/cfs/cdirs/sobs/awg_bb/end_to_end_2412/signflip_maps
+
+  # The file name templates for noise sims. The parameters id_sim, map_set, and
+  # id_bundle will be recognized when written inside braces, and interpreted
+  # during python string formatting.
+  noise_map_sims_template:
+    satp1_f150_science: "{map_set}_bundle{id_bundle}_sim{id_sim:04d}_noise.fits"
+
+  # FIXME: We need the products below
+  ## Directories and file names of simulated signal alms
+  signal_alm_sims_dir:
+    satp1_f150_science: /pscratch/sd/k/kwolz/bbdev/bb-awg-scripts/tf_tests/end_to_end_2412_fp_thin8_seed2345/cmb_sims/filtered_science
+  # The parameters id_sim, freq_tag, and id_sim will be recognized during 
+  # python string formatting if written inside braces.
+  signal_alm_sims_template:
+    satp1_f150_science: "alm_cmb_lmax1535_fwhm30.0_{id_sim:04}_bundle0_filtered.fits"
