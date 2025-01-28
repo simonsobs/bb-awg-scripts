@@ -61,7 +61,8 @@ def main(args):
         wafer=args.wafer,
         pix_type=args.pix_type,
         atomic_list=atomic_list,
-        car_map_template=car_map_template
+        car_map_template=car_map_template,
+        telescope=args.tel
     )
 
     bundle_ids = range(args.n_bundles)
@@ -70,10 +71,12 @@ def main(args):
         print(" - bundle_id", bundle_id)
         split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
                                             args.null_prop_val_inter_obs)
-        bundled_map, hits_map = bundler.bundle(
+        bundled_map, weights_map, hits_map = bundler.bundle(
             bundle_id,
             split_label=split_intra_obs,
-            null_prop_val=split_inter_obs
+            null_prop_val=split_inter_obs,
+            abscal=args.abscal,
+            nproc=args.nproc
         )
 
         # Map naming convention
@@ -96,6 +99,8 @@ def main(args):
 
         if args.pix_type == "car":
             enmap.write_map(out_fname, bundled_map)
+            enmap.write_map(out_fname.replace("map.fits", "weights.fits"),
+                            weights_map)
             enmap.write_map(out_fname.replace("map.fits", "hits.fits"),
                             hits_map)
             plot = enplot.plot(
@@ -124,11 +129,15 @@ def main(args):
 
         elif args.pix_type == "hp":
             hp.write_map(
-                out_fname, bundled_map, overwrite=True, dtype=np.float32
+                out_fname, bundled_map, overwrite=True, dtype=np.float64
             )
             hp.write_map(
-                out_fname.replace("map.fits", "_norm_hits.fits"), hits_map,
-                overwrite=True, dtype=np.float32
+                out_fname.replace("map.fits", "weights.fits"), weights_map,
+                overwrite=True, dtype=np.float64
+            )
+            hp.write_map(
+                out_fname.replace("map.fits", "hits.fits"), hits_map,
+                overwrite=True, dtype=np.float64
             )
             for ip, p in enumerate(["Q", "U"]):
                 hp.mollview(
@@ -219,6 +228,21 @@ if __name__ == "__main__":
         "--overwrite",
         action="store_true",
         help="Overwrite database if exists?"
+    )
+    parser.add_argument(
+        "--abscal",
+        action="store_true",
+        help="Apply stored absolute calibration factors if True"
+    )
+    parser.add_argument(
+        "--nproc",
+        default=1,
+        help="Number of parallel processes to use in coadd"
+    )
+    parser.add_argument(
+        "--tel",
+        default=None,
+        help="telescope identifier for abscal"
     )
 
     args = parser.parse_args()
