@@ -15,8 +15,8 @@ from sotodlib.core.metadata import loader
 from pixell import enmap
 from mpi4py import MPI
 
-sys.path.append("/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/bundling")
-sys.path.append("/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/misc")
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..','bundling')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..','misc')))
 from coordinator import BundleCoordinator  # noqa
 from mpi_utils import distribute_tasks  # noqa
 
