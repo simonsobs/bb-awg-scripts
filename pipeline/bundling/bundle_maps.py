@@ -43,7 +43,8 @@ def main(args):
         print(f"Writing to {args.bundle_db}.")
         bundle_coordinator = BundleCoordinator(
             args.atomic_db, n_bundles=args.n_bundles,
-            seed=args.seed, null_props=args.null_props
+            seed=args.seed, null_props=args.null_props,
+            query_restrict=args.query_restrict
         )
         bundle_coordinator.save_db(args.bundle_db)
 
@@ -170,6 +171,11 @@ if __name__ == "__main__":
         help="Number of map bundles.",
         type=int,
         required=True
+    )
+    parser.add_argument(
+        "--query_restrict",
+        help="SQL query to restict obs from the atomic database (e.g. 'pwv < 2')",
+        default=""
     )
     parser.add_argument(
         "--null_prop_val_inter_obs",

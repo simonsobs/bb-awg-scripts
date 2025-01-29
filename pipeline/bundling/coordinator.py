@@ -4,7 +4,7 @@ import sqlite3
 
 class BundleCoordinator:
     def __init__(self, atomic_db=None, n_bundles=None, seed=None,
-                 null_props=None, bundle_id=None):
+                 null_props=None, bundle_id=None, query_restrict=""):
         """
         Constructor for the BundleCoordinator class.
         If no atomic database path is provided, the
@@ -41,6 +41,9 @@ class BundleCoordinator:
             self.bundle_id = bundle_id
             self.null_props_stats = None
 
+            if query_restrict != "":
+                query_restrict = f" WHERE {query_restrict}"
+
             if null_props is not None:
                 self.null_props_stats = {}
                 for null_prop in null_props:
@@ -49,7 +52,7 @@ class BundleCoordinator:
                     else:
                         raise ValueError(f"Property {null_prop} "
                                          "not found in the database.")
-                    query = f"SELECT {null_prop} FROM atomic"
+                    query = f"SELECT {null_prop} FROM atomic" + query_restrict
                     res = np.asarray(
                         cursor.execute(query).fetchall()
                     ).flatten()
@@ -62,7 +65,7 @@ class BundleCoordinator:
                     elif np.issubdtype(res.dtype, np.str_):
                         self.null_props_stats[null_prop] = np.unique(res).tolist()  # noqa
 
-            query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic"
+            query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic" + query_restrict
             res = np.asarray(cursor.execute(query).fetchall())
 
             unique_indices = np.unique(res[:, 0], return_index=True)[1]
