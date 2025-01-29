@@ -56,7 +56,8 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
             num_fields = fits.getheader(map_file, 1)['TFIELDS']
             # Read only TT, QQ, UU weights
             fields_hp = (0, 4, 8) if (num_fields == 9) else (0, 1, 2)
-        kwargs = {"field": fields_hp, } if fields_hp is not None else {}
+        # Default to loading all fields (field=None) if fields_hp is not provided
+        kwargs = {"field": fields_hp, } #if fields_hp is not None else {}
         m = hp.read_map(map_file, **kwargs)
     else:
         # print(map_file)
@@ -220,7 +221,7 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     map_coadd = sum_fn(maps_list, template, pix_type, mult=sign_list*abscal**-1, fields_hp=fields_hp)
     weights_coadd = sum_fn(weights_list, template, pix_type, mult=abscal**-2, fields_hp=fields_hp, is_weights=True)
     if hits_list is not None:
-        hits_coadd = sum_fn(maps_list, template[0], pix_type)
+        hits_coadd = sum_fn(hits_list, template[0], pix_type)
 
     good_weights = weights_coadd > 0
     map_coadd[good_weights] /= weights_coadd[good_weights]
@@ -318,7 +319,7 @@ def gen_masks_of_given_atomic_map_list_for_bundles(nmaps, nbundles):
     return boolean_mask_list
 
 
-def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x:True, **read_map_kwargs):
+def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x:True, islice=slice(None), **read_map_kwargs):
     """Coadd CAR or healpix maps
 
     Parameters
@@ -334,6 +335,8 @@ def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x:True, **r
     condition: function
         Boolean or array(bool) function with an individual map as input. If any False this
         map will not be included in the coadd
+    islice: slice
+        1d slice to apply to filenames and mult. Used in parallelization.
     read_map_kwargs:
         kwargs passed through to read_map
 
@@ -344,10 +347,12 @@ def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x:True, **r
     """
 
     out = template.copy() * 0
-    for ifn, fn in enumerate(filenames):
+    for ifn, fn in enumerate(filenames[islice]):
         if isinstance(fn, str):
             imap = read_map(fn, pix_type=pix_type, **read_map_kwargs)
-        imult = mult if np.isscalar(mult) else mult[ifn]
+        else:
+            imap = fn
+        imult = mult if np.isscalar(mult) else mult[islice][ifn]
         imap *= imult
         if np.all(condition(imap)):
             _add_map(imap, out, pix_type)
@@ -379,10 +384,10 @@ def _make_parallel_proc(fn, nproc_default):
     """
     def parallel_fn(filenames, template, *args, nproc=nproc_default, **kwargs):
         ibin = int(np.ceil(len(filenames)/nproc))
-        fnames = [filenames[iproc*ibin:(iproc+1)*ibin] for iproc in range(nproc)]
+        slices = [slice(iproc*ibin,(iproc+1)*ibin) for iproc in range(nproc)]
         out = None
         with ProcessPoolExecutor(nproc) as exe:
-            futures = [exe.submit(fn, fnames[iproc], template, *args, **kwargs) for iproc in range(nproc)]
+            futures = [exe.submit(fn, filenames, template, *args, islice=slices[iproc], **kwargs) for iproc in range(nproc)]
             for future in as_completed(futures):
                 if out is None:
                     out = future.result()
