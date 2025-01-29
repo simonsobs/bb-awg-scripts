@@ -44,7 +44,7 @@ def main(args):
         bundle_coordinator = BundleCoordinator(
             args.atomic_db, n_bundles=args.n_bundles,
             seed=args.seed, null_props=args.null_props,
-            query_restrict=args.query_restrict
+            query_restrict=" ".join(args.query_restrict)
         )
         bundle_coordinator.save_db(args.bundle_db)
 
@@ -174,6 +174,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--query_restrict",
+        type=str,
+        nargs='+',
         help="SQL query to restict obs from the atomic database (e.g. 'pwv < 2')",
         default=""
     )
