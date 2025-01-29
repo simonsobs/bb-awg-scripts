@@ -9,7 +9,7 @@ import re
 class _Coadder:
     def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
                  pix_type="hp", atomic_list=None, car_map_template=None,
-                 telescope=None):
+                 telescope=None, patch=None):
         """
         Constructor for the _Coadder class. Reads in map information from
         atomic_db and bundling information from bundle_db.
@@ -44,6 +44,7 @@ class _Coadder:
         self.bundle_db = bundle_db
         self.freq_channel = freq_channel
         self.wafer = wafer
+        self.patch = patch
         self.atomic_list = atomic_list
         self.car_map_template = car_map_template
 
@@ -123,6 +124,14 @@ class _Coadder:
         query += f"'{self.freq_channel}' AND obs_id = '{obs_id}'"
         if self.wafer is not None:
             query += f" AND wafer = '{self.wafer}'"
+        if self.patch is not None:
+            if self.patch == "south":
+                query += f" AND (azimuth > 100 AND azimuth < 260)"
+            elif self.patch == "north":
+                query += f" AND (azimuth < 100 OR azimuth > 260)"
+            else:
+                raise ValueError(f"self.patch {self.patch} not recognized.")
+
         result = cursor.execute(query).fetchall()
 
         # Restrict list of atomics in atomic_db

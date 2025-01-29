@@ -63,7 +63,8 @@ def main(args):
         pix_type=args.pix_type,
         atomic_list=atomic_list,
         car_map_template=car_map_template,
-        telescope=args.tel
+        telescope=args.tel,
+        patch=args.patch
     )
 
     bundle_ids = range(args.n_bundles)
@@ -173,6 +174,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--wafer",
         help="Wafer label, e.g. 'ws0'.",
+        default=None
+    )
+    parser.add_argument(
+        "--patch",
+        help="'north' or 'south'",
         default=None
     )
     parser.add_argument(
