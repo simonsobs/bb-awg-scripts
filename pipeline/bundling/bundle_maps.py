@@ -73,6 +73,7 @@ def main(args):
         print(" - bundle_id", bundle_id)
         split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
                                             args.null_prop_val_inter_obs)
+        split_intra_obs = split_intra_obs.split()
         bundled_map, weights_map, hits_map = bundler.bundle(
             bundle_id,
             split_label=split_intra_obs,
@@ -199,7 +200,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--split_label_intra_obs",
-        help="Split label for intra-obs splits, e.g. 'scans_left'.",
+        help="Split label for intra-obs splits, e.g. 'scan_left'.",
         default=None
     )
     parser.add_argument(

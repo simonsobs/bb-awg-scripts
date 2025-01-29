@@ -221,26 +221,32 @@ class _Coadder:
         if return_weights:
             weights = []
 
+        if (split_label is None) or isinstance(split_label, str):
+            split_labels = [split_label]
+        else:
+            split_labels = split_label
+
         for obs_id in obs_ids:
-            if return_weights:
-                fname_list, weight_list = self._obsid2fnames(
-                    obs_id,
-                    return_weights=return_weights,
-                    split_label=split_label
-                )
-                for fname, weight in zip(fname_list, weight_list):
-                    if self._check_maps_exist(fname):
-                        fnames.append(fname)
-                        weights.append(weight)
-            else:
-                fname_list = self._obsid2fnames(
-                    obs_id,
-                    return_weights=return_weights,
-                    split_label=split_label
-                )
-                for fname in fname_list:
-                    if self._check_maps_exist(fname):
-                        fnames.append(fname)
+            for split_label in split_labels:
+                if return_weights:
+                    fname_list, weight_list = self._obsid2fnames(
+                        obs_id,
+                        return_weights=return_weights,
+                        split_label=split_label
+                    )
+                    for fname, weight in zip(fname_list, weight_list):
+                        if self._check_maps_exist(fname):
+                            fnames.append(fname)
+                            weights.append(weight)
+                else:
+                    fname_list = self._obsid2fnames(
+                        obs_id,
+                        return_weights=return_weights,
+                        split_label=split_label
+                    )
+                    for fname in fname_list:
+                        if self._check_maps_exist(fname):
+                            fnames.append(fname)
         if return_weights:
             return fnames, weights
         return fnames
@@ -333,7 +339,6 @@ class Bundler(_Coadder):
         hits: np.array
             Output bundled hits map.
         """
-        assert (split_label is None or null_prop_val is None)
         fnames = self._get_fnames(bundle_id, null_prop_val, split_label)
 
         # DEBUG
