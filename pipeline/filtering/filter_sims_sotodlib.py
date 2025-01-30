@@ -65,6 +65,7 @@ def erik_make_map(obs, shape=None, wcs=None, nside=None, site=None):
          + obs.preprocess.jumps_2pi.jump_flag
          + obs.preprocess.glitches.glitch_flags)
     )
+
     mapmaker = dmm.setup_demod_map(NmatUnit(), shape=shape, wcs=wcs,
                                    nside=nside)
     mapmaker.add_obs('signal', obs)
@@ -75,8 +76,8 @@ def erik_make_map(obs, shape=None, wcs=None, nside=None, site=None):
     return wmap, weights
 
 
-def make_map(obs, pix_type="hp", shape=None, wcs=None, nside=None, site=None,
-             logger=None):
+def make_map(obs, split_labels, pix_type="hp", shape=None, wcs=None,
+             nside=None, site=None, logger=None):
     """
     Run the healpix mapmaker (currently in sotodlib sat-mapmaking-er-dev) on a
     given observation.
@@ -116,14 +117,23 @@ def make_map(obs, pix_type="hp", shape=None, wcs=None, nside=None, site=None,
         wcs, shape = (None, None)
         assert nside is not None
     mapmaker = dmm.setup_demod_map(
-        NmatUnit(), shape=shape, wcs=wcs, nside=nside, split_labels=["science"]
+        NmatUnit(), shape=shape, wcs=wcs, nside=nside,
+        split_labels=split_labels
     )
-    mapmaker.add_obs('signal', obs)
-    wmap = mapmaker.signals[0].rhs[0]
-    weights = np.diagonal(mapmaker.signals[0].div[0], axis1=0, axis2=1)
-    weights = np.moveaxis(weights, -1, 0)
 
-    return wmap, weights
+    mapmaker.add_obs('signal', obs, split_labels=split_labels)
+    wmap_dict = {}
+    weights_dict = {}
+
+    # mapmaker.signals[0] is signal_map
+    # for n_split, split_label in enumerate(mapmaker.signals[0].Nsplits):
+    for n_split, split_label in enumerate(split_labels):
+        wmap_dict[split_label] = mapmaker.signals[0].rhs[n_split]
+        div = np.diagonal(mapmaker.signals[0].div[n_split], axis1=0, axis2=1)
+        div = np.moveaxis(div, -1, 0)  # this moves the last axis to pos 0
+        weights_dict[split_label] = div
+
+    return wmap_dict, weights_dict
 
 
 def get_logger(fmt=None, datefmt=None, debug=False, **kwargs):
@@ -214,7 +224,10 @@ def main(args):
     freq_channel = args.freq_channel
     null_prop_val_inter_obs = args.null_prop_val_inter_obs
     bundle_id = args.bundle_id
-    split_label = args.split_label_intra_obs
+    if "," not in args.split_labels_intra_obs:
+        split_labels = [args.split_labels_intra_obs]
+    else:
+        split_labels = args.split_labels_intra_obs.split(",")
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id - null split combination
@@ -229,7 +242,7 @@ def main(args):
 
     ctimes = bundle_coordinator.get_ctimes(
         bundle_id=bundle_id,
-        split_label=split_label,
+        split_label=split_labels[0],  # dummy argument
         null_prop_val=null_prop_val_inter_obs,
     )
 
@@ -250,7 +263,6 @@ def main(args):
         res = db_cur.execute(
             "SELECT obs_id, wafer FROM atomic WHERE "
             f"freq_channel == '{freq_channel}' AND ctime = '{ctime}' "
-            f"AND split_label == '{split_label}'"
         )
         res = res.fetchall()
 
@@ -296,10 +308,6 @@ def main(args):
     # * read simulated map
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
-    local_wmaps = []
-    local_weights = []
-    local_labels = []
-
     for sim_id, (obs_id, wafer, freq) in local_mpi_list:
         start = time.time()
         map_fname = map_string_format.format(sim_id=sim_id)
@@ -377,33 +385,38 @@ def main(args):
         #     wmap, w = erik_make_map(aman, nside=nside, site="so_sat1")
 
         # NEW CODE
-        wmap, w = make_map(aman, pix_type, shape=None, wcs=wcs, nside=nside,
-                           logger=logger)
+        # DEBUG
+        print("split_labels", split_labels)
 
-        local_wmaps.append(wmap)
-        local_weights.append(w)
-        local_labels.append(sim_id)
-
-        # Saving filtered atomics to disk
-        logger.info(f"Rank {rank} saving labels {local_labels}")
-        atomic_fname = map_string_format.format(sim_id=sim_id).replace(
-            mfmt,
-            f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
+        wmap_dict, weights_dict = make_map(
+            aman, split_labels, pix_type, shape=None, wcs=wcs, nside=nside,
+            logger=logger
         )
-        f_wmap = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
-        f_w = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_weights' + mfmt)}"
 
-        if pix_type == "car":
-            enmap.write_map(f_wmap, wmap)
-            enmap.write_map(f_w, w)
+        for split_label in split_labels:
+            wmap = wmap_dict[split_label]
+            w = weights_dict[split_label]
 
-        elif pix_type == "hp":
-            hp.write_map(
-                f_wmap, wmap, dtype=np.float32, overwrite=True, nest=True
+            # Saving filtered atomics to disk
+            atomic_fname = map_string_format.format(sim_id=sim_id).replace(
+                mfmt,
+                f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
             )
-            hp.write_map(
-                f_w, w, dtype=np.float32, overwrite=True, nest=True
-            )
+
+            f_wmap = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"  # noqa
+            f_w = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_weights' + mfmt)}"  # noqa
+
+            if pix_type == "car":
+                enmap.write_map(f_wmap, wmap)
+                enmap.write_map(f_w, w)
+
+            elif pix_type == "hp":
+                hp.write_map(
+                    f_wmap, wmap, dtype=np.float32, overwrite=True, nest=True
+                )
+                hp.write_map(
+                    f_w, w, dtype=np.float32, overwrite=True, nest=True
+                )
         end = time.time()
         logger.info(f"ELAPSED TIME for filtering: {end - start} seconds.")
 
@@ -471,8 +484,9 @@ if __name__ == "__main__":
         default=None
     )
     parser.add_argument(
-        "--split_label_intra_obs",
-        help="Split label for intra-obs splits, e.g. 'scan_left'."
+        "--split_labels_intra_obs",
+        help="Comma-separated list of split label for intra-obs splits, "
+             "e.g. 'scan_left,scan_right,det_left,det_right'.",
     )
     parser.add_argument(
         "--nside",
