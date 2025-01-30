@@ -65,7 +65,8 @@ class BundleCoordinator:
                     elif np.issubdtype(res.dtype, np.str_):
                         self.null_props_stats[null_prop] = np.unique(res).tolist()  # noqa
 
-            query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic" + query_restrict
+            query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic"
+            query += query_restrict
             res = np.asarray(cursor.execute(query).fetchall())
 
             unique_indices = np.unique(res[:, 0], return_index=True)[1]
@@ -153,12 +154,15 @@ class BundleCoordinator:
         self.shuffled_props = shuffled_props
         self.bundle_ids = bundle_ids
 
-    def get_ctimes(self, bundle_id, null_prop_val=None):
+    def get_ctimes(self, bundle_id, split_label, null_prop_val=None):
         """
         """
         filter = (self.bundle_ids == int(bundle_id))
         ctimes = self.ctime[filter]
         if null_prop_val not in [None, "science"]:
+            print(f"WARNING: you selected atomics with {null_prop_val} "
+                  f"but you also selected a split_label {split_label}. "
+                  "/n - Are you sure you want to do this?")
             name_prop = null_prop_val.split("_")[1]
             prop_val = getattr(self, name_prop)[filter]
             filter = prop_val == null_prop_val
