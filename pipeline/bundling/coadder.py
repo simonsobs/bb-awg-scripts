@@ -8,7 +8,8 @@ import re
 
 class _Coadder:
     def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
-                 pix_type="hp", atomic_list=None, car_map_template=None):
+                 pix_type="hp", atomic_list=None, car_map_template=None,
+                 telescope=None, patch=None):
         """
         Constructor for the _Coadder class. Reads in map information from
         atomic_db and bundling information from bundle_db.
@@ -32,6 +33,8 @@ class _Coadder:
             atomic maps that are to be used for the bundling.
             All other atomics in atomic_db will be left out.
             Ignore if None (default).
+        telescope: str
+            Label for telescope
         """
         assert pix_type in ["hp", "car"]
         self.pix_type = pix_type
@@ -41,6 +44,7 @@ class _Coadder:
         self.bundle_db = bundle_db
         self.freq_channel = freq_channel
         self.wafer = wafer
+        self.patch = patch
         self.atomic_list = atomic_list
         self.car_map_template = car_map_template
 
@@ -120,6 +124,14 @@ class _Coadder:
         query += f"'{self.freq_channel}' AND obs_id = '{obs_id}'"
         if self.wafer is not None:
             query += f" AND wafer = '{self.wafer}'"
+        if self.patch is not None:
+            if self.patch == "south":
+                query += f" AND (azimuth > 100 AND azimuth < 260)"
+            elif self.patch == "north":
+                query += f" AND (azimuth < 100 OR azimuth > 260)"
+            else:
+                raise ValueError(f"self.patch {self.patch} not recognized.")
+
         result = cursor.execute(query).fetchall()
 
         # Restrict list of atomics in atomic_db
@@ -209,26 +221,32 @@ class _Coadder:
         if return_weights:
             weights = []
 
+        if (split_label is None) or isinstance(split_label, str):
+            split_labels = [split_label]
+        else:
+            split_labels = split_label
+
         for obs_id in obs_ids:
-            if return_weights:
-                fname_list, weight_list = self._obsid2fnames(
-                    obs_id,
-                    return_weights=return_weights,
-                    split_label=split_label
-                )
-                for fname, weight in zip(fname_list, weight_list):
-                    if self._check_maps_exist(fname):
-                        fnames.append(fname)
-                        weights.append(weight)
-            else:
-                fname_list = self._obsid2fnames(
-                    obs_id,
-                    return_weights=return_weights,
-                    split_label=split_label
-                )
-                for fname in fname_list:
-                    if self._check_maps_exist(fname):
-                        fnames.append(fname)
+            for split_label in split_labels:
+                if return_weights:
+                    fname_list, weight_list = self._obsid2fnames(
+                        obs_id,
+                        return_weights=return_weights,
+                        split_label=split_label
+                    )
+                    for fname, weight in zip(fname_list, weight_list):
+                        if self._check_maps_exist(fname):
+                            fnames.append(fname)
+                            weights.append(weight)
+                else:
+                    fname_list = self._obsid2fnames(
+                        obs_id,
+                        return_weights=return_weights,
+                        split_label=split_label
+                    )
+                    for fname in fname_list:
+                        if self._check_maps_exist(fname):
+                            fnames.append(fname)
         if return_weights:
             return fnames, weights
         return fnames
@@ -241,15 +259,26 @@ class Bundler(_Coadder):
     """
     def get_abscal_factors(self):
         calibration_factors = {
-            'ws0': {'f090': 14.6, 'f150': 10.2},
-            'ws1': {'f090': 12.8, 'f150': 12.2},
-            'ws2': {'f090': 13.6, 'f150': 9.6},
-            'ws3': {'f090': 13.6, 'f150': 10.4},
-            'ws4': {'f090': 13.6, 'f150': 14.5},
-            'ws5': {'f090': 11.2, 'f150': 10.2},
-            'ws6': {'f090': 17.1, 'f150': 12.7},
-            }
-        return calibration_factors
+        'satp1':{
+            'ws0': {'f090': 14.964962501118226, 'f150': 12.972798880555338},
+            'ws1': {'f090': 13.213743485029925, 'f150': 8.759982749240976},
+            'ws2': {'f090': 14.964962501118226, 'f150': 12.58841965446481},
+            'ws3': {'f090': 13.355826748309815, 'f150': 10.176267385345804},
+            'ws4': {'f090': 13.649361402118823, 'f150': 9.996686196192643},
+            'ws5': {'f090': 138.01020973253478, 'f150': 15.591161957364674},
+            'ws6': {'f090': 15.722682121428011, 'f150': 11.639977077758559},
+            },
+         'satp3':{
+             'ws0': {'f090': 14.532475084835909, 'f150': 10.36656358545177},
+             'ws1': {'f090': 12.793546442205974, 'f150': 12.40588756947507},
+             'ws2': {'f090': 12.420918875928129, 'f150': 8.092555492155949},
+             'ws3': {'f090': 13.801020973253475, 'f150': 10.621479083454684},
+             'ws4': {'f090': 13.801020973253475, 'f150': 14.161972111272913},
+             'ws5': {'f090': 11.291744432661936, 'f150': 9.996686196192643},
+             'ws6': {'f090': 17.016658860021536, 'f150': 12.915718565480894},
+         }
+         }
+        return calibration_factors[self.telescope.lower()]
 
     def get_abfac(self, fname, abscal=True):
         self.abscal_factors = self.get_abscal_factors() if abscal else 1
@@ -281,7 +310,7 @@ class Bundler(_Coadder):
         return ws, freq
 
     def bundle(self, bundle_id, split_label=None, null_prop_val=None,
-               abscal=True):
+               abscal=False, nproc=1):
         """
         Make a map bundle given a bundle ID and, optionally, null properties.
 
@@ -296,15 +325,20 @@ class Bundler(_Coadder):
             String of format "{quality}_{null_property}", e.g. "low_pwv"
             indicating the inter-observation null split that observations
             belong to.
+        abscal: bool
+            Apply saved abscal factors if True.
+        nproc: int
+            Number of parallel processes to use. 1 for serial.
 
         Returns
         -------
         signal: np.array
             Output bundled signal map.
+        weights: np.array
+            Output bundled weights map.
         hits: np.array
             Output bundled hits map.
         """
-        assert (split_label is None or null_prop_val is None)
         fnames = self._get_fnames(bundle_id, null_prop_val, split_label)
 
         # DEBUG
@@ -312,25 +346,16 @@ class Bundler(_Coadder):
             f"{len(list(set(fnames)))} atomic file names (bundle {bundle_id})"
         )
 
-        wmaps_list = [
-            read_map(fname, pix_type=self.pix_type,
-                     fields_hp=self.fields_hp) * self.get_abfac(fname, abscal)
-            for fname in fnames
-        ]
-        weights_list = [read_map(fname.replace("wmap", "weights"),
-                                 pix_type=self.pix_type,
-                                 fields_hp=self.fields_hp,
-                                 is_weights=True)
-                        for fname in fnames]
-        hits_list = [read_map(fname.replace("wmap", "hits"),
-                              pix_type=self.pix_type)
-                     for fname in fnames]
-        signal, hits = coadd_maps(
-            wmaps_list, weights_list, hits_list, pix_type=self.pix_type,
-            car_template_map=self.car_map_template
-        )
+        abfac = np.array([self.get_abfac(fname, abscal) for fname in fnames]) if abscal==True else 1
+        weights_list = [fname.replace("wmap", "weights") for fname in fnames]
+        hits_list = [fname.replace("wmap", "hits") for fname in fnames]
 
-        return signal, hits
+        signal, weights, hits = coadd_maps(
+            fnames, weights_list, hits_list, pix_type=self.pix_type,
+            car_template_map=self.car_map_template, abscal=abfac, nproc=nproc
+            )
+
+        return signal, weights, hits
 
 
 class SignFlipper(_Coadder):
@@ -369,15 +394,9 @@ class SignFlipper(_Coadder):
         super().__init__(atomic_db, bundle_db, freq_channel, wafer,
                          pix_type=pix_type)
 
-        if self.pix_type == "hp":
-            # Erik's atomic.db contains mean QU weights, so we'll use them here
-            self.fnames, self.ws = self._get_fnames(
-                bundle_id, null_prop_val, return_weights=True
-            )
-        else:
-            self.fnames = self._get_fnames(
-                bundle_id, null_prop_val, return_weights=False
-            )
+         self.fnames, self.ws = self._get_fnames(
+             bundle_id, null_prop_val, return_weights=True
+         )
 
         self.wmaps = [read_map(fname, pix_type=self.pix_type,
                                fields_hp=self.fields_hp)
@@ -387,12 +406,6 @@ class SignFlipper(_Coadder):
                                  fields_hp=self.fields_hp,
                                  is_weights=True)
                         for fname in self.fnames]
-
-        if self.pix_type == "car":
-            # Susanna's atomics.db doesn't have mean QU weights, so we'll
-            # compute them by hand
-            self.ws = [(np.mean(w[1]) + np.mean(w[2])) / 2
-                       for w in self.weights]
 
     def signflip(self, seed=None):
         """

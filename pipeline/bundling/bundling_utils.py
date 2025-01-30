@@ -3,7 +3,7 @@ from pixell import enmap
 import healpy as hp
 from astropy.io import fits
 import h5py
-
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 def _check_pix_type(pix_type):
     """
@@ -56,14 +56,16 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
             num_fields = fits.getheader(map_file, 1)['TFIELDS']
             # Read only TT, QQ, UU weights
             fields_hp = (0, 4, 8) if (num_fields == 9) else (0, 1, 2)
-        kwargs = {"field": fields_hp, } if fields_hp is not None else {}
+        # Default to loading all fields (field=None) if fields_hp is not provided
+        kwargs = {"field": fields_hp, } #if fields_hp is not None else {}
         m = hp.read_map(map_file, **kwargs)
     else:
         # print(map_file)
         m = enmap.read_map(map_file, geometry=geometry)
         if is_weights:
             # Read only TT, QQ, UU weights
-            m = np.moveaxis(m.diagonal(), -1, 0)
+            if m.ndim > 3 and m.shape[0] == m.shape[1]:
+                m = np.moveaxis(m.diagonal(), -1, 0)
 
     return conv*m
 
@@ -95,130 +97,68 @@ def write_map(map_file, map, dtype=None, pix_type='hp',
         enmap.write_map(map_file, map)
 
 
-def _coadd_maps_car(maps_list, weights_list, hits_list=None, sign_list=None,
-                    res=10, template_map=None, dec_cut=None):  # (-75, 25)
+def _get_map_template_car(template_map=None, res=10, dec_cut=None, variant='fejer1', dtype=np.float64):
     """
-    Coadd a list of atomics maps in CAR format. See function `coadd_maps` for
-    documentation.
+    Get a map template for CAR
+
+    Parameters
+    ----------
+    template_map : str
+        File name for map or geometry file to use as template
+    res : int
+        Resolution of the map in arcmin if template_map is None
+    dec_cut : tuple
+        Min/max dec in deg if template_map is None
+    variant : str
+        CAR variant to use if template_map is None. 'fejer1' or 'cc'.
+    dtype : np.dtype
+        Data type.
     """
-    assert len(maps_list) == len(weights_list)
-
-    if hits_list is not None:
-        assert len(hits_list) == len(maps_list)
-    if sign_list is None:
-        sign_list = [1.]*len(maps_list)
-    else:
-        assert len(sign_list) == len(maps_list)
-
     if template_map is not None:
-        w = enmap.read_map(template_map)
-        _shape = w.shape[-2:]
-        geometry = (_shape, w.wcs)
-        template_geom = geometry
-        print("geometry", geometry)
+        if isinstance(template_map, str):
+            shape, wcs = enmap.read_map_geometry(template_map)
+        else:
+            shape, wcs = template_map.geometry # Assume we were passed a pre-loaded map
+        shape = shape[-2:]
     elif dec_cut is not None:
-        print("dec_cut", dec_cut)
-        template_geom = enmap.band_geometry(
+        shape, wcs = enmap.band_geometry(
             (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
-            res=np.deg2rad(res/60)
+            res=np.deg2rad(res/60), variant=variant
         )
     else:
         raise ValueError("Either geometry or dec_cut required.")
 
-    shape, wcs = template_geom
-    atom_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
-    weight_coadd = enmap.zeros((3, *template_geom[0]), template_geom[1])
-
-    if hits_list is not None:
-        hits_coadd = enmap.zeros(shape, wcs=wcs)
-
-    for i, (atom, weight) in enumerate(zip(maps_list, weights_list)):
-        # atom_coadd = enmap.insert(atom_coadd, atom * float(sign_list[i]),
-        #                           op=np.ndarray.__iadd__)
-        # weight_coadd = enmap.insert(weight_coadd, weight,
-        #                             op=np.ndarray.__iadd__)
-        # if hits_list is not None:
-        #     hits_coadd = enmap.insert(hits_coadd, np.squeeze(hits_list[i]),
-        #                               op=np.ndarray.__iadd__)
-        # m_ = enmap.read_map(atom) #* abfac
-        m_ = atom  # * abfac
-        mask = np.isfinite(m_)
-        m_[~mask] = 0.0
-        m_ = enmap.extract(m_, shape, wcs)
-
-        # ivar = enmap.read_map(weight)
-        ivar = weight
-        mask = np.isfinite(ivar)
-        ivar[~mask] = 0.0
-        ivar = enmap.extract(ivar, shape, wcs)
-        # ivar2 = ivar * abfac
-
-        if hits_list is not None:
-            # hits = enmap.read_map(hits_list[i])
-            hits = hits_list[i]
-            mask = np.isfinite(hits)
-            hits[~mask] = 0.0
-            hits = np.squeeze(enmap.extract(hits, shape, wcs))
-            hits_coadd += hits
-
-        atom_coadd += m_
-        weight_coadd += ivar
-        # weight_coadd_kcmb += ivar2
-
-    # Cut zero-weight pixels
-    weight_coadd[weight_coadd == 0] = np.inf
-    atom_coadd /= weight_coadd
-
-    if hits_list is not None:
-        return atom_coadd, hits_coadd
+    atom_coadd = enmap.zeros((3, *shape), wcs, dtype=dtype)
     return atom_coadd
 
-
-def _coadd_maps_hp(maps_list, weights_list, hits_list=None, sign_list=None):
+def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
     """
-    Coadd a list of HEALPix atomics maps. See function `coadd_maps` for
-    documentation.
-    """
-    assert len(maps_list) == len(weights_list)
-    try:
-        maps_list = np.array(maps_list, dtype=np.float32)
-        weights_list = np.array(weights_list, dtype=np.float32)
-    except:  # noqa
-        raise ValueError("The input maps do not have the same size. "
-                         "Are you sure you want to coadd healpix maps?")
+    Get a map template for healpix
 
-    if hits_list is not None:
-        assert len(hits_list) == len(maps_list)
-    if sign_list is None:
-        sign_list = [1.]*len(maps_list)
+    Parameters
+    ----------
+    template_map : str
+        File name for map or geometry file to use as template
+    nside : int
+        NSIDE to use if template_map is None
+    dtype : np.dtype
+        Data type.
+    """
+    if template_map is not None:
+        if isinstance(template_map, str):
+            temp = hp.read_map(template_map)
+        else:
+            temp = template_map # Assume we were passed a pre-loaded map
+        npix = temp.shape[-1]
     else:
-        assert len(sign_list) == len(maps_list)
-
-    for i, (atom, weight) in enumerate(zip(maps_list, weights_list)):
-
-        if i == 0:
-            atom_coadd = np.zeros_like(atom)
-            weight_coadd = np.zeros_like(weight)
-            if hits_list is not None:
-                hits_coadd = np.zeros_like(hits_list[i])
-
-        atom_coadd += atom * float(sign_list[i])
-        weight_coadd += weight
-        if hits_list is not None:
-            hits_coadd += hits_list[i]
-
-    # Cut zero-weight pixels
-    weight_coadd[weight_coadd == 0] = np.inf
-    atom_coadd /= weight_coadd
-
-    if hits_list is not None:
-        return atom_coadd, hits_coadd
+        npix = 12 * nside**2
+    atom_coadd = np.zeros((3, npix), dtype=dtype)
     return atom_coadd
 
 
 def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
                pix_type="hp", res_car=10, car_template_map=None,
-               dec_cut_car=None):
+               dec_cut_car=None, fields_hp=None, abscal=1, nproc=1):
     """
     Coadd a list of weighted maps, a list of map weights, and
     (optionally) a list of hits maps corresponding to a set of atomics.
@@ -227,39 +167,69 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     Parameters
     ----------
     maps_list: list
-        List of weighted TQU maps (numpy arrays).
+        List of weighted TQU maps (string filenames, or numpy arrays).
     weights_list: list
-        List of TQU map weights (numpy arrays).
+        List of TQU map weights (string filenames, or numpy arrays).
     hits_list: list
-        Optional; list of hits maps (numpy arrays). If None, ignore.
+        Optional; list of hits maps (string filenames, or numpy arrays). If None, ignore.
     sign_list:
         Optional; list of signs (+1 or -1) to multiply weighted maps with.
-        If None, so not change maps at all.
+        If None, do not change maps at all.
     pix_type: str
         Pixelization assumed for input maps, either "hp" for HEALPix or
         "car" for CAR pixelization. Default: "hp"
     res_car: int
         Optional; pixel resolution of input CAR maps in arcminutes.
+    car_template_map: str
+        Filename from which to get CAR geometry
     dec_cut_car: tuple of int
         Optional; lower and upper declination cut in degrees, assumed
         for the inputCAR maps. Defaults to SAT-compatible sky region.
+    fields_hp: tuple
+        Tuple of the indexes for the desired fields in the healpix wmap
+    abscal: array
+        Multiplicative factor for each map. Output maps will be multiplied by this number;
+        the weights map will get abscal**-2
+    nproc: int
+        Number of parallel processes to use. 1 for serial.
 
     Returns
     -------
-    atom_coadd: np.array
+    map_coadd: np.array
         Coadded data TQU map, multiplied by the inverse coadded map weights.
+    weights_coadd: np.array
+        Coadded data TQU weights.
     hits_coadd: np.array
         Optional; coadded hits map. Will only be returned if hits_list given.
     """
-    if pix_type == "hp":
-        return _coadd_maps_hp(
-            maps_list, weights_list, hits_list=hits_list, sign_list=sign_list
-        )
-    elif pix_type == "car":
-        return _coadd_maps_car(
-            maps_list, weights_list, hits_list=hits_list, sign_list=sign_list,
-            res=res_car, template_map=car_template_map, dec_cut=dec_cut_car
-        )
+
+    assert len(maps_list) == len(weights_list)
+    if sign_list is None:
+        sign_list = 1
+    elif isinstance(sign_list, list):
+        sign_list = np.array(sign_list)
+    if isinstance(abscal, list):
+        abscal = np.array(abscal)
+    sum_fn = _make_parallel_proc(sum_maps, nproc) if nproc > 1 else sum_maps
+
+    if pix_type == "car":
+        template = _get_map_template_car(car_template_map, res_car, dec_cut_car)
+    elif pix_type == "hp":
+        template = _get_map_template_hp(maps_list[0])
+
+    # Assume multiplicative abscal A: map_cal = map_uncal*A. Then wmap_cal = wmap_uncal*A**-1 and weights_cal = weights_uncal*A**-2
+    map_coadd = sum_fn(maps_list, template, pix_type, mult=sign_list*abscal**-1, fields_hp=fields_hp)
+    weights_coadd = sum_fn(weights_list, template, pix_type, mult=abscal**-2, fields_hp=fields_hp, is_weights=True)
+    if hits_list is not None:
+        hits_coadd = sum_fn(hits_list, template[0], pix_type)
+
+    good_weights = weights_coadd > 0
+    map_coadd[good_weights] /= weights_coadd[good_weights]
+
+    if hits_list is not None:
+        return map_coadd, weights_coadd, hits_coadd
+    else:
+        return map_coadd, weights_coadd
 
 
 # The following functions are utility function inherited from
@@ -347,3 +317,83 @@ def gen_masks_of_given_atomic_map_list_for_bundles(nmaps, nbundles):
         boolean_mask_list.append(_m)
 
     return boolean_mask_list
+
+
+def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x:True, islice=slice(None), **read_map_kwargs):
+    """Coadd CAR or healpix maps
+
+    Parameters
+    ----------
+    filenames: list
+        List of filenames to read and coadd. Can also be pre-loaded maps.
+    template: array
+        An empty map to use as a template.
+    pix_type: str
+        Pixelization, 'car' or 'hp'
+    mult: array
+        Single number or len(filenames) array of numbers. Each map will be multiplied by this.
+    condition: function
+        Boolean or array(bool) function with an individual map as input. If any False this
+        map will not be included in the coadd
+    islice: slice
+        1d slice to apply to filenames and mult. Used in parallelization.
+    read_map_kwargs:
+        kwargs passed through to read_map
+
+    Returns
+    -------
+    out: array
+        enmap.ndmap or np.ndarray of the output coadded map
+    """
+
+    out = template.copy() * 0
+    for ifn, fn in enumerate(filenames[islice]):
+        if isinstance(fn, str):
+            imap = read_map(fn, pix_type=pix_type, **read_map_kwargs)
+        else:
+            imap = fn
+        imult = mult if np.isscalar(mult) else mult[islice][ifn]
+        imap *= imult
+        if np.all(condition(imap)):
+            _add_map(imap, out, pix_type)
+    return out
+
+def _add_map(imap, omap, pix_type):
+    """Add a single map imap to an existing omap. omap is modified in place."""
+    _check_pix_type(pix_type)
+    if pix_type == 'hp':
+        omap += imap
+    elif pix_type == 'car':
+        enmap.extract(imap, omap.shape, omap.wcs, omap=omap, op=np.ndarray.__iadd__)
+
+def _make_parallel_proc(fn, nproc_default):
+    """Parallelize a coaddition function using ProcessPoolExecutor.
+
+    Parameters
+    ----------
+    fn: function
+        coaddition function with input params (list of filenames, template map)
+        and return: coadded map
+    nproc_default: int
+        Default number of processes to use
+
+    Returns
+    -------
+    fn: function
+        Parallelized coaddition function with same input params, plus optional nproc=nproc_default
+    """
+    def parallel_fn(filenames, template, *args, nproc=nproc_default, **kwargs):
+        ibin = int(np.ceil(len(filenames)/nproc))
+        slices = [slice(iproc*ibin,(iproc+1)*ibin) for iproc in range(nproc)]
+        out = None
+        with ProcessPoolExecutor(nproc) as exe:
+            futures = [exe.submit(fn, filenames, template, *args, islice=slices[iproc], **kwargs) for iproc in range(nproc)]
+            for future in as_completed(futures):
+                if out is None:
+                    out = future.result()
+                else:
+                    out += future.result()
+                futures.remove(future)
+
+        return out
+    return parallel_fn
