@@ -192,7 +192,8 @@ if __name__ == "__main__":
         "--query_restrict",
         type=str,
         nargs='+',
-        help="SQL query to restict obs from the atomic database (e.g. 'pwv < 2')",
+        help="SQL query to restict obs from the atomic database "
+             "(e.g. 'pwv < 2')",
         default=""
     )
     parser.add_argument(

@@ -111,7 +111,7 @@ def make_map(obs, pix_type="hp", shape=None, wcs=None, nside=None, site=None,
         )
     if pix_type == "car":
         nside = None
-        assert (shape is not None) and (wcs is not None)
+        assert wcs is not None
     elif pix_type == "hp":
         wcs, shape = (None, None)
         assert nside is not None
@@ -377,7 +377,7 @@ def main(args):
         #     wmap, w = erik_make_map(aman, nside=nside, site="so_sat1")
 
         # NEW CODE
-        wmap, w = make_map(aman, pix_type, shape=shape, wcs=wcs, nside=nside,
+        wmap, w = make_map(aman, pix_type, shape=None, wcs=wcs, nside=nside,
                            logger=logger)
 
         local_wmaps.append(wmap)
@@ -388,10 +388,10 @@ def main(args):
         logger.info(f"Rank {rank} saving labels {local_labels}")
         atomic_fname = map_string_format.format(sim_id=sim_id).replace(
             mfmt,
-            f"_obsid{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
+            f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
         )
         f_wmap = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
-        f_w = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_w' + mfmt)}"
+        f_w = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_weights' + mfmt)}"
 
         if pix_type == "car":
             enmap.write_map(f_wmap, wmap)

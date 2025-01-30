@@ -54,11 +54,11 @@ def _get_atomics_maps_list(sim_id, atomic_metadata, atomics_dir, split_label,
             print("    id", id)
         atomic_fname = map_string_format.format(sim_id=sim_id).replace(
             mfmt,
-            f"_obsid{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
+            f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
         )
         fname_wmap, fname_w = (
             f"{atomics_dir}/{atomic_fname.replace(mfmt, f'_{s}{mfmt}')}"
-            for s in ("wmap", "w")
+            for s in ("wmap", "weights")
         )
 
         # Observations can vanish if the FP thinning and the detector cuts
