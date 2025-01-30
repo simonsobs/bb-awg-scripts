@@ -126,9 +126,9 @@ class _Coadder:
             query += f" AND wafer = '{self.wafer}'"
         if self.patch is not None:
             if self.patch == "south":
-                query += f" AND (azimuth > 100 AND azimuth < 260)"
+                query += " AND (azimuth > 100 AND azimuth < 260)"
             elif self.patch == "north":
-                query += f" AND (azimuth < 100 OR azimuth > 260)"
+                query += " AND (azimuth < 100 OR azimuth > 260)"
             else:
                 raise ValueError(f"self.patch {self.patch} not recognized.")
 
@@ -259,7 +259,7 @@ class Bundler(_Coadder):
     """
     def get_abscal_factors(self):
         calibration_factors = {
-        'satp1':{
+        'satp1': {  # noqa
             'ws0': {'f090': 14.964962501118226, 'f150': 12.972798880555338},
             'ws1': {'f090': 13.213743485029925, 'f150': 8.759982749240976},
             'ws2': {'f090': 14.964962501118226, 'f150': 12.58841965446481},
@@ -268,7 +268,7 @@ class Bundler(_Coadder):
             'ws5': {'f090': 138.01020973253478, 'f150': 15.591161957364674},
             'ws6': {'f090': 15.722682121428011, 'f150': 11.639977077758559},
             },
-         'satp3':{
+         'satp3': {
              'ws0': {'f090': 14.532475084835909, 'f150': 10.36656358545177},
              'ws1': {'f090': 12.793546442205974, 'f150': 12.40588756947507},
              'ws2': {'f090': 12.420918875928129, 'f150': 8.092555492155949},
@@ -346,7 +346,7 @@ class Bundler(_Coadder):
             f"{len(list(set(fnames)))} atomic file names (bundle {bundle_id})"
         )
 
-        abfac = np.array([self.get_abfac(fname, abscal) for fname in fnames]) if abscal==True else 1
+        abfac = np.array([self.get_abfac(fname, abscal) for fname in fnames]) if abscal == True else 1  # noqa
         weights_list = [fname.replace("wmap", "weights") for fname in fnames]
         hits_list = [fname.replace("wmap", "hits") for fname in fnames]
 
@@ -393,8 +393,7 @@ class SignFlipper(_Coadder):
         """
         super().__init__(atomic_db, bundle_db, freq_channel, wafer,
                          pix_type=pix_type)
-
-         self.fnames, self.ws = self._get_fnames(
+        self.fnames, self.ws = self._get_fnames(
              bundle_id, null_prop_val, return_weights=True
          )
 
