@@ -1,7 +1,28 @@
 import healpy as hp
 import numpy as np
 import os
-from soopercool import utils
+import camb
+
+
+def get_theory_cls(cosmo_params, lmax, lmin=0):
+    """
+    """
+    params = camb.set_params(**cosmo_params)
+    results = camb.get_results(params)
+    powers = results.get_cmb_power_spectra(params, CMB_unit='K', raw_cl=True)
+    lth = np.arange(lmin, lmax+1)
+
+    cl_th = {
+        "TT": powers["total"][:, 0][lmin:lmax+1],
+        "EE": powers["total"][:, 1][lmin:lmax+1],
+        "TE": powers["total"][:, 3][lmin:lmax+1],
+        "BB": powers["total"][:, 2][lmin:lmax+1]
+    }
+    for spec in ["EB", "TB"]:
+        cl_th[spec] = np.zeros_like(lth)
+
+    return lth, cl_th
+
 
 def main(args):
     """
@@ -26,7 +47,7 @@ def main(args):
         "r": 0.0,
     }
     
-    lth, clth = utils.get_theory_cls(
+    _, clth = get_theory_cls(
         cosmo,
         lmax=lmax
     )

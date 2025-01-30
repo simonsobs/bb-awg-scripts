@@ -20,6 +20,14 @@ def _check_pix_type(pix_type):
         raise ValueError(f"Unknown pixelisation type {pix_type}.")
 
 
+def get_fullsky_geometry(res_arcmin=10., variant="fejer1"):
+    """
+    Generates a fullsky CAR template at resolution res-arcmin.
+    """
+    res = res_arcmin * np.pi/180/60
+    return enmap.fullsky_geometry(res=res, proj='car', variant=variant)
+
+
 def lmax_from_map(map, pix_type="hp"):
     """
     ** From SOOPERCOOL/soopercool/map_utils.py **
@@ -101,8 +109,12 @@ def main(args):
     os.makedirs(out_dir, exist_ok=True)
 
     if pix_type == "car":
-        template_map = read_map(args.car_template_map, pix_type="car")
-        shape, wcs = template_map.geometry
+        if args.car_template_map is not None:
+            template_map = read_map(args.car_template_map, pix_type="car")
+            geometry = template_map.geometry
+        else:
+            geometry = get_fullsky_geometry()
+        shape, wcs = geometry
         new_shape = (3,) + shape[-2:]
         template = enmap.zeros(new_shape, wcs)
         lmax = lmax_from_map(template, pix_type="car")
