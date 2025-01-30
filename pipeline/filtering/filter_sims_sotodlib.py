@@ -15,10 +15,22 @@ from sotodlib.core.metadata import loader
 from pixell import enmap
 from mpi4py import MPI
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..','bundling')))
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..','misc')))
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'bundling'))
+)
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
+)
 from coordinator import BundleCoordinator  # noqa
 from mpi_utils import distribute_tasks  # noqa
+
+
+def get_fullsky_geometry(res_arcmin=10., variant="fejer1"):
+    """
+    Generates a fullsky CAR template at resolution res-arcmin.
+    """
+    res = res_arcmin * np.pi/180/60
+    return enmap.fullsky_geometry(res=res, proj='car', variant=variant)
 
 
 def erik_make_map(obs, shape=None, wcs=None, nside=None, site=None):
@@ -189,19 +201,20 @@ def main(args):
         nside = args.nside
         mfmt = ".fits"  # TODO: fits.gz for HEALPix
     elif pix_type == "car":
-        car_map_template = args.car_map_template
+        if args.car_map_template is not None:
+            w = enmap.read_map(args.car_map_template)
+            shape = w.shape[-2:]
+            wcs = w.wcs
+        else:
+            shape, wcs = get_fullsky_geometry()
         nside = None
         mfmt = ".fits"
-
-    if pix_type == "car" and car_map_template is not None:
-        w = enmap.read_map(car_map_template)
-        shape = w.shape[-2:]
-        wcs = w.wcs
 
     # Bundle query arguments
     freq_channel = args.freq_channel
     null_prop_val_inter_obs = args.null_prop_val_inter_obs
     bundle_id = args.bundle_id
+    split_label = args.split_label_intra_obs
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id - null split combination
@@ -215,12 +228,14 @@ def main(args):
         raise ValueError(f"DB file does not exist: {bundle_db}")
 
     ctimes = bundle_coordinator.get_ctimes(
-        bundle_id=bundle_id, null_prop_val=null_prop_val_inter_obs
+        bundle_id=bundle_id,
+        split_label=split_label,
+        null_prop_val=null_prop_val_inter_obs,
     )
 
     # Read restrictive list of atomic-map metadata
-    # (obs_id, wafer, freq_channel) from file, and intersect it with the
-    # metadata in the bundling database.
+    # (obs_id, wafer, freq_channel) from file, and intersect it
+    # with the metadata in the bundling database.
     atomic_restrict = []
     if args.atomic_list is not None:
         atomic_restrict = list(
@@ -234,7 +249,8 @@ def main(args):
     for ctime in ctimes:
         res = db_cur.execute(
             "SELECT obs_id, wafer FROM atomic WHERE "
-            f"freq_channel == '{freq_channel}' AND ctime = '{ctime}'"
+            f"freq_channel == '{freq_channel}' AND ctime = '{ctime}' "
+            f"AND split_label == '{split_label}'"
         )
         res = res.fetchall()
 
@@ -372,7 +388,7 @@ def main(args):
         logger.info(f"Rank {rank} saving labels {local_labels}")
         atomic_fname = map_string_format.format(sim_id=sim_id).replace(
             mfmt,
-            f"_obsid{obs_id}_{wafer}_{freq_channel}{mfmt}"
+            f"_obsid{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
         )
         f_wmap = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
         f_w = f"{atomics_dir}/{atomic_fname.replace(mfmt, '_w' + mfmt)}"
@@ -453,6 +469,10 @@ if __name__ == "__main__":
         "--null_prop_val_inter_obs",
         help="Null property value for inter-obs splits, e.g. 'pwv_low'.",
         default=None
+    )
+    parser.add_argument(
+        "--split_label_intra_obs",
+        help="Split label for intra-obs splits, e.g. 'scan_left'."
     )
     parser.add_argument(
         "--nside",
