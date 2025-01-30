@@ -5,6 +5,7 @@ from astropy.io import fits
 import h5py
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+
 def _check_pix_type(pix_type):
     """
     Error handling for pixellization types.
@@ -56,8 +57,9 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
             num_fields = fits.getheader(map_file, 1)['TFIELDS']
             # Read only TT, QQ, UU weights
             fields_hp = (0, 4, 8) if (num_fields == 9) else (0, 1, 2)
-        # Default to loading all fields (field=None) if fields_hp is not provided
-        kwargs = {"field": fields_hp, } #if fields_hp is not None else {}
+        # Default to loading all fields (field = None) if fields_hp
+        # is not provided
+        kwargs = {"field": fields_hp, }  # if fields_hp is not None else {}
         m = hp.read_map(map_file, **kwargs)
     else:
         # print(map_file)
@@ -97,7 +99,8 @@ def write_map(map_file, map, dtype=None, pix_type='hp',
         enmap.write_map(map_file, map)
 
 
-def _get_map_template_car(template_map=None, res=10, dec_cut=None, variant='fejer1', dtype=np.float64):
+def _get_map_template_car(template_map=None, res=10, dec_cut=None,
+                          variant='fejer1', dtype=np.float64):
     """
     Get a map template for CAR
 
@@ -117,19 +120,25 @@ def _get_map_template_car(template_map=None, res=10, dec_cut=None, variant='feje
     if template_map is not None:
         if isinstance(template_map, str):
             shape, wcs = enmap.read_map_geometry(template_map)
-        else:
-            shape, wcs = template_map.geometry # Assume we were passed a pre-loaded map
+        else:  # Assume we were passed a pre-loaded map
+            shape, wcs = template_map.geometry
+        print(f"Using map geometry with shape={shape}, wcs={wcs}.")
         shape = shape[-2:]
     elif dec_cut is not None:
+        print(f"Using band geometry with dec_cut = {dec_cut}")
         shape, wcs = enmap.band_geometry(
             (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
             res=np.deg2rad(res/60), variant=variant
         )
     else:
-        raise ValueError("Either geometry or dec_cut required.")
+        print("Using full-sky geometry.")
+        res = 10. * np.pi/180/60
+        shape, wcs = enmap.fullsky_geometry(res=res, proj='car',
+                                            variant="fejer1")
 
     atom_coadd = enmap.zeros((3, *shape), wcs, dtype=dtype)
     return atom_coadd
+
 
 def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
     """
@@ -148,7 +157,7 @@ def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
         if isinstance(template_map, str):
             temp = hp.read_map(template_map)
         else:
-            temp = template_map # Assume we were passed a pre-loaded map
+            temp = template_map  # Assume we were passed a pre-loaded map
         npix = temp.shape[-1]
     else:
         npix = 12 * nside**2
@@ -171,7 +180,8 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     weights_list: list
         List of TQU map weights (string filenames, or numpy arrays).
     hits_list: list
-        Optional; list of hits maps (string filenames, or numpy arrays). If None, ignore.
+        Optional; list of hits maps (string filenames, or numpy arrays).
+        If None, ignore.
     sign_list:
         Optional; list of signs (+1 or -1) to multiply weighted maps with.
         If None, do not change maps at all.
@@ -188,8 +198,8 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     fields_hp: tuple
         Tuple of the indexes for the desired fields in the healpix wmap
     abscal: array
-        Multiplicative factor for each map. Output maps will be multiplied by this number;
-        the weights map will get abscal**-2
+        Multiplicative factor for each map. Output maps will be multiplied
+        by this number; the weights map will get abscal**-2
     nproc: int
         Number of parallel processes to use. 1 for serial.
 
@@ -213,13 +223,28 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     sum_fn = _make_parallel_proc(sum_maps, nproc) if nproc > 1 else sum_maps
 
     if pix_type == "car":
-        template = _get_map_template_car(car_template_map, res_car, dec_cut_car)
+        template = _get_map_template_car(car_template_map, res_car,
+                                         dec_cut_car)
     elif pix_type == "hp":
         template = _get_map_template_hp(maps_list[0])
 
-    # Assume multiplicative abscal A: map_cal = map_uncal*A. Then wmap_cal = wmap_uncal*A**-1 and weights_cal = weights_uncal*A**-2
-    map_coadd = sum_fn(maps_list, template, pix_type, mult=sign_list*abscal**-1, fields_hp=fields_hp)
-    weights_coadd = sum_fn(weights_list, template, pix_type, mult=abscal**-2, fields_hp=fields_hp, is_weights=True)
+    # Assume multiplicative abscal A: map_cal = map_uncal*A.
+    # Then wmap_cal = wmap_uncal*A**-1 and weights_cal = weights_uncal*A**-2
+    map_coadd = sum_fn(
+        maps_list,
+        template,
+        pix_type,
+        mult=sign_list*abscal**-1,
+        fields_hp=fields_hp
+    )
+    weights_coadd = sum_fn(
+        weights_list,
+        template,
+        pix_type,
+        mult=abscal**-2,
+        fields_hp=fields_hp,
+        is_weights=True
+    )
     if hits_list is not None:
         hits_coadd = sum_fn(hits_list, template[0], pix_type)
 
@@ -319,7 +344,8 @@ def gen_masks_of_given_atomic_map_list_for_bundles(nmaps, nbundles):
     return boolean_mask_list
 
 
-def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x:True, islice=slice(None), **read_map_kwargs):
+def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x: True,
+             islice=slice(None), **read_map_kwargs):
     """Coadd CAR or healpix maps
 
     Parameters
@@ -331,10 +357,11 @@ def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x:True, isl
     pix_type: str
         Pixelization, 'car' or 'hp'
     mult: array
-        Single number or len(filenames) array of numbers. Each map will be multiplied by this.
+        Single number or len(filenames) array of numbers.
+        Each map will be multiplied by this.
     condition: function
-        Boolean or array(bool) function with an individual map as input. If any False this
-        map will not be included in the coadd
+        Boolean or array(bool) function with an individual map as input.
+        If any False this map will not be included in the coadd
     islice: slice
         1d slice to apply to filenames and mult. Used in parallelization.
     read_map_kwargs:
@@ -358,13 +385,16 @@ def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x:True, isl
             _add_map(imap, out, pix_type)
     return out
 
+
 def _add_map(imap, omap, pix_type):
     """Add a single map imap to an existing omap. omap is modified in place."""
     _check_pix_type(pix_type)
     if pix_type == 'hp':
         omap += imap
     elif pix_type == 'car':
-        enmap.extract(imap, omap.shape, omap.wcs, omap=omap, op=np.ndarray.__iadd__)
+        enmap.extract(imap, omap.shape, omap.wcs, omap=omap,
+                      op=np.ndarray.__iadd__)
+
 
 def _make_parallel_proc(fn, nproc_default):
     """Parallelize a coaddition function using ProcessPoolExecutor.
@@ -380,14 +410,17 @@ def _make_parallel_proc(fn, nproc_default):
     Returns
     -------
     fn: function
-        Parallelized coaddition function with same input params, plus optional nproc=nproc_default
+        Parallelized coaddition function with same input params, plus optional
+        nproc=nproc_default
     """
     def parallel_fn(filenames, template, *args, nproc=nproc_default, **kwargs):
         ibin = int(np.ceil(len(filenames)/nproc))
-        slices = [slice(iproc*ibin,(iproc+1)*ibin) for iproc in range(nproc)]
+        slices = [slice(iproc*ibin, (iproc+1)*ibin) for iproc in range(nproc)]
         out = None
         with ProcessPoolExecutor(nproc) as exe:
-            futures = [exe.submit(fn, filenames, template, *args, islice=slices[iproc], **kwargs) for iproc in range(nproc)]
+            futures = [exe.submit(fn, filenames, template, *args,
+                                  islice=slices[iproc], **kwargs)
+                       for iproc in range(nproc)]
             for future in as_completed(futures):
                 if out is None:
                     out = future.result()
