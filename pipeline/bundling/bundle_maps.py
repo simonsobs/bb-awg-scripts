@@ -28,9 +28,6 @@ def main(args):
     if args.null_prop_val_inter_obs in ["None", "none", "science"]:
         args.null_prop_val_inter_obs = None
 
-    out_dir = args.output_dir
-    os.makedirs(out_dir, exist_ok=True)
-
     car_map_template = args.car_map_template
 
     if os.path.isfile(args.bundle_db) and not args.overwrite:
@@ -50,6 +47,9 @@ def main(args):
 
     if args.only_make_db:
         return
+
+    out_dir = args.output_dir
+    os.makedirs(out_dir, exist_ok=True)
 
     atomic_list = None
     if args.atomic_list is not None:
@@ -73,11 +73,13 @@ def main(args):
         print(" - bundle_id", bundle_id)
         split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
                                             args.null_prop_val_inter_obs)
-        split_intra_obs = split_intra_obs.split()
+        if split_intra_obs is not None:
+            split_intra_obs = split_intra_obs.replace(',', ' ').split()
         bundled_map, weights_map, hits_map = bundler.bundle(
             bundle_id,
             split_label=split_intra_obs,
             null_prop_val=split_inter_obs,
+            map_dir=args.map_dir,
             abscal=args.abscal,
             nproc=args.nproc
         )
@@ -86,11 +88,13 @@ def main(args):
         if (split_intra_obs, split_inter_obs) == (None, None):
             name_tag = f"{args.freq_channel}_science"
         elif (split_intra_obs is not None) and (split_inter_obs is not None):
-            raise ValueError(
-                "Both split types cannot be selected at the same time."
-            )
+            # Assume this is an inter with summed intras
+            name_tag = f"{args.freq_channel}_{split_inter_obs}"
         elif split_intra_obs is not None:
-            name_tag = f"{args.freq_channel}_{split_intra_obs}"
+            if isinstance(split_intra_obs, list):
+                name_tag = f"{args.freq_channel}_{'_'.join(split_intra_obs)}"
+            else:
+                name_tag = f"{args.freq_channel}_{split_intra_obs}"
         elif split_inter_obs is not None:
             name_tag = f"{args.freq_channel}_{split_inter_obs}"
 
@@ -216,6 +220,11 @@ if __name__ == "__main__":
         help="Output directory."
     )
     parser.add_argument(
+        "--map_dir",
+        help="Map directory."
+    )
+
+    parser.add_argument(
         "--map_string_format",
         help="String formatting; must contain {name_tag} and {bundle_id}."
     )
@@ -248,11 +257,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--abscal",
         action="store_true",
-        help="Apply stored absolute calibration factors if True"
+        help="Apply stored absolute calibration factors"
     )
     parser.add_argument(
         "--nproc",
         default=1,
+        type=int,
         help="Number of parallel processes to use in coadd"
     )
     parser.add_argument(

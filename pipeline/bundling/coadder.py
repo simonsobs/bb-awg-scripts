@@ -83,7 +83,7 @@ class _Coadder:
 
         return obs_ids
 
-    def _obsid2fnames(self, obs_id, return_weights=False, split_label=None):
+    def _obsid2fnames(self, obs_id, return_weights=False, split_label=None, map_dir=None):
         """
         TODO: If an atomics_list is given (w/ entries (obs_id, wafer, freq)),
         select only fnames corresponding to these atomics.
@@ -106,7 +106,8 @@ class _Coadder:
         """
         if split_label is None:
             split_label = "full"
-        map_dir = os.path.dirname(self.atomic_db)
+        if map_dir is None:
+            map_dir = os.path.dirname(self.atomic_db)
 
         # For now, assume HEAPix maps are gzipped fits and CAR maps are fits.
         # This may be generalized at some point in the future.
@@ -195,7 +196,7 @@ class _Coadder:
         return maps_exist
 
     def _get_fnames(self, bundle_id, null_prop_val=None, split_label=None,
-                    return_weights=False):
+                    return_weights=False, map_dir=None):
         """
         Return file names (and, optionally, mean polarization weights) given a
         bundle_id and a null property.
@@ -232,7 +233,8 @@ class _Coadder:
                     fname_list, weight_list = self._obsid2fnames(
                         obs_id,
                         return_weights=return_weights,
-                        split_label=split_label
+                        split_label=split_label,
+                        map_dir=map_dir
                     )
                     for fname, weight in zip(fname_list, weight_list):
                         if self._check_maps_exist(fname):
@@ -242,7 +244,8 @@ class _Coadder:
                     fname_list = self._obsid2fnames(
                         obs_id,
                         return_weights=return_weights,
-                        split_label=split_label
+                        split_label=split_label,
+                        map_dir=map_dir
                     )
                     for fname in fname_list:
                         if self._check_maps_exist(fname):
@@ -310,7 +313,7 @@ class Bundler(_Coadder):
         return ws, freq
 
     def bundle(self, bundle_id, split_label=None, null_prop_val=None,
-               abscal=False, nproc=1):
+               map_dir=None, abscal=False, nproc=1):
         """
         Make a map bundle given a bundle ID and, optionally, null properties.
 
@@ -339,8 +342,7 @@ class Bundler(_Coadder):
         hits: np.array
             Output bundled hits map.
         """
-        fnames = self._get_fnames(bundle_id, null_prop_val, split_label)
-
+        fnames = self._get_fnames(bundle_id, null_prop_val, split_label, map_dir=map_dir)
         # DEBUG
         print(
             f"{len(list(set(fnames)))} atomic file names (bundle {bundle_id})"
@@ -364,7 +366,7 @@ class SignFlipper(_Coadder):
     atomic maps for the purpose of generating per-bundle noise maps.
     """
     def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
-                 bundle_id=None, null_prop_val=None, pix_type="hp"):
+                 bundle_id=None, null_prop_val=None, pix_type="hp", map_dir=None):
         """
         Constructor for the SignFlipper class. Creates a SignFlipper object,
         given map information from atomic_db and bundling information from
@@ -393,8 +395,9 @@ class SignFlipper(_Coadder):
         """
         super().__init__(atomic_db, bundle_db, freq_channel, wafer,
                          pix_type=pix_type)
+
         self.fnames, self.ws = self._get_fnames(
-             bundle_id, null_prop_val, return_weights=True
+             bundle_id, null_prop_val, return_weights=True, map_dir=map_dir
          )
 
         self.wmaps = [read_map(fname, pix_type=self.pix_type,

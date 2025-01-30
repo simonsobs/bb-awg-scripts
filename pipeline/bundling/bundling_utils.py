@@ -122,7 +122,7 @@ def _get_map_template_car(template_map=None, res=10, dec_cut=None,
             shape, wcs = enmap.read_map_geometry(template_map)
         else:  # Assume we were passed a pre-loaded map
             shape, wcs = template_map.geometry
-        print(f"Using map geometry with shape={shape}, wcs={wcs}.")
+        #print(f"Using map geometry with shape={shape}, wcs={wcs}.")
         shape = shape[-2:]
     elif dec_cut is not None:
         print(f"Using band geometry with dec_cut = {dec_cut}")
@@ -132,8 +132,7 @@ def _get_map_template_car(template_map=None, res=10, dec_cut=None,
         )
     else:
         print("Using full-sky geometry.")
-        res = 10. * np.pi/180/60
-        shape, wcs = enmap.fullsky_geometry(res=res, proj='car',
+        shape, wcs = enmap.fullsky_geometry(res=np.deg2rad(res/60), proj='car',
                                             variant="fejer1")
 
     atom_coadd = enmap.zeros((3, *shape), wcs, dtype=dtype)
