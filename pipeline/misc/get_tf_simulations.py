@@ -20,7 +20,7 @@ def _check_pix_type(pix_type):
         raise ValueError(f"Unknown pixelisation type {pix_type}.")
 
 
-def get_fullsky_geometry(res_arcmin=10., variant="fejer1"):
+def get_fullsky_geometry(res_arcmin=5., variant="fejer1"):
     """
     Generates a fullsky CAR template at resolution res-arcmin.
     """
@@ -106,7 +106,8 @@ def main(args):
     nside = args.nside
 
     out_dir = args.out_dir
-    os.makedirs(out_dir, exist_ok=True)
+    if not os.path.isdir(out_dir):
+        raise ValueError(f"Directory does not exist: {out_dir}")
 
     if pix_type == "car":
         if args.car_template_map is not None:

@@ -38,36 +38,56 @@ def main(args):
 
     cosmo = {
        "cosmomc_theta": 0.0104085,
-        "As": 2.1e-9,
-        "ombh2": 0.02237,
-        "omch2": 0.1200,
-        "ns": 0.9649,
-        "Alens": 1.0,
-        "tau": 0.0544,
-        "r": 0.0,
+       "As": 2.1e-9,
+       "ombh2": 0.02237,
+       "omch2": 0.1200,
+       "ns": 0.9649,
+       "Alens": 1.0,
+       "tau": 0.0544,
+       "r": 0.0,
     }
-    
+
     _, clth = get_theory_cls(
         cosmo,
         lmax=lmax
     )
 
     for id_sim in range(n_sims):
-        map = hp.synfast([clth["TT"], clth["TE"], clth["EE"], clth["BB"]], lmax=lmax, nside=nside, fwhm=np.deg2rad(smooth_fwhm/60))
+        map = hp.synfast(
+            [clth["TT"], clth["TE"], clth["EE"], clth["BB"]],
+            lmax=lmax, nside=nside, fwhm=np.deg2rad(smooth_fwhm/60)
+        )
 
         hp.write_map(
-            f"{out_dir}/cmb_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}.fits",
+            f"{out_dir}/cmb_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}.fits",  # noqa
             map,
             overwrite=True
         )
 
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--nside", type=int, help="Healpix nside")
-    parser.add_argument("--smooth_fwhm", type=float, help="Smooth scale FWHM in arcmin")
-    parser.add_argument("--n_sims", type=int, help="Number of simulations")
-    parser.add_argument("--out_dir", type=str, help="Output directory")
+    parser.add_argument(
+        "--nside",
+        type=int,
+        help="Healpix nside"
+    )
+    parser.add_argument(
+        "--smooth_fwhm",
+        type=float,
+        help="Smooth scale FWHM in arcmin"
+    )
+    parser.add_argument(
+        "--n_sims",
+        type=int,
+        help="Number of simulations"
+    )
+    parser.add_argument(
+        "--out_dir",
+        type=str,
+        help="Output directory"
+    )
 
     args = parser.parse_args()
 
