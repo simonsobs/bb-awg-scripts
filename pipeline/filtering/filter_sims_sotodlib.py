@@ -25,7 +25,7 @@ from coordinator import BundleCoordinator  # noqa
 from mpi_utils import distribute_tasks  # noqa
 
 
-def get_fullsky_geometry(res_arcmin=10., variant="fejer1"):
+def get_fullsky_geometry(res_arcmin=5., variant="fejer1"):
     """
     Generates a fullsky CAR template at resolution res-arcmin.
     """
@@ -173,18 +173,21 @@ def main(args):
     size = comm.Get_size()
     rank = comm.Get_rank()
 
-    logger = pp_util.init_logger("benchmark", verbosity=3)
+    success = True
+
+    logger = pp_util.init_logger("benchmark", verbosity=0)
 
     # ArgumentParser
     out_dir = args.output_directory
     logger.info(f"out_dir: {out_dir}")
-    os.makedirs(out_dir, exist_ok=True)
 
     plot_dir = f"{out_dir}/plots"
-    os.makedirs(plot_dir, exist_ok=True)
+    if not os.path.isdir(plot_dir):
+        raise ValueError(f"Directory doe not exist: {plot_dir}")
 
     atomics_dir = f"{out_dir}/atomics_sims"
-    os.makedirs(atomics_dir, exist_ok=True)
+    if not os.path.isdir(atomics_dir):
+        raise ValueError(f"Directory doe not exist: {atomics_dir}")
 
     # Databases
     bundle_db = args.bundle_db
@@ -385,9 +388,6 @@ def main(args):
         #     wmap, w = erik_make_map(aman, nside=nside, site="so_sat1")
 
         # NEW CODE
-        # DEBUG
-        print("split_labels", split_labels)
-
         wmap_dict, weights_dict = make_map(
             aman, split_labels, pix_type, shape=None, wcs=wcs, nside=nside,
             logger=logger
@@ -419,6 +419,8 @@ def main(args):
                 )
         end = time.time()
         logger.info(f"ELAPSED TIME for filtering: {end - start} seconds.")
+
+    success = all(comm.allgather(success))
 
 
 if __name__ == "__main__":

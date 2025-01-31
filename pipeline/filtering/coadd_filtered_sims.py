@@ -87,7 +87,7 @@ def _get_atomics_maps_list(sim_id, atomic_metadata, atomics_dir, split_label,
     return wmap_list, w_list
 
 
-def _save_and_plot_map(map, out_fname, out_dir, plot_dir, pix_type="car",
+def _save_and_plot_map(map, out_fname, out_dir, plots_dir, pix_type="car",
                        do_plot=True):
     """
     Saves and optionally plots TQU map.
@@ -111,7 +111,7 @@ def _save_and_plot_map(map, out_fname, out_dir, plot_dir, pix_type="car",
                 map[i], color="planck", ticks=10, range=1.7, colorbar=True
             )
             enplot.write(
-                f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}", plot
+                f"{plots_dir}/{out_fname.replace('.fits', '')}_{f}", plot
             )
 
         elif pix_type == "hp":
@@ -121,7 +121,7 @@ def _save_and_plot_map(map, out_fname, out_dir, plot_dir, pix_type="car",
                 cbar=True, nest=True, unit=r"$\mu$K"
             )
             plt.savefig(
-                f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}.png"
+                f"{plots_dir}/{out_fname.replace('.fits', '')}_{f}.png"
             )
             plt.close()
 
@@ -131,13 +131,10 @@ def main(args):
     """
     # ArgumentParser
     out_dir = args.output_directory
-    os.makedirs(out_dir, exist_ok=True)
-
-    plot_dir = f"{out_dir}/plots"
-    os.makedirs(plot_dir, exist_ok=True)
-
-    atomics_dir = f"{out_dir}/atomics_sims"
-    os.makedirs(atomics_dir, exist_ok=True)
+    plots_dir = f"{out_dir}/plots"
+    if not os.path.isdir(f"{out_dir}/plots"):
+        raise ValueError(f"Directory does not exist: {out_dir}/plots")
+    atomics_dir = args.atomics_dir
 
     # Databases
     atom_db = args.atomic_db
@@ -296,7 +293,7 @@ def main(args):
                 ".fits", f"_bundle{bundle_id}_{split_label}_filtered.fits"
             )
             _save_and_plot_map(
-                filtered_sim, out_fname, out_dir, plot_dir, pix_type=pix_type
+                filtered_sim, out_fname, out_dir, plots_dir, pix_type=pix_type
             )
 
         # Coadding atomics to get science split
@@ -319,7 +316,7 @@ def main(args):
             ".fits", f"_bundle{bundle_id}_science_filtered.fits"
         )
         _save_and_plot_map(
-            filtered_sim, out_fname, out_dir, plot_dir, pix_type=pix_type
+            filtered_sim, out_fname, out_dir, plots_dir, pix_type=pix_type
         )
 
 
@@ -352,6 +349,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-directory",
         help="Output directory for the filtered maps."
+    )
+    parser.add_argument(
+        "--atomics_dir",
+        help="Directory to read atomic maps from."
     )
     parser.add_argument(
         "--freq-channel",
