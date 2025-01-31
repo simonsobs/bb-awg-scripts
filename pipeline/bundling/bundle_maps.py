@@ -64,7 +64,8 @@ def main(args):
         atomic_list=atomic_list,
         car_map_template=car_map_template,
         telescope=args.tel,
-        patch=args.patch
+        patch=args.patch,
+        query_restrict=" ".join(args.query_restrict)
     )
 
     bundle_ids = range(args.n_bundles)
