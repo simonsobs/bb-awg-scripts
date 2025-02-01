@@ -363,7 +363,7 @@ class Bundler(_Coadder):
             car_template_map=self.car_map_template, abscal=abfac, nproc=nproc
             )
 
-        return signal, weights, hits
+        return signal, weights, hits, fnames
 
 
 class SignFlipper(_Coadder):

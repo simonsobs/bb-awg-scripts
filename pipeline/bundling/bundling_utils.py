@@ -380,6 +380,8 @@ def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x: True,
             imap = fn
         imult = mult if np.isscalar(mult) else mult[islice][ifn]
         imap *= imult
+        if np.any(np.isnan(imap)):
+            print(f"WARNING: nans in {fn}. Skipping.")
         if np.all(condition(imap)):
             _add_map(imap, out, pix_type)
     return out

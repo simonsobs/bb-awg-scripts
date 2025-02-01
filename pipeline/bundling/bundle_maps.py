@@ -76,7 +76,8 @@ def main(args):
                                             args.null_prop_val_inter_obs)
         if split_intra_obs is not None:
             split_intra_obs = split_intra_obs.replace(',', ' ').split()
-        bundled_map, weights_map, hits_map = bundler.bundle(
+
+        bundled_map, weights_map, hits_map, fnames = bundler.bundle(
             bundle_id,
             split_label=split_intra_obs,
             null_prop_val=split_inter_obs,
@@ -105,6 +106,9 @@ def main(args):
                                           bundle_id=bundle_id)
         )
 
+        if args.save_fnames:
+            out_filenames = out_fname.replace("map.fits", "fnames.txt")
+            np.savetxt(out_filenames, fnames, fmt='%s')
         if args.pix_type == "car":
             enmap.write_map(out_fname, bundled_map)
             enmap.write_map(out_fname.replace("map.fits", "weights.fits"),
@@ -119,7 +123,7 @@ def main(args):
                 out_fname.replace(".fits", "_hits"),
                 enplot.plot(
                     hits_map, colorbar=True,
-                    min=-1, max=1, ticks=10
+                    ticks=10
                 )
             )
             enplot.write(
@@ -271,6 +275,12 @@ if __name__ == "__main__":
         default=None,
         help="telescope identifier for abscal"
     )
+    parser.add_argument(
+        "--save_fnames",
+        action="store_true",
+        help="Save the atomic map filenames for each bundle"
+    )
+
 
     args = parser.parse_args()
 
