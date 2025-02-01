@@ -118,14 +118,16 @@ class _Coadder:
         cursor = con.cursor()
 
         if return_weights:
-            subquery = "ctime, wafer, freq_channel, median_weight_qu"
+            subquery = "ctime, prefix_path, median_weight_qu"
         else:
-            subquery = "ctime, wafer, freq_channel"
+            subquery = "ctime, prefix_path"
 
         query = f"SELECT {subquery} FROM atomic WHERE freq_channel = "
         query += f"'{self.freq_channel}' AND obs_id = '{obs_id}'"
         if self.wafer is not None:
             query += f" AND wafer = '{self.wafer}'"
+        if split_label is not None:
+            query += f" AND split_label = '{split_label}'"
         if self.patch is not None:
             if self.patch == "south":
                 query += " AND (azimuth > 100 AND azimuth < 260)"
@@ -158,19 +160,19 @@ class _Coadder:
             fnames = [
                 os.path.join(
                     map_dir, f"{str(ctime)[:5]}",
-                    f"atomic_{ctime}_{wafer}_{freq_channel}_{split_label}_wmap{suffix}"  # noqa
+                    f"{os.path.basename(prefix_path)}_wmap{suffix}"  # noqa
                 )
-                for ctime, wafer, freq_channel, _ in result
+                for ctime, prefix_path, _ in result
             ]
-            weights = [weight for _, _, _, weight in result]
+            weights = [weight for _, _, weight in result]
             return fnames, weights
         else:
             fnames = [
                 os.path.join(
                     map_dir, f"{str(ctime)[:5]}",
-                    f"atomic_{ctime}_{wafer}_{freq_channel}_{split_label}_wmap{suffix}"  # noqa
+                    f"{os.path.basename(prefix_path)}_wmap{suffix}"  # noqa
                 )
-                for ctime, wafer, freq_channel in result
+                for ctime, prefix_path in result
             ]
             return fnames
 
@@ -346,8 +348,10 @@ class Bundler(_Coadder):
         """
         fnames = self._get_fnames(bundle_id, null_prop_val, split_label, map_dir=map_dir)
         # DEBUG
+        if len(set(fnames)) < len(fnames):
+            raise ValueError("fnames contains duplicates")
         print(
-            f"{len(list(set(fnames)))} atomic file names (bundle {bundle_id})"
+            f"{len(fnames)} atomic file names (bundle {bundle_id})"
         )
 
         abfac = np.array([self.get_abfac(fname, abscal) for fname in fnames]) if abscal == True else 1  # noqa
