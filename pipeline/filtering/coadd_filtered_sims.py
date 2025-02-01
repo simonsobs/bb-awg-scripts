@@ -290,7 +290,8 @@ def main(args):
             )
             del wmap_list, w_list
             out_fname = map_string_format.format(sim_id=sim_id).replace(
-                ".fits", f"_bundle{bundle_id}_{split_label}_filtered.fits"
+                ".fits",
+                f"_bundle{bundle_id}_{freq_channel}_{split_label}_filtered.fits"  # noqa
             )
             _save_and_plot_map(
                 filtered_sim, out_fname, out_dir, plots_dir, pix_type=pix_type
@@ -313,7 +314,7 @@ def main(args):
         )
         del wmap_list, w_list
         out_fname = map_string_format.format(sim_id=sim_id).replace(
-            ".fits", f"_bundle{bundle_id}_science_filtered.fits"
+            ".fits", f"_bundle{bundle_id}_{freq_channel}_science_filtered.fits"
         )
         _save_and_plot_map(
             filtered_sim, out_fname, out_dir, plots_dir, pix_type=pix_type
