@@ -42,8 +42,9 @@ class BundleCoordinator:
             self.null_props_stats = None
 
             if query_restrict != "":
-                query_restrict = f" WHERE {query_restrict}"
-
+                query_restrict = f" WHERE split_label='science' AND ({query_restrict})"
+            else:
+                query_restrict = " WHERE split_label='science'"
             if null_props is not None:
                 self.null_props_stats = {}
                 for null_prop in null_props:
@@ -111,7 +112,7 @@ class BundleCoordinator:
             add_query += f" {keyword} bundle_id = {bundle_id}"
         if null_prop_val not in [None, "science"]:
             keyword = "WHERE" if add_query == "" else "AND"
-            null_prop_name = null_prop_val.split("_")[1]
+            null_prop_name = "_".join(null_prop_val.split("_")[1:])
             add_query += f" {keyword} {null_prop_name} = '{null_prop_val}'"
         query = cursor.execute(f"SELECT {query_fmt} FROM bundles{add_query}")
         results = np.asarray(query.fetchall())

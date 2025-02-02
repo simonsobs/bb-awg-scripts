@@ -30,6 +30,18 @@ def main(args):
 
     car_map_template = args.car_map_template
 
+    patch = args.patch
+    query_restrict=" ".join(args.query_restrict)
+    if patch is not None:
+        if query_restrict:
+            query_restrict += " AND "
+        if patch == "south":
+            query_restrict += "(azimuth > 90 AND azimuth < 270)"
+        elif self.patch == "north":
+            query_restrict += "(azimuth < 90 OR azimuth > 270)"
+        else:
+            raise ValueError(f"self.patch {self.patch} not recognized.")
+
     if os.path.isfile(args.bundle_db) and not args.overwrite:
         print(f"Loading from {args.bundle_db}.")
         bundle_coordinator = BundleCoordinator.from_dbfile(
@@ -41,7 +53,7 @@ def main(args):
         bundle_coordinator = BundleCoordinator(
             args.atomic_db, n_bundles=args.n_bundles,
             seed=args.seed, null_props=args.null_props,
-            query_restrict=" ".join(args.query_restrict)
+            query_restrict=query_restrict
         )
         bundle_coordinator.save_db(args.bundle_db)
 
@@ -64,8 +76,7 @@ def main(args):
         atomic_list=atomic_list,
         car_map_template=car_map_template,
         telescope=args.tel,
-        patch=args.patch,
-        query_restrict=" ".join(args.query_restrict)
+        query_restrict=query_restrict
     )
 
     bundle_ids = range(args.n_bundles)

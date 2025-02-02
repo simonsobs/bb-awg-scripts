@@ -9,7 +9,7 @@ import re
 class _Coadder:
     def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
                  pix_type="hp", atomic_list=None, car_map_template=None,
-                 telescope=None, patch=None, query_restrict=None):
+                 telescope=None, query_restrict=None):
         """
         Constructor for the _Coadder class. Reads in map information from
         atomic_db and bundling information from bundle_db.
@@ -44,7 +44,6 @@ class _Coadder:
         self.bundle_db = bundle_db
         self.freq_channel = freq_channel
         self.wafer = wafer
-        self.patch = patch
         self.atomic_list = atomic_list
         self.car_map_template = car_map_template
         self.query_restrict = query_restrict
@@ -118,26 +117,32 @@ class _Coadder:
         cursor = con.cursor()
 
         if return_weights:
-            subquery = "ctime, prefix_path, median_weight_qu"
+            subquery = "ctime, wafer, freq_channel, prefix_path, median_weight_qu"
         else:
-            subquery = "ctime, prefix_path"
+            subquery = "ctime, wafer, freq_channel, prefix_path"
 
         query = f"SELECT {subquery} FROM atomic WHERE freq_channel = "
         query += f"'{self.freq_channel}' AND obs_id = '{obs_id}'"
         if self.wafer is not None:
             query += f" AND wafer = '{self.wafer}'"
-        if split_label is not None:
-            query += f" AND split_label = '{split_label}'"
-        if self.patch is not None:
-            if self.patch == "south":
-                query += " AND (azimuth > 100 AND azimuth < 260)"
-            elif self.patch == "north":
-                query += " AND (azimuth < 100 OR azimuth > 260)"
-            else:
-                raise ValueError(f"self.patch {self.patch} not recognized.")
+
+        # First we query the science splits to get wafer-level restricts on eg weight
+        query1 = query + " AND split_label='science'"
         if self.query_restrict is not None:
-            query += (" AND " + self.query_restrict)
-        result = cursor.execute(query).fetchall()
+            query1 += (" AND " + self.query_restrict)
+        result1 = cursor.execute(query1).fetchall()
+        wafer_freq = [r[1] + r[2] for r in result1]
+
+        # Then we do the acutal query for valid splits
+        query2 = query + " AND valid = 1"
+        if split_label is not None:
+            query2 += f" AND split_label = '{split_label}'"
+        result2 = cursor.execute(query2).fetchall()
+        # Filter for the good results from query1
+        result = []
+        for r in result2:
+            if r[1] + r[2] in wafer_freq:
+                result.append(r)
 
         # Restrict list of atomics in atomic_db
         if self.atomic_list is not None:
@@ -162,7 +167,7 @@ class _Coadder:
                     map_dir, f"{str(ctime)[:5]}",
                     f"{os.path.basename(prefix_path)}_wmap{suffix}"  # noqa
                 )
-                for ctime, prefix_path, _ in result
+                for ctime, _, _, prefix_path, _ in result
             ]
             weights = [weight for _, _, weight in result]
             return fnames, weights
@@ -172,7 +177,7 @@ class _Coadder:
                     map_dir, f"{str(ctime)[:5]}",
                     f"{os.path.basename(prefix_path)}_wmap{suffix}"  # noqa
                 )
-                for ctime, prefix_path in result
+                for ctime, _, _, prefix_path in result
             ]
             return fnames
 
