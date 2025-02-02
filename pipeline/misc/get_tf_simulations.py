@@ -111,8 +111,7 @@ def main(args):
 
     if pix_type == "car":
         if args.car_template_map is not None:
-            template_map = read_map(args.car_template_map, pix_type="car")
-            geometry = template_map.geometry
+            geometry = enmap.read_map_geometry(args.car_template_map)
         else:
             geometry = get_fullsky_geometry()
         shape, wcs = geometry

@@ -52,6 +52,7 @@ def _get_atomics_maps_list(sim_id, atomic_metadata, atomics_dir, split_label,
     for id, (obs_id, wafer, freq_channel) in enumerate(atomic_metadata):
         if id % 10 == 0:
             print("    id", id)
+
         atomic_fname = map_string_format.format(sim_id=sim_id).replace(
             mfmt,
             f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
@@ -66,7 +67,7 @@ def _get_atomics_maps_list(sim_id, atomic_metadata, atomics_dir, split_label,
         # case, it is acceptable to just ignore those when coadding.
         if not (os.path.isfile(fname_wmap) and os.path.isfile(fname_w)):
             print("WARNING: "
-                  f"{fname_wmap}"
+                  f"{fname_wmap} "
                   "is missing. SKIPPING in coadder.")
             continue
 
@@ -279,14 +280,17 @@ def main(args):
 
         # Coadding atomics for individual splits
         for split_label in split_labels_nocoadd:
+            print(f"Split label: {split_label}")
             wmap_list, w_list = _get_atomics_maps_list(
-                sim_id, atomic_metadata, atomics_dir, split_label,
-                map_string_format, mfmt=mfmt, pix_type=pix_type
+                sim_id, atomic_metadata_dict[split_label], atomics_dir,
+                split_label, map_string_format, mfmt=mfmt, pix_type=pix_type
             )
             print(f"## Coadding atomics ({split_label}) ##")
-            filtered_sim = coadd_maps(
+
+            print(f"  wmap_list: {wmap_list}")
+            map_filtered, weights = coadd_maps(
                 wmap_list, w_list, pix_type=pix_type,
-                car_template_map=car_template_map
+                car_template_map=car_template_map, 
             )
             del wmap_list, w_list
             out_fname = map_string_format.format(sim_id=sim_id).replace(
@@ -294,30 +298,41 @@ def main(args):
                 f"_bundle{bundle_id}_{freq_channel}_{split_label}_filtered.fits"  # noqa
             )
             _save_and_plot_map(
-                filtered_sim, out_fname, out_dir, plots_dir, pix_type=pix_type
+                map_filtered, out_fname, out_dir, plots_dir, pix_type=pix_type
+            )
+            _save_and_plot_map(
+                weights, out_fname.replace(".fits", "_weights.fits"),
+                out_dir, plots_dir, pix_type=pix_type, do_plot=False
             )
 
         # Coadding atomics to get science split
+        if len(split_labels_coadd) == 0:
+            return
         wmap_list, w_list = ([], [])
         for split_label in split_labels_coadd:
             wmap_l, w_l = _get_atomics_maps_list(
-                sim_id, atomic_metadata, atomics_dir, split_label,
-                map_string_format, mfmt=mfmt, pix_type=pix_type
+                sim_id, atomic_metadata_dict[split_label], atomics_dir,
+                split_label, map_string_format, mfmt=mfmt, pix_type=pix_type
             )
             wmap_list += wmap_l
             w_list += w_l
 
         print("## Coadding atomics (science) ##")
-        filtered_sim = coadd_maps(
+        map_filtered, weights = coadd_maps(
             wmap_list, w_list, pix_type=pix_type,
             car_template_map=car_template_map
         )
+
         del wmap_list, w_list
         out_fname = map_string_format.format(sim_id=sim_id).replace(
             ".fits", f"_bundle{bundle_id}_{freq_channel}_science_filtered.fits"
         )
         _save_and_plot_map(
-            filtered_sim, out_fname, out_dir, plots_dir, pix_type=pix_type
+            map_filtered, out_fname, out_dir, plots_dir, pix_type=pix_type
+        )
+        _save_and_plot_map(
+            weights, out_fname.replace(".fits", "_weights.fits"),
+            out_dir, plots_dir, pix_type=pix_type, do_plot=False
         )
 
 

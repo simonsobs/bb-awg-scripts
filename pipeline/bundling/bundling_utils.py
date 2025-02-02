@@ -62,7 +62,6 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
         kwargs = {"field": fields_hp, }  # if fields_hp is not None else {}
         m = hp.read_map(map_file, **kwargs)
     else:
-        # print(map_file)
         m = enmap.read_map(map_file, geometry=geometry)
         if is_weights:
             # Read only TT, QQ, UU weights
@@ -99,7 +98,7 @@ def write_map(map_file, map, dtype=None, pix_type='hp',
         enmap.write_map(map_file, map)
 
 
-def _get_map_template_car(template_map=None, res=10, dec_cut=None,
+def _get_map_template_car(template_map=None, res=5., dec_cut=None,
                           variant='fejer1', dtype=np.float64):
     """
     Get a map template for CAR
@@ -122,7 +121,6 @@ def _get_map_template_car(template_map=None, res=10, dec_cut=None,
             shape, wcs = enmap.read_map_geometry(template_map)
         else:  # Assume we were passed a pre-loaded map
             shape, wcs = template_map.geometry
-        #print(f"Using map geometry with shape={shape}, wcs={wcs}.")
         shape = shape[-2:]
     elif dec_cut is not None:
         print(f"Using band geometry with dec_cut = {dec_cut}")
@@ -165,7 +163,7 @@ def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
 
 
 def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
-               pix_type="hp", res_car=10, car_template_map=None,
+               pix_type="hp", res_car=5., car_template_map=None,
                dec_cut_car=None, fields_hp=None, abscal=1, nproc=1):
     """
     Coadd a list of weighted maps, a list of map weights, and
