@@ -429,3 +429,81 @@ def _make_parallel_proc(fn, nproc_default):
 
         return out
     return parallel_fn
+
+def coadd_bundles(template, sum_vals, pix_type, do_hits=True, savename=None, **read_map_kwargs):
+    """Add bundled maps together. Maps are assumed to be unweighted and the same shape/geometry
+
+    Parameters
+    ----------
+    template: str
+        Formattable string filename with args value_to_be_summed (bundle id, split id, etc), map_type (map, weights, hits)
+    sum_vals: iterable
+        List of strings to put into the template for the files to be summed
+    pix_type: str
+        hp or car
+    do_hits: bool
+        If True also add/return hits
+    savename: str
+        Formattable string filename with args map_type
+    read_map_kwargs: dict
+        kwargs passed through to read_map
+    """
+    out = []
+    for val in sum_vals:
+        imap = read_map(template.format(val, 'map'), pix_type=pix_type, **read_map_kwargs)
+        weights = read_map(template.format(val, 'weights'), pix_type=pix_type, **read_map_kwargs)
+        if len(out) == 0:
+            out.append(imap * weights)
+            out.append(weights)
+        else:
+            out[0] += imap * weights
+            out[1] += weights
+        if do_hits:
+            hits = read_map(template.format(val, 'hits'), pix_type=pix_type, **read_map_kwargs)
+            if len(out) < 3:
+                out.append(hits)
+            else:
+                out[2] += hits
+    del imap
+    wmap, weights = out[:2]
+    good = weights > 0
+    wmap[good] /= weights[good]
+
+    if savename is not None:
+        write_map(savename.format("map"), wmap, dtype=wmap.dtype, pix_type=pix_type)
+        write_map(savename.format("weights"), weights, dtype=weights.dtype, pix_type=pix_type)
+        if do_hits:
+            write_map(savename.format("hits"), out[2], dtype=hits.dtype, pix_type=pix_type)
+    if do_hits:
+        return wmap, weights, out[2]
+    else:
+        return wmap, weights
+
+def make_full(template, split_pair, nbundles, pix_type, do_hits=True, savename=None, return_maps=True, **read_map_kwargs):
+    """Add two splits to make a 'full' split for each bundle.
+
+    Parameters
+    ----------
+    template: str
+        Formattable string filename with args split, ibundle, map_type
+    split_pair: 2-tuple
+        Pair of string split identifiers to be summed
+    nbundles: int
+        Number of bundles
+    pix_type: str
+        hp or car
+    do_hits: bool
+        If True also add/return hits
+    savename: str
+        Formattable string filename with args ibundle, map_type
+    return_maps: bool
+        If True return a list of (map, weights, hits) for all bundles. Can be set to False to save memory if many bundles are used.
+    """
+    out = []
+    for ibundle in range(nbundles):
+        sn = savename.format(ibundle, "{}") if savename is not None else None
+        ans = coadd_bundles(template.format("{}", ibundle, "{}"), split_pair, pix_type, do_hits=do_hits, savename=sn, **read_map_kwargs)
+        if return_maps:
+            out.append(ans)
+    if return_maps:
+        return out
