@@ -37,10 +37,10 @@ def main(args):
             query_restrict += " AND "
         if patch == "south":
             query_restrict += "(azimuth > 90 AND azimuth < 270)"
-        elif self.patch == "north":
+        elif patch == "north":
             query_restrict += "(azimuth < 90 OR azimuth > 270)"
         else:
-            raise ValueError(f"self.patch {self.patch} not recognized.")
+            raise ValueError(f"patch {patch} not recognized.")
 
     if os.path.isfile(args.bundle_db) and not args.overwrite:
         print(f"Loading from {args.bundle_db}.")
