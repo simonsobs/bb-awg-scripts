@@ -2,6 +2,7 @@ import os
 import bundling_utils
 import argparse
 
+
 def main(args):
     template = os.path.join(args.output_dir,
                             args.map_string_format.format(name_tag=args.freq_channel+"_{}", bundle_id="{}"))
@@ -9,7 +10,7 @@ def main(args):
 
     if args.make_full:
         print("Making full maps")
-        savename = template.format("full", "{}", "{}")
+        savename = template.format(args.full_name, "{}", "{}")
         bundling_utils.make_full(template,
                                  args.split_pair,
                                  args.n_bundles,
@@ -18,9 +19,11 @@ def main(args):
                                  savename=savename,
                                  return_maps=False)
 
+    if args.coadd_bundles_splitname is None:
+        args.coadd_bundles_splitname = args.full_name
     if args.add_bundles:
         print("Co-adding  bundles")
-        template = template.format("full", "{}", "{}")
+        template = template.format(args.coadd_bundles_splitname, "{}", "{}")
         sum_vals = list(range(args.n_bundles))
         savename = template.format("!", "{}").replace("_bundle!", "")
         bundling_utils.coadd_bundles(template,
@@ -28,6 +31,7 @@ def main(args):
                                      args.pix_type,
                                      do_hits=True,
                                      savename=savename)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Coadd bundled maps")
@@ -49,6 +53,16 @@ if __name__ == "__main__":
         default=None
     )
     parser.add_argument(
+        "--full_name",
+        help='Output "split" name for a coadded pair of splits',
+        default="full"
+    )
+    parser.add_argument(
+        "--coadd_bundles_splitname",
+        help="Name of split for which all bundles will be coadded",
+        default=None
+    )
+    parser.add_argument(
         "--pix_type",
         help="Pixel type, either 'hp' or 'car'.",
         default="hp"
@@ -65,12 +79,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--make_full",
         action="store_true",
-        help="Coadd splits to make a full map"
+        help="Coadd splits to make a full map for each bundle"
     )
     parser.add_argument(
         "--add_bundles",
         action="store_true",
-        help="Coadd bundles to make a full coadd"
+        help="Coadd bundles of a single split to make a full coadd"
     )
 
     args = parser.parse_args()
