@@ -21,10 +21,15 @@ class BundleCoordinator:
             Number of bundles to be generated.
         seed: int
             Seed for the random number generator.
-        null_props: list of str
-            List of (inter-observation null test) properties
-            that will be used to separate the atomic maps into two groups
-            based on their median values, e.g. ["pwv", ...]
+        null_props: dict
+            Keys should be strings of (inter-obs null test) props available in atomic db
+            Values can be:
+              - "median" to separate into two groups based on median values
+              - {"splits": val_splits, "names": [name1, name2, ...]}
+              - None to use each string value in the atomic db as its own group
+            val_splits can be:
+              - [(min1, max1), (min2, max2), ...] to pick vals in a numerical range
+              - [(str1, str2, ...), (str3, str4, ...)] to group string values
         """
         if atomic_db is not None:
             self.atomic_db = sqlite3.connect(atomic_db)
@@ -39,15 +44,13 @@ class BundleCoordinator:
                              "ctime": "INTEGER"}
 
             self.bundle_id = bundle_id
-            self.null_props_stats = None
-
+            self.null_props = null_props
             if query_restrict != "":
                 query_restrict = f" WHERE split_label='science' AND ({query_restrict})"
             else:
                 query_restrict = " WHERE split_label='science'"
             if null_props is not None:
-                self.null_props_stats = {}
-                for null_prop in null_props:
+                for null_prop, null_val in null_props.items():
                     if null_prop in db_props:
                         self.to_query[null_prop] = "TEXT"
                     else:
@@ -62,9 +65,16 @@ class BundleCoordinator:
                             f"All values for property {null_prop} are None."
                         )
                     if np.issubdtype(res.dtype, np.number):
-                        self.null_props_stats[null_prop] = np.median(res)
+                        if null_val == "median":
+                            med = np.median(res)
+                            self.null_props[null_prop] = {"splits": [(-np.inf, med), (med, np.inf)],
+                                                          "names": [f"low_{null_prop}",
+                                                                    f"high_{null_prop}"]}
                     elif np.issubdtype(res.dtype, np.str_):
-                        self.null_props_stats[null_prop] = np.unique(res).tolist()  # noqa
+                        if null_val is None:
+                            # Do 1-1 string matching
+                            all_vals = np.unique(res).tolist()  # noqa
+                            self.null_props[null_prop] = {"splits": [(x,) for x in all_vals], "names": all_vals}
 
             query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic"
             query += query_restrict
@@ -196,22 +206,22 @@ class BundleCoordinator:
         for id_row, row in enumerate(self.shuffled_props):
             dbrow = []
             for id_prop, prop in enumerate(self.to_query):
-                null_stats = self.null_props_stats
-                if null_stats is None or prop not in null_stats:
-                    dbrow.append(row[id_prop])
+                val = row[id_prop]
+                null_props = self.null_props
+                if null_props is None or prop not in null_props:
+                    dbrow.append(val)
                 else:
-                    try:
-                        val = np.float64(row[id_prop])
-                    except:  # noqa
-                        val = row[id_prop]
-                    if np.issubdtype(type(val), np.number):
-                        if val <= null_stats[prop]:
-                            null_name = f"low_{prop}"
-                        else:
-                            null_name = f"high_{prop}"
-                    else:
-                        null_name = val
-                    dbrow.append(null_name)
+                    null_dict = null_props[prop]
+                    for isplit in range(len(null_dict['splits'])):
+                        split = null_dict['splits'][isplit]
+                        # We expect a tuple of numbers
+                        if len(split) == 2 and np.issubdtype(type(split[0]), np.number):
+                            if np.logical_and(split[0] <= val < split[1]): # In the range
+                                dbrow.append(null_dict['names'][isplit])
+                        # Or a tuple of strings
+                        elif np.issubdtype(type(split[0]), np.str_):
+                            if val in split:
+                                dbrow.append(null_dict['names'][isplit])
 
             dbrow.append(int(self.bundle_ids[id_row]))
             db_data.append(dbrow)

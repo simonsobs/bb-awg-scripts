@@ -5,6 +5,9 @@ from astropy.io import fits
 import h5py
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from typing import Optional
+from dataclasses import dataclass
+import yaml
 
 def _check_pix_type(pix_type):
     """
@@ -507,3 +510,114 @@ def make_full(template, split_pair, nbundles, pix_type, do_hits=True, savename=N
             out.append(ans)
     if return_maps:
         return out
+
+
+@dataclass
+class Cfg:
+    """
+    Class to configure bundling
+
+    Args
+    --------
+    bundle_db: str
+        Path to bundling database
+    atomic_db: str
+        Path to atomic map database
+    atomic_list: str
+        Path to npy file of atomic map names to restrict the atomic db
+    freq_channel: str
+        Frequency channel, e.g. 'f090'
+    wafer: str
+        Wafer label, e.g. 'ws0'
+    patch: str
+        'north', 'south', or None
+    n_bundles: int
+        Number of map bundles
+    query_restrict: str
+        SQL query to restrict obs from the atomic database
+    null_prop_val_inter_obs: str
+        Null property value for inter-obs splits, e.g. 'pwv_low'.
+    split_label_intra_obs: list
+        List of split labels for intra-obs splits, e.g. 'scan_left'.
+    pix_type: str
+        'hp' or 'car'
+    output_dir: str
+        Path to output directory
+    map_dir: str
+        Path to directory containing atomic maps
+    map_string_format: str
+        String formatting for output bundles; must contain {name_tag} and {bundle_id}.
+    car_map_template: str
+        Path to CAR map or geometry to be used as template
+    seed: int
+        Random seed that determines the composition of bundles
+    null_props: list
+        Null properties for bundling database, e.g. ['pwv', 'elevation']
+    only_make_db: bool
+        Only make bundling database and do not bundle maps
+    overwrite: bool
+        Overwrite database if it exists
+    abscal: bool
+        Apply stored absolute calibration factors
+    nproc: int
+        Number of parallel processes to use in coadd
+    tel: str
+        Telescope identifier for abscal
+    save_fnames: bool
+        Save the atomic map filenames for each bundle
+    """
+    def __init__(
+        self,
+        bundle_db: str,
+        atomic_db: str,
+        n_bundles: int,
+        query_restrict: str = "",
+        seed: int = 0,
+        patch: Optional[str] = None,
+        pix_type: str = "hp",
+        map_dir: Optional[str] = None,
+        car_map_template: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        map_string_format: Optional[str] = None,
+        freq_channel: Optional[str] = None,
+        atomic_list: Optional[str] = None,
+        wafer: Optional[str] = None,
+        null_prop_val_inter_obs: Optional[str] = None,
+        split_label_intra_obs: Optional[list] = None,
+        inter_obs: Optional[dict] = None,
+        only_make_db: bool = False,
+        overwrite: bool = False,
+        abscal: bool = False,
+        nproc: int = 1,
+        tel: Optional[str] = None,
+        save_fnames: bool = False
+    ) -> None:
+        self.bundle_db = bundle_db
+        self.atomic_db = atomic_db
+        self.atomic_list = atomic_list
+        self.freq_channel = freq_channel
+        self.wafer = wafer
+        self.patch = patch
+        self.n_bundles = n_bundles
+        self.query_restrict = query_restrict
+        self.null_prop_val_inter_obs = null_prop_val_inter_obs
+        self.split_label_intra_obs = split_label_intra_obs
+        self.pix_type = pix_type
+        self.output_dir = output_dir
+        self.map_dir = map_dir
+        self.map_string_format = map_string_format
+        self.car_map_template = car_map_template
+        self.seed = seed
+        self.inter_obs = inter_obs
+        self.only_make_db = only_make_db
+        self.overwrite = overwrite
+        self.abscal = abscal
+        self.nproc = nproc
+        self.tel = tel
+        self.save_fnames = save_fnames
+
+    @classmethod
+    def from_yaml(cls, path) -> "Cfg":
+        with open(path, "r") as f:
+            d = yaml.safe_load(f)
+            return cls(**d)

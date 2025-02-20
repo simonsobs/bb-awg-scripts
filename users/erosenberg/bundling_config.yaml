@@ -1,0 +1,70 @@
+## Common ##
+bundle_db: '/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/bundles_south_seed${seed}_20250201.db'
+atomic_db: '/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_db.sqlite'
+n_bundles: 4
+query_restrict: "pwv < 2 AND median_weight_qu < 2e10 AND ((f_hwp > 1.9 AND f_hwp < 2.3) OR (f_hwp > -2.3 AND f_hwp < -1.9))"
+
+## Make bundle db only
+seed: 17
+patch: "south"
+
+## Bundle maps only
+pix_type: 'car'
+map_dir: "/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_maps"
+car_map_template: "mapmaking/band_car_fejer1_5arcmin.fits"
+output_dir: "/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/bundles"
+map_string_format: "satp1_{name_tag}_bundle{bundle_id}_map.fits"
+freq_channels: ["f090", "f150"]
+
+atomic_list: null
+wafer: null
+
+only_make_db: False
+overwrite: False
+abscal: False
+tel: null
+save_fnames: False
+
+nproc: 56
+
+split_labels_inter:
+  - "det_left"
+  - "det_right"
+
+split_labels:
+  - "det_left"
+  - "det_right"
+  - "det_upper"
+  - "det_lower"
+  - "det_in"
+  - "det_out"
+  - "scan_left"
+  - "scan_right"
+
+# prop: "median"
+# prop:
+#  splits: [(min1, max1), (min2, max2), ...]
+#  names: [name1, name2, ...]
+# prop: null # 1-1 string matching
+# prop:
+#  splits: [(str1, str2, ...), (str3, str4, ...), ...]
+#  names: [name1, name2, ...]
+
+inter_obs:
+  pwv: "median"
+  dpwv: "median"
+  elevation: "median"
+  sun_distance: "median"
+  ambient_temperature: "median"
+  uv: "median"
+  azimuth:
+    splits: [(0, 180), (180, 360)]
+    names: ["rising", "setting"]
+  roll_angle:
+    splits: [(-47, -44), (-3, 3), (44, 47)]
+    names: ["boresight-45", "boresight0", "boresight+45"]
+  f_hwp:
+    splits: [(-2.3, -1.9), (1.9, 2.3)]
+    names: ["hwp_neg", "hwp_pos"]
+  # scan_speed:
+  #   ??
