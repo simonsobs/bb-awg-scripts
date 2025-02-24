@@ -1,70 +1,78 @@
-## Common ##
-bundle_db: '/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/bundles_south_seed${seed}_20250201.db'
+## Required arguments ##
+bundle_db: 'test_out/bundles_{patch}_seed{seed}_20250201.db' # Optional format fields {patch} and {seed}
 atomic_db: '/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_db.sqlite'
 n_bundles: 4
+seed: 17  # Only needed for make_bundle_db unless included in format for bundle_db
+
+## Optional shared arguments ##
 query_restrict: "pwv < 2 AND median_weight_qu < 2e10 AND ((f_hwp > 1.9 AND f_hwp < 2.3) OR (f_hwp > -2.3 AND f_hwp < -1.9))"
-
-## Make bundle db only
-seed: 17
-patch: "south"
-
-## Bundle maps only
-pix_type: 'car'
-map_dir: "/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_maps"
-car_map_template: "mapmaking/band_car_fejer1_5arcmin.fits"
-output_dir: "/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/bundles"
-map_string_format: "satp1_{name_tag}_bundle{bundle_id}_map.fits"
-freq_channels: ["f090", "f150"]
-
-atomic_list: null
-wafer: null
-
 only_make_db: False
-overwrite: False
-abscal: False
-tel: null
-save_fnames: False
+patch: "north"  # Only needed for make_bundle_db unless included in format for bundle_db or map_string_format
 
-nproc: 56
-
-split_labels_inter:
-  - "det_left"
-  - "det_right"
-
-split_labels:
-  - "det_left"
-  - "det_right"
-  - "det_upper"
-  - "det_lower"
-  - "det_in"
-  - "det_out"
-  - "scan_left"
-  - "scan_right"
-
-# prop: "median"
-# prop:
-#  splits: [(min1, max1), (min2, max2), ...]
-#  names: [name1, name2, ...]
-# prop: null # 1-1 string matching
-# prop:
-#  splits: [(str1, str2, ...), (str3, str4, ...), ...]
-#  names: [name1, name2, ...]
-
-inter_obs:
+## Optional for make_bundle_db ##
+inter_obs_props:
   pwv: "median"
   dpwv: "median"
-  elevation: "median"
   sun_distance: "median"
   ambient_temperature: "median"
-  uv: "median"
   azimuth:
-    splits: [(0, 180), (180, 360)]
+    splits: [[0, 180], [180, 360]]
     names: ["rising", "setting"]
   roll_angle:
-    splits: [(-47, -44), (-3, 3), (44, 47)]
-    names: ["boresight-45", "boresight0", "boresight+45"]
+    splits: [[-47, -44], [-3, 3], [44, 47]]
+    names: ["roll_-45", "roll_0", "roll_+45"]
   f_hwp:
-    splits: [(-2.3, -1.9), (1.9, 2.3)]
+    splits: [[-2.3, -1.9], [1.9, 2.3]]
     names: ["hwp_neg", "hwp_pos"]
-  # scan_speed:
-  #   ??
+
+overwrite: True
+
+## Required for bundle_maps ##
+pix_type: 'car'
+map_dir: "/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_maps"
+output_dir: "test_out/"
+freq_channel: ["f090", "f150"] # May be a single string or a list
+# Format fields {split}, {bundle_id}, {freq_channel} required. {patch}, {wafer} optional.
+map_string_format: "{patch}/satp1_{freq_channel}_{wafer}_{split}_bundle{bundle_id}_map.fits"
+
+## Optional for bundle_maps ##
+# intra_obs_splits:
+#   - "det_left"
+#   - "det_right"
+#   - "det_upper"
+#   - "det_lower"
+#   - "det_in"
+#   - "det_out"
+#   - "scan_left"
+#   - "scan_right"
+
+intra_obs_pair:
+  - "det_left"
+  - "det_right"
+
+inter_obs_splits:
+  - "low_pwv"
+#   - "high_pwv"
+#   - "low_dpwv"
+#   - "high_dpwv"
+#   - "low_sun_distance"
+#   - "high_sun_distance"
+#   - "low_ambient_temperature"
+#   - "high_ambient_temperature"
+#   - "rising"
+#   - "setting"
+#   - "roll_-45"
+#   - "roll_0"
+#   - "roll_+45"
+#   - "hwp_neg"
+#   - "hwp_pos"
+
+car_map_template: "mapmaking/full_car_fejer1_5arcmin.fits"
+
+wafer: null  # null, string, or list of strings
+save_fnames: False
+nproc: 1
+
+atomic_list: null
+abscal: False
+tel: null
