@@ -234,5 +234,22 @@ class BundleCoordinator:
         bundle_db.executemany(f"INSERT INTO bundles VALUES ({table_format})",
                               db_data)
 
+        fmt = ["name TEXT", "min FLOAT", "max FLOAT", "tags TEXT"]
+        bundle_db.execute(f"CREATE TABLE metadata ({', '.join(fmt)})")
+        db_data = []
+        for prop, null_dict in self.null_props.items():
+            for isplit in range(len(null_dict['splits'])):
+                split = null_dict['splits'][isplit]
+                dbrow = [null_dict['names'][isplit]]
+                if np.issubdtype(type(split[0]), np.number):
+                    dbrow += split
+                    dbrow.append(None)
+                elif np.issubdtype(type(split[0]), np.str_):
+                    dbrow += [None, None]
+                    dbrow.append(", ".join(split))
+                db_data.append(dbrow)
+        table_format = ",".join(["?" for _ in range(len(fmt))])
+        bundle_db.executemany(f"INSERT INTO metadata VALUES ({table_format})", db_data)
+
         db_con.commit()
         db_con.close()
