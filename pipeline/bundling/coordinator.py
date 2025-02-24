@@ -123,6 +123,8 @@ class BundleCoordinator:
         if null_prop_val not in [None, "science"]:
             keyword = "WHERE" if add_query == "" else "AND"
             null_prop_name = "_".join(null_prop_val.split("_")[1:])
+            if null_prop_name not in db_props:
+                raise ValueError(f"Inferred null_prop_name {null_prop_name} not in db_props")
             add_query += f" {keyword} {null_prop_name} = '{null_prop_val}'"
         query = cursor.execute(f"SELECT {query_fmt} FROM bundles{add_query}")
         results = np.asarray(query.fetchall())
@@ -226,6 +228,8 @@ class BundleCoordinator:
                         elif np.issubdtype(type(split[0]), np.str_):
                             if val in split:
                                 dbrow.append(null_dict['names'][isplit])
+                if len(dbrow) != id_prop+1:
+                    dbrow.append(None)  # Add null if no group got assigned
 
             dbrow.append(int(self.bundle_ids[id_row]))
             db_data.append(dbrow)
