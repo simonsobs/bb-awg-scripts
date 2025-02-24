@@ -206,7 +206,11 @@ class BundleCoordinator:
         for id_row, row in enumerate(self.shuffled_props):
             dbrow = []
             for id_prop, prop in enumerate(self.to_query):
-                val = row[id_prop]
+                try:
+                    # These are saved as strings so we need to convert back to numbers
+                    val = np.float64(row[id_prop])
+                except ValueError:
+                    val = row[id_prop]
                 null_props = self.null_props
                 if null_props is None or prop not in null_props:
                     dbrow.append(val)
@@ -216,7 +220,7 @@ class BundleCoordinator:
                         split = null_dict['splits'][isplit]
                         # We expect a tuple of numbers
                         if len(split) == 2 and np.issubdtype(type(split[0]), np.number):
-                            if np.logical_and(split[0] <= val < split[1]): # In the range
+                            if split[0] <= val < split[1]:  # In the range
                                 dbrow.append(null_dict['names'][isplit])
                         # Or a tuple of strings
                         elif np.issubdtype(type(split[0]), np.str_):

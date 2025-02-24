@@ -9,6 +9,7 @@ from typing import Optional
 from dataclasses import dataclass
 import yaml
 
+
 def _check_pix_type(pix_type):
     """
     Error handling for pixellization types.
@@ -433,13 +434,15 @@ def _make_parallel_proc(fn, nproc_default):
         return out
     return parallel_fn
 
+
 def coadd_bundles(template, sum_vals, pix_type, do_hits=True, savename=None, **read_map_kwargs):
     """Add bundled maps together. Maps are assumed to be unweighted and the same shape/geometry
 
     Parameters
     ----------
     template: str
-        Formattable string filename with args value_to_be_summed (bundle id, split id, etc), map_type (map, weights, hits)
+        Formattable string filename with args value_to_be_summed
+        (bundle id, split id, etc), map_type (map, weights, hits)
     sum_vals: iterable
         List of strings to put into the template for the files to be summed
     pix_type: str
@@ -482,7 +485,9 @@ def coadd_bundles(template, sum_vals, pix_type, do_hits=True, savename=None, **r
     else:
         return wmap, weights
 
-def make_full(template, split_pair, nbundles, pix_type, do_hits=True, savename=None, return_maps=True, **read_map_kwargs):
+
+def make_full(template, split_pair, nbundles, pix_type, do_hits=True,
+              savename=None, return_maps=True, **read_map_kwargs):
     """Add two splits to make a 'full' split for each bundle.
 
     Parameters
@@ -500,12 +505,15 @@ def make_full(template, split_pair, nbundles, pix_type, do_hits=True, savename=N
     savename: str
         Formattable string filename with args ibundle, map_type
     return_maps: bool
-        If True return a list of (map, weights, hits) for all bundles. Can be set to False to save memory if many bundles are used.
+        If True return a list of (map, weights, hits) for all bundles.
+        Can be set to False to save memory if many bundles are used.
     """
     out = []
     for ibundle in range(nbundles):
         sn = savename.format(ibundle, "{}") if savename is not None else None
-        ans = coadd_bundles(template.format("{}", ibundle, "{}"), split_pair, pix_type, do_hits=do_hits, savename=sn, **read_map_kwargs)
+        ans = coadd_bundles(template.format("{}", ibundle, "{}"),
+                            split_pair, pix_type, do_hits=do_hits,
+                            savename=sn, **read_map_kwargs)
         if return_maps:
             out.append(ans)
     if return_maps:
@@ -523,98 +531,91 @@ class Cfg:
         Path to bundling database
     atomic_db: str
         Path to atomic map database
-    atomic_list: str
-        Path to npy file of atomic map names to restrict the atomic db
-    freq_channel: str
-        Frequency channel, e.g. 'f090'
-    wafer: str
-        Wafer label, e.g. 'ws0'
-    patch: str
-        'north', 'south', or None
     n_bundles: int
         Number of map bundles
-    query_restrict: str
-        SQL query to restrict obs from the atomic database
-    null_prop_val_inter_obs: str
-        Null property value for inter-obs splits, e.g. 'pwv_low'.
-    split_label_intra_obs: list
-        List of split labels for intra-obs splits, e.g. 'scan_left'.
-    pix_type: str
-        'hp' or 'car'
-    output_dir: str
-        Path to output directory
-    map_dir: str
-        Path to directory containing atomic maps
-    map_string_format: str
-        String formatting for output bundles; must contain {name_tag} and {bundle_id}.
-    car_map_template: str
-        Path to CAR map or geometry to be used as template
     seed: int
         Random seed that determines the composition of bundles
-    null_props: list
-        Null properties for bundling database, e.g. ['pwv', 'elevation']
+    query_restrict: str
+        SQL query to restrict obs from the atomic database
     only_make_db: bool
         Only make bundling database and do not bundle maps
+    patch: str
+        'north', 'south', or None. May be a list of strings.
+    inter_obs_props: dict
+        Null properties for bundling database.
+        Keys should be strings of (inter-obs null test)
+        props available in atomic db.
+        Values can be:
+          - "median" to separate into two groups based on median values
+          - {"splits": val_splits, "names": [name1, name2, ...]}
+          - None to use each string value in the atomic db as its own group
+        val_splits can be:
+          - [(min1, max1), (min2, max2), ...] to pick vals in a numerical range
+          - [(str1, str2, ...), (str3, str4, ...)] to group string values
     overwrite: bool
         Overwrite database if it exists
-    abscal: bool
-        Apply stored absolute calibration factors
-    nproc: int
-        Number of parallel processes to use in coadd
-    tel: str
-        Telescope identifier for abscal
+    pix_type: str
+        'hp' or 'car'
+    map_dir: str
+        Path to directory containing atomic maps
+    output_dir: str
+        Path to output directory
+    map_string_format: str
+        String formatting for output bundles;
+        must contain {name_tag} and {bundle_id}.
+    freq_channel: str
+        Frequency channel, e.g. 'f090'. May be a list of strings.
+    intra_obs_splits: list
+        List of split labels for intra-obs splits, e.g. 'scan_left'.
+    intra_obs_pair: list
+        Pair of intra-obs labels that will be added to make full obs
+        for inter-obs splits
+    inter_obs_splits:
+        List of inter-obs split names for which to create bundles
+    car_map_template: str
+        Path to CAR map or geometry to be used as template
+    wafer: str
+        Wafer label, e.g. 'ws0'. May be a list of strings.
     save_fnames: bool
         Save the atomic map filenames for each bundle
+    nproc: int
+        Number of parallel processes to use in coadd
+    atomic_list: str
+        Path to npy file of atomic map names to restrict the atomic db
+    abscal: bool
+        Apply stored absolute calibration factors
+    tel: str
+        Telescope identifier for abscal
     """
-    def __init__(
-        self,
-        bundle_db: str,
-        atomic_db: str,
-        n_bundles: int,
-        query_restrict: str = "",
-        seed: int = 0,
-        patch: Optional[str] = None,
-        pix_type: str = "hp",
-        map_dir: Optional[str] = None,
-        car_map_template: Optional[str] = None,
-        output_dir: Optional[str] = None,
-        map_string_format: Optional[str] = None,
-        freq_channel: Optional[str] = None,
-        atomic_list: Optional[str] = None,
-        wafer: Optional[str] = None,
-        null_prop_val_inter_obs: Optional[str] = None,
-        split_label_intra_obs: Optional[list] = None,
-        inter_obs: Optional[dict] = None,
-        only_make_db: bool = False,
-        overwrite: bool = False,
-        abscal: bool = False,
-        nproc: int = 1,
-        tel: Optional[str] = None,
-        save_fnames: bool = False
-    ) -> None:
-        self.bundle_db = bundle_db
-        self.atomic_db = atomic_db
-        self.atomic_list = atomic_list
-        self.freq_channel = freq_channel
-        self.wafer = wafer
-        self.patch = patch
-        self.n_bundles = n_bundles
-        self.query_restrict = query_restrict
-        self.null_prop_val_inter_obs = null_prop_val_inter_obs
-        self.split_label_intra_obs = split_label_intra_obs
-        self.pix_type = pix_type
-        self.output_dir = output_dir
-        self.map_dir = map_dir
-        self.map_string_format = map_string_format
-        self.car_map_template = car_map_template
-        self.seed = seed
-        self.inter_obs = inter_obs
-        self.only_make_db = only_make_db
-        self.overwrite = overwrite
-        self.abscal = abscal
-        self.nproc = nproc
-        self.tel = tel
-        self.save_fnames = save_fnames
+    bundle_db: str
+    atomic_db: str
+    n_bundles: int
+    seed: int = 0
+    query_restrict: str = ""
+    only_make_db: bool = False
+    patch: Optional[str] = None
+    inter_obs_props: Optional[dict] = None
+    overwrite: bool = False
+    pix_type: str = "hp"
+    map_dir: Optional[str] = None
+    output_dir: Optional[str] = None
+    map_string_format: Optional[str] = None
+    freq_channel: Optional[str] = None
+    intra_obs_splits: Optional[list] = None
+    intra_obs_pair: Optional[list] = None
+    inter_obs_splits: Optional[list] = None
+    car_map_template: Optional[str] = None
+    wafer: Optional[str] = None
+    save_fnames: bool = False
+    nproc: int = 1
+    atomic_list: Optional[str] = None
+    abscal: bool = False
+    tel: Optional[str] = None
+
+    def __post_init__(self):
+        # Add extra defaults for private args not expected in config file
+        self.null_prop_val_inter_obs = None
+        self.split_label_intra_obs = None
 
     @classmethod
     def from_yaml(cls, path) -> "Cfg":

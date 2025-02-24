@@ -23,7 +23,7 @@ def main(args):
     """
     """
     patch = args.patch
-    query_restrict=" ".join(args.query_restrict)
+    query_restrict = args.query_restrict
     if patch is not None:
         if query_restrict:
             query_restrict += " AND "
@@ -44,7 +44,7 @@ def main(args):
         print(f"Writing to {args.bundle_db}.")
         bundle_coordinator = BundleCoordinator(
             args.atomic_db, n_bundles=args.n_bundles,
-            seed=args.seed, null_props=args.inter_obs,
+            seed=args.seed, null_props=args.inter_obs_props,
             query_restrict=query_restrict
         )
         bundle_coordinator.save_db(args.bundle_db)
@@ -96,24 +96,45 @@ def main(args):
 
         # Map naming convention
         if (split_intra_obs, split_inter_obs) == (None, None):
-            name_tag = f"{args.freq_channel}_science"
+            split_tag = "science"
         elif (split_intra_obs is not None) and (split_inter_obs is not None):
             # Assume this is an inter with summed intras
-            name_tag = f"{args.freq_channel}_{split_inter_obs}"
+            split_tag = split_inter_obs
         elif split_intra_obs is not None:
             if isinstance(split_intra_obs, list):
-                name_tag = f"{args.freq_channel}_{'_'.join(split_intra_obs)}"
+                split_tag = '_'.join(split_intra_obs)
             else:
-                name_tag = f"{args.freq_channel}_{split_intra_obs}"
+                split_tag = split_intra_obs
         elif split_inter_obs is not None:
-            name_tag = f"{args.freq_channel}_{split_inter_obs}"
+            split_tag = split_inter_obs
+
+        wafer_tag = args.wafer if args.wafer is not None else ""
+        patch_tag = args.patch if args.patch is not None else ""
+
+        for required_tag in ["{split}", "{bundle_id}", "{freq_channel}"]:
+            if required_tag not in args.map_string_format:
+                raise ValueError(f"map_string_format does not have \
+                                   required placeholder {required_tag}")
+        for optional_tag, tag_val in zip(["{wafer}", "{patch}"], [wafer_tag, patch_tag]):
+            if optional_tag not in args.map_string_format and tag_val:
+                print(f"Warning: map_string_format does not have optional \
+                       placeholder {optional_tag} but value is passed")
 
         out_fname = os.path.join(
             out_dir,
-            args.map_string_format.format(name_tag=name_tag,
-                                          bundle_id=bundle_id)
+            args.map_string_format.format(split=split_tag,
+                                          bundle_id=bundle_id,
+                                          wafer=wafer_tag,
+                                          patch=patch_tag,
+                                          freq_channel=args.freq_channel)
         )
+        # Again hacky removal of hopefully accidental double underscores
+        out_fname = out_fname.replace("__", "_")
+        # For plot titles
+        name_tag = f"{args.freq_channel}_{wafer_tag}_{patch_tag}_{split_tag}"
+        name_tag = name_tag.replace("__", "_")
 
+        os.makedirs(os.path.dirname(out_fname), exist_ok=True)
         if args.save_fnames:
             out_filenames = out_fname.replace("map.fits", "fnames.txt")
             np.savetxt(out_filenames, fnames, fmt='%s')
@@ -177,21 +198,35 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     config = Cfg.from_yaml(args.config_file)
+    its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
 
-    its = [np.atleast_1d(x) for x in [config.patch, config.freq_channel, config.wafer]]
-    for it in itertools.product(*its):
-        patch, freq_channel, wafer = it
+    for patch in np.atleast_1d(config.patch):
         config.patch = patch
-        config.freq_channel = freq_channel
-        config.wafer = wafer
+        patch_tag = "" if patch is None else patch
+        config.bundle_db = config.bundle_db.format(patch=patch_tag,
+                                                   seed=config.seed)
+        # Hacky but remove any (presumed accidental) double underscores
+        config.bundle_db = config.bundle_db.replace("__", "_")
 
-        # Inter-obs
-        config.split_label_intra_obs = config.split_labels_inter
-        for null_prop_val in config.null_prop_vals:
-            config.null_prop_val_inter_obs = null_prop_val
+        # Make db only
+        if config.only_make_db:
             main(config)
+            continue
 
-        # Intra-obs
-        for split_val in config.split_labels:
-            config.split_label_intra_obs = split_val
-            main(config)
+        for it in itertools.product(*its):
+            config.freq_channel, config.wafer = it
+
+            # Inter-obs
+            if config.inter_obs_splits is not None:
+                config.split_label_intra_obs = config.intra_obs_pair
+                for null_prop_val in config.inter_obs_splits:
+                    print(null_prop_val)
+                    config.null_prop_val_inter_obs = null_prop_val
+                    main(config)
+
+            # Intra-obs
+            if config.intra_obs_splits is not None:
+                for split_val in config.intra_obs_splits:
+                    print(split_val)
+                    config.split_label_intra_obs = split_val
+                    main(config)
