@@ -127,14 +127,11 @@ def main(args):
     atom_db = args.atomic_db
 
     # Pre-processing configuration files
-    preprocess_config = args.preprocess_config
     preprocess_config_init = args.preprocess_config_init
     preprocess_config_proc = args.preprocess_config_proc
-    do_multilayer_preproc = (preprocess_config_init is not None
-                             and preprocess_config_proc is not None)
+    
 
     logger.debug(f"Using atomic DB from {atom_db}")
-    logger.debug(f"Using multilayer pre-processing ? {do_multilayer_preproc}")
 
     # Sim related arguments
     map_dir = args.map_dir
@@ -236,16 +233,12 @@ def main(args):
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
-    if do_multilayer_preproc:
-        configs_init, ctx_init = pp_util.get_preprocess_context(
-            preprocess_config_init
-        )
-        configs_proc, ctx_proc = pp_util.get_preprocess_context(
-            preprocess_config_proc
-        )
-    else:
-        configs, ctx = pp_util.get_preprocess_context(preprocess_config)
-
+    configs_init, ctx_init = pp_util.get_preprocess_context(
+        preprocess_config_init
+    )
+    configs_proc, ctx_proc = pp_util.get_preprocess_context(
+        preprocess_config_proc
+    )
 
     # Initialize tasks for MPI sharing
     # Removing sim_id from the MPI loop
@@ -379,11 +372,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--bundle-db",
         help="Path to the bundling database."
-    )
-    parser.add_argument(
-        "--preprocess-config",
-        help="Path to the preprocessing config file.",
-        default=None
     )
     parser.add_argument(
         "--preprocess-config-init",
