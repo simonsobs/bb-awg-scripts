@@ -22,6 +22,7 @@ def car2healpix(norm_hits_map):
 def main(args):
     """
     """
+    args = args.copy()  # Make sure we don't accidentally modify the input args
     patch = args.patch
     query_restrict = args.query_restrict
     if patch is not None:
@@ -199,11 +200,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = Cfg.from_yaml(args.config_file)
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
+    patch_list = config.patch
+    bundle_db_format = config.bundle_db
 
-    for patch in np.atleast_1d(config.patch):
+    for patch in np.atleast_1d(patch_list):
         config.patch = patch
         patch_tag = "" if patch is None else patch
-        config.bundle_db = config.bundle_db.format(patch=patch_tag,
+        config.bundle_db = bundle_db_format.format(patch=patch_tag,
                                                    seed=config.seed)
         # Hacky but remove any (presumed accidental) double underscores
         config.bundle_db = config.bundle_db.replace("__", "_")
@@ -215,6 +218,7 @@ if __name__ == "__main__":
 
         for it in itertools.product(*its):
             config.freq_channel, config.wafer = it
+            print(config.patch, config.freq_channel, config.wafer)
 
             # Inter-obs
             if config.inter_obs_splits is not None:
@@ -222,11 +226,17 @@ if __name__ == "__main__":
                 for null_prop_val in config.inter_obs_splits:
                     print(null_prop_val)
                     config.null_prop_val_inter_obs = null_prop_val
-                    main(config)
+                    try:
+                        main(config)
+                    except ValueError as e:
+                        print(e)
 
             # Intra-obs
             if config.intra_obs_splits is not None:
                 for split_val in config.intra_obs_splits:
                     print(split_val)
                     config.split_label_intra_obs = split_val
-                    main(config)
+                    try:
+                        main(config)
+                    except ValueError as e:
+                        print(e)

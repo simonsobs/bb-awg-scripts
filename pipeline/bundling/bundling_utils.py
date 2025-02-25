@@ -4,6 +4,7 @@ import healpy as hp
 from astropy.io import fits
 import h5py
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from copy import deepcopy
 
 from typing import Optional
 from dataclasses import dataclass
@@ -630,3 +631,6 @@ class Cfg:
         with open(path, "r") as f:
             d = yaml.safe_load(f)
             return cls(**d)
+
+    def copy(self):
+        return deepcopy(self)
