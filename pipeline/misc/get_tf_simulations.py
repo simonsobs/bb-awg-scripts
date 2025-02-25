@@ -3,6 +3,7 @@ import numpy as np
 from pixell import enmap
 from pixell import uharm
 from pixell import curvedsky
+from pixell import enplot
 import os
 
 
@@ -20,7 +21,7 @@ def _check_pix_type(pix_type):
         raise ValueError(f"Unknown pixelisation type {pix_type}.")
 
 
-def get_fullsky_geometry(res_arcmin=5., variant="fejer1"):
+def get_fullsky_geometry(res_arcmin=1., variant="fejer1"):
     """
     Generates a fullsky CAR template at resolution res-arcmin.
     """
@@ -96,6 +97,18 @@ def read_map(map_file,
 
     return conv*m
 
+def bandlim_sine2(x, xc, dx):
+    xmin = xc - dx
+    xmax = xc + dx
+    return 1 - np.where(
+        x<xmin,
+        0, 
+        np.where(
+            x>xmax,
+            1.,
+            np.sin(np.pi/2*(x-xmin)/(xmax-xmin))**2
+        )
+    )
 
 def main(args):
     """
@@ -113,7 +126,7 @@ def main(args):
         if args.car_template_map is not None:
             geometry = enmap.read_map_geometry(args.car_template_map)
         else:
-            geometry = get_fullsky_geometry()
+            geometry = get_fullsky_geometry(args.res_arcmin)
         shape, wcs = geometry
         new_shape = (3,) + shape[-2:]
         template = enmap.zeros(new_shape, wcs)
@@ -122,17 +135,19 @@ def main(args):
         lmax = 3 * nside - 1
 
     lmax_sim = lmax + 500
-
     ells = np.arange(lmax_sim + 1)
 
     ps = 1 / (ells + 10) ** 2
+    fl = bandlim_sine2(ells, 650, 50)
 
     for id_sim in range(n_sims):
 
-        alms = hp.synalm(ps, lmax=lmax_sim)
+        np.random.seed(id_sim)
+        alms = hp.synalm(ps, lmax=1000)
+        alms = hp.almxfl(alms, fl)
 
         for i, tag in enumerate(["pureT", "pureE", "pureB"]):
-            alms_list = np.zeros((3, *alms.shape), dtype=np.complex128)
+            alms_list = np.zeros((3, *alms.shape), dtype=np.complex64)
             alms_list[i, :] += alms
 
             if pix_type == "hp":
@@ -151,9 +166,17 @@ def main(args):
                     template
                 )
                 enmap.write_map(
-                    f"{out_dir}/{tag}_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
+                    f"{out_dir}/{tag}_{args.res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
                     map
                 )
+                for i, fp in enumerate("TQU"):
+                    plot = enplot.plot(
+                        map.downgrade(8)[i], color="planck", ticks=10, range=1.7, colorbar=True
+                    )
+                    enplot.write(
+                        f"{out_dir}/{tag}_{args.res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits_{fp}",
+                        plot
+                    )
 
 
 if __name__ == "__main__":
@@ -187,7 +210,11 @@ if __name__ == "__main__":
         "--out_dir",
         help="Output directory"
     )
-
+    parser.add_argument(
+        "--res_arcmin",
+        type=float,
+        help="Resolution in arcmin"
+    )
     args = parser.parse_args()
 
     main(args)
