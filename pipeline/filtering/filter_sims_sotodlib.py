@@ -192,15 +192,6 @@ def main(args):
     # Extract all ctimes for the given bundle_id
     ctimes = bundle_coordinator.get_ctimes(bundle_id=bundle_id)
 
-    # Read restrictive list of atomic-map metadata
-    # (obs_id, wafer, freq_channel) from file, and intersect it
-    # with the metadata in the bundling database.
-    atomic_restrict = []
-    if args.atomic_list is not None:
-        atomic_restrict = list(
-            map(tuple, np.load(args.atomic_list)["atomic_list"])
-        )
-
     # Connect the the atomic map DB
     atomic_metadata = []
     db_con = sqlite3.connect(atom_db)
@@ -384,11 +375,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--atomic-db",
         help="Path to the atomic maps database."
-    )
-    parser.add_argument(
-        "--atomic_list",
-        help="Npz file with list of atomic maps to restrict the atomic_db to.",
-        default=None
     )
     parser.add_argument(
         "--bundle-db",
