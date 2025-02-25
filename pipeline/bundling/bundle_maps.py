@@ -1,10 +1,12 @@
 import argparse
+from bundling_utils import Cfg
 from coadder import Bundler
 import os
 import healpy as hp
 from pixell import enmap, enplot, reproject
 import numpy as np
 from coordinator import BundleCoordinator
+import itertools
 
 import matplotlib.pyplot as plt
 
@@ -20,18 +22,8 @@ def car2healpix(norm_hits_map):
 def main(args):
     """
     """
-    if args.pix_type not in ["hp", "car"]:
-        raise ValueError(
-            "Unknown pixel type, must be 'car' or 'hp'."
-        )
-
-    if args.null_prop_val_inter_obs in ["None", "none", "science"]:
-        args.null_prop_val_inter_obs = None
-
-    car_map_template = args.car_map_template
-
     patch = args.patch
-    query_restrict=" ".join(args.query_restrict)
+    query_restrict = args.query_restrict
     if patch is not None:
         if query_restrict:
             query_restrict += " AND "
@@ -52,7 +44,7 @@ def main(args):
         print(f"Writing to {args.bundle_db}.")
         bundle_coordinator = BundleCoordinator(
             args.atomic_db, n_bundles=args.n_bundles,
-            seed=args.seed, null_props=args.null_props,
+            seed=args.seed, null_props=args.inter_obs_props,
             query_restrict=query_restrict
         )
         bundle_coordinator.save_db(args.bundle_db)
@@ -60,12 +52,19 @@ def main(args):
     if args.only_make_db:
         return
 
+    if args.pix_type not in ["hp", "car"]:
+        raise ValueError(
+            "Unknown pixel type, must be 'car' or 'hp'."
+        )
+
     out_dir = args.output_dir
     os.makedirs(out_dir, exist_ok=True)
 
     atomic_list = None
     if args.atomic_list is not None:
         atomic_list = np.load(args.atomic_list)["atomic_list"]
+
+    car_map_template = args.car_map_template
 
     bundler = Bundler(
         atomic_db=args.atomic_db,
@@ -97,24 +96,45 @@ def main(args):
 
         # Map naming convention
         if (split_intra_obs, split_inter_obs) == (None, None):
-            name_tag = f"{args.freq_channel}_science"
+            split_tag = "science"
         elif (split_intra_obs is not None) and (split_inter_obs is not None):
             # Assume this is an inter with summed intras
-            name_tag = f"{args.freq_channel}_{split_inter_obs}"
+            split_tag = split_inter_obs
         elif split_intra_obs is not None:
             if isinstance(split_intra_obs, list):
-                name_tag = f"{args.freq_channel}_{'_'.join(split_intra_obs)}"
+                split_tag = '_'.join(split_intra_obs)
             else:
-                name_tag = f"{args.freq_channel}_{split_intra_obs}"
+                split_tag = split_intra_obs
         elif split_inter_obs is not None:
-            name_tag = f"{args.freq_channel}_{split_inter_obs}"
+            split_tag = split_inter_obs
+
+        wafer_tag = args.wafer if args.wafer is not None else ""
+        patch_tag = args.patch if args.patch is not None else ""
+
+        for required_tag in ["{split}", "{bundle_id}", "{freq_channel}"]:
+            if required_tag not in args.map_string_format:
+                raise ValueError(f"map_string_format does not have \
+                                   required placeholder {required_tag}")
+        for optional_tag, tag_val in zip(["{wafer}", "{patch}"], [wafer_tag, patch_tag]):
+            if optional_tag not in args.map_string_format and tag_val:
+                print(f"Warning: map_string_format does not have optional \
+                       placeholder {optional_tag} but value is passed")
 
         out_fname = os.path.join(
             out_dir,
-            args.map_string_format.format(name_tag=name_tag,
-                                          bundle_id=bundle_id)
+            args.map_string_format.format(split=split_tag,
+                                          bundle_id=bundle_id,
+                                          wafer=wafer_tag,
+                                          patch=patch_tag,
+                                          freq_channel=args.freq_channel)
         )
+        # Again hacky removal of hopefully accidental double underscores
+        out_fname = out_fname.replace("__", "_")
+        # For plot titles
+        name_tag = f"{args.freq_channel}_{wafer_tag}_{patch_tag}_{split_tag}"
+        name_tag = name_tag.replace("__", "_")
 
+        os.makedirs(os.path.dirname(out_fname), exist_ok=True)
         if args.save_fnames:
             out_filenames = out_fname.replace("map.fits", "fnames.txt")
             np.savetxt(out_filenames, fnames, fmt='%s')
@@ -172,126 +192,41 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled maps")
-
     parser.add_argument(
-        "--bundle_db",
-        help="Bundle database."
+        "--config_file", type=str, help="yaml file with configuration."
     )
-    parser.add_argument(
-        "--atomic_db",
-        help="Atomic map database."
-    )
-    parser.add_argument(
-        "--atomic_list",
-        help="Optional list of atomic maps to further restrict the atomic_db.",
-        default=None
-    )
-    parser.add_argument(
-        "--freq_channel",
-        help="Frequency channel, e.g. 'f090'"
-    )
-    parser.add_argument(
-        "--wafer",
-        help="Wafer label, e.g. 'ws0'.",
-        default=None
-    )
-    parser.add_argument(
-        "--patch",
-        help="'north' or 'south'",
-        default=None
-    )
-    parser.add_argument(
-        "--n_bundles",
-        help="Number of map bundles.",
-        type=int,
-        required=True
-    )
-    parser.add_argument(
-        "--query_restrict",
-        type=str,
-        nargs='+',
-        help="SQL query to restict obs from the atomic database "
-             "(e.g. 'pwv < 2')",
-        default=""
-    )
-    parser.add_argument(
-        "--null_prop_val_inter_obs",
-        help="Null property value for inter-obs splits, e.g. 'pwv_low'.",
-        default=None
-    )
-    parser.add_argument(
-        "--split_label_intra_obs",
-        nargs='*',
-        help="Split label for intra-obs splits, e.g. 'scan_left'.",
-        default=None
-    )
-    parser.add_argument(
-        "--pix_type",
-        help="Pixel type, either 'hp' or 'car'.",
-        default="hp"
-    )
-    parser.add_argument(
-        "--output_dir",
-        help="Output directory."
-    )
-    parser.add_argument(
-        "--map_dir",
-        help="Map directory."
-    )
-
-    parser.add_argument(
-        "--map_string_format",
-        help="String formatting; must contain {name_tag} and {bundle_id}."
-    )
-    parser.add_argument(
-        "--car_map_template",
-        help="Path to CAR coadded (hits) map to be used as geometry template.",
-        default=None
-    )
-    parser.add_argument(
-        "--seed",
-        help="Random seed that determines the composition of bundles.",
-        type=int, default=1234
-    )
-    parser.add_argument(
-        "--null_props",
-        nargs="*",
-        default=None,
-        help="Null properties for bundling database, e.g. 'pwv elevation'."
-    )
-    parser.add_argument(
-        "--only_make_db",
-        action="store_true",
-        help="Only make bundling database and do not bundle maps?"
-    )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite database if exists?"
-    )
-    parser.add_argument(
-        "--abscal",
-        action="store_true",
-        help="Apply stored absolute calibration factors"
-    )
-    parser.add_argument(
-        "--nproc",
-        default=1,
-        type=int,
-        help="Number of parallel processes to use in coadd"
-    )
-    parser.add_argument(
-        "--tel",
-        default=None,
-        help="telescope identifier for abscal"
-    )
-    parser.add_argument(
-        "--save_fnames",
-        action="store_true",
-        help="Save the atomic map filenames for each bundle"
-    )
-
 
     args = parser.parse_args()
+    config = Cfg.from_yaml(args.config_file)
+    its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
 
-    main(args)
+    for patch in np.atleast_1d(config.patch):
+        config.patch = patch
+        patch_tag = "" if patch is None else patch
+        config.bundle_db = config.bundle_db.format(patch=patch_tag,
+                                                   seed=config.seed)
+        # Hacky but remove any (presumed accidental) double underscores
+        config.bundle_db = config.bundle_db.replace("__", "_")
+
+        # Make db only
+        if config.only_make_db:
+            main(config)
+            continue
+
+        for it in itertools.product(*its):
+            config.freq_channel, config.wafer = it
+
+            # Inter-obs
+            if config.inter_obs_splits is not None:
+                config.split_label_intra_obs = config.intra_obs_pair
+                for null_prop_val in config.inter_obs_splits:
+                    print(null_prop_val)
+                    config.null_prop_val_inter_obs = null_prop_val
+                    main(config)
+
+            # Intra-obs
+            if config.intra_obs_splits is not None:
+                for split_val in config.intra_obs_splits:
+                    print(split_val)
+                    config.split_label_intra_obs = split_val
+                    main(config)

@@ -1,0 +1,78 @@
+## Required arguments ##
+bundle_db: 'test_out/bundles_{patch}_seed{seed}_20250224.db' # Optional format fields {patch} and {seed}
+atomic_db: '/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_db.sqlite'
+n_bundles: 4
+seed: 17  # Only needed for make_bundle_db unless included in format for bundle_db
+
+## Optional shared arguments ##
+query_restrict: "pwv < 2 AND median_weight_qu < 2e10 AND ((f_hwp > 1.9 AND f_hwp < 2.3) OR (f_hwp > -2.3 AND f_hwp < -1.9))"
+only_make_db: False
+patch: ["south", "north"]  # Only needed for make_bundle_db unless included in format for bundle_db or map_string_format
+
+## Optional for make_bundle_db ##
+inter_obs_props:
+  pwv: "median"
+  dpwv: "median"
+  sun_distance: "median"
+  ambient_temperature: "median"
+  azimuth:
+    splits: [[0, 180], [180, 360]]
+    names: ["rising_azimuth", "setting_azimuth"]
+  roll_angle:
+    splits: [[-47, -44], [-3, 3], [44, 47]]
+    names: ["-45_roll_angle", "0_roll_angle", "+45_roll_angle"]
+  f_hwp:
+    splits: [[-2.3, -1.9], [1.9, 2.3]]
+    names: ["neg_f_hwp", "pos_f_hwp"]
+
+overwrite: True
+
+## Required for bundle_maps ##
+pix_type: 'car'
+map_dir: "/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_maps"
+output_dir: "test_out/"
+freq_channel: ["f090", "f150"] # May be a single string or a list
+# Format fields {split}, {bundle_id}, {freq_channel} required. {patch}, {wafer} optional.
+map_string_format: "{patch}/satp1_{freq_channel}_{wafer}_{split}_bundle{bundle_id}_map.fits"
+
+## Optional for bundle_maps ##
+intra_obs_splits:
+  - "det_left"
+  - "det_right"
+  - "det_upper"
+  - "det_lower"
+  - "det_in"
+  - "det_out"
+  - "scan_left"
+  - "scan_right"
+
+intra_obs_pair:
+  - "det_left"
+  - "det_right"
+
+inter_obs_splits:
+  - "low_pwv"
+  - "high_pwv"
+  - "low_dpwv"
+  - "high_dpwv"
+  - "low_sun_distance"
+  - "high_sun_distance"
+  - "low_ambient_temperature"
+  - "high_ambient_temperature"
+  - "rising_azimuth"
+  - "setting_azimuth"
+  - "-45_roll_angle"
+  - "0_roll_angle"
+  - "+45_roll_angle"
+  - "neg_f_hwp"
+  - "pos_f_hwp"
+
+car_map_template: "mapmaking/full_car_fejer1_5arcmin.fits"
+
+wafer: null  # null, string, or list of strings
+save_fnames: True
+nproc: 56
+
+atomic_list: null
+abscal: False
+tel: null
