@@ -4,9 +4,12 @@ import argparse
 import sqlite3
 import os
 import sys
+import tracemalloc
 import matplotlib.pyplot as plt
+import sotodlib.preprocess.preprocess_util as pp_util
 
 from pixell import enmap, enplot
+from mpi4py import MPI
 
 # TODO: Make it an actual module
 sys.path.append(
@@ -17,11 +20,12 @@ sys.path.append(
 )
 from bundling_utils import coadd_maps  # noqa
 from coordinator import BundleCoordinator  # noqa
+from mpi_utils import distribute_tasks  # noqa
 
 
-def _get_atomics_maps_list(sim_id, atomic_metadata, freq_channel, atomics_dir, split_label,
-                           map_string_format, mfmt=".fits", pix_type="car",
-                           remove_atomics=False):
+def _get_atomics_maps_list(sim_id, atomic_metadata, freq_channel, atomics_dir,
+                           split_label, map_string_format, mfmt=".fits",
+                           pix_type="car", remove_atomics=False, logger=None):
     """
     Returns a list of filtered atomic maps that correpsond to a given
     simulation ID, given a list of atomic metadata.
@@ -41,19 +45,17 @@ def _get_atomics_maps_list(sim_id, atomic_metadata, freq_channel, atomics_dir, s
             Pixelization type; either 'car' or 'hp'.
         remove_atomics: bool
             Whether to remove atomic map files after loading into list.
+        logger: sotodlib.preprocess.preprocess_util.logger
+            Logger instance to print output.
     Returns:
         wmap_list: list
             List of weighted maps (numpy.ndmap or numpy.ndarray)
         w_list: list
             List of map weights (numpy.ndmap or numpy.ndarray)
     """
-    wmap_list = []
-    w_list = []
+    wmap_list, w_list = ([], [])
 
     for id, (obs_id, wafer) in enumerate(atomic_metadata):
-        if id % 10 == 0:
-            print("    id", id)
-
         atomic_fname = map_string_format.format(sim_id=sim_id).replace(
             mfmt,
             f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
@@ -67,9 +69,6 @@ def _get_atomics_maps_list(sim_id, atomic_metadata, freq_channel, atomics_dir, s
         # conspire such that no detectors are left. Since this is a rare
         # case, it is acceptable to just ignore those when coadding.
         if not (os.path.isfile(fname_wmap) and os.path.isfile(fname_w)):
-            print("WARNING: "
-                  f"{fname_wmap} "
-                  "is missing. SKIPPING in coadder.")
             continue
 
         if pix_type == "car":
@@ -85,6 +84,8 @@ def _get_atomics_maps_list(sim_id, atomic_metadata, freq_channel, atomics_dir, s
         if remove_atomics:
             os.remove(fname_wmap)
             os.remove(fname_w)
+
+    logger.info(f"{id+1} atomics expected, {len(wmap_list)} atomics at disk.")
 
     return wmap_list, w_list
 
@@ -128,13 +129,43 @@ def _save_and_plot_map(map, out_fname, out_dir, plots_dir, pix_type="car",
             plt.close()
 
 
+def get_query_atomics(freq_channel, ctimes, split_label="science",
+                      query_restrict="median_weight_qu < 2e10"):
+    """
+    """
+    query = f"""
+            SELECT obs_id, wafer
+            FROM atomic
+            WHERE freq_channel == '{freq_channel}'
+            AND ctime IN {tuple(ctimes)}
+            AND split_label == '{split_label}'
+            """
+    if split_label != "science":
+        # The "valid" argument is not meant to be used with the "science" split
+        query += " AND valid == 1"
+    elif query_restrict:
+        # If we want "science", then we have to use "query_restrict". On the
+        # other hand, if we don't use the "science" split, the observations
+        # will have been restricted prior to that, so we ignore it there.
+        query += f" AND {query_restrict}"
+    return query
+
+
 def main(args):
     """
     """
+    # MPI related initialization
+    comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
+    success = True
+
+    # Initialize the logger
+    logger = pp_util.init_logger("benchmark", verbosity=3)
+
     # Output directories
     out_dir = args.output_directory
-    plots_dir = f"{out_dir}/plots"
-    os.makedirs(plots_dir, exist_ok=True)
+    plots_dir = out_dir + "/plots"
 
     # Path to atomic maps
     atomics_dir = args.atomics_dir
@@ -167,10 +198,12 @@ def main(args):
 
     # Bundle query arguments
     freq_channel = args.freq_channel
-    if "," in args.null_prop_val_inter_obs:
-        inter_obs_nulls = args.null_prop_val_inter_obs.split(",")
+    if args.split_labels_inter_obs is None:
+        inter_obs_nulls = []
+    elif "," in args.split_labels_inter_obs:
+        inter_obs_nulls = args.split_labels_inter_obs.split(",")
     else:
-        inter_obs_nulls = [args.null_prop_val_inter_obs]
+        inter_obs_nulls = [args.split_labels_inter_obs]
     bundle_id = args.bundle_id
 
     # Load all data from bundle db without filtering
@@ -180,24 +213,24 @@ def main(args):
 
     # Gather all split labels of atomics to be coadded.
     split_labels_coadd, split_labels_nocoadd = ([], [])
-    if args.split_label_intra_obs is not None:
-        if "," not in args.split_label_intra_obs:
-            split_labels_nocoadd = [args.split_label_intra_obs]
+    if args.split_labels_intra_obs is not None:
+        if "," not in args.split_labels_intra_obs:
+            split_labels_nocoadd = [args.split_labels_intra_obs]
         else:
-            split_labels_nocoadd = (args.split_label_intra_obs).split(",")
+            split_labels_nocoadd = (args.split_labels_intra_obs).split(",")
     if args.split_label_pair_to_coadd is not None:
         if "," not in args.split_label_pair_to_coadd:
             raise ValueError("You must pass a comma-separated string list to "
                              "'--split_label_pair_to_coadd'.")
         else:
             split_labels_coadd = args.split_label_pair_to_coadd.split(",")
-    if ((args.split_label_intra_obs, args.split_label_pair_to_coadd) == (None, None)):  # noqa
+    if ((args.split_labels_intra_obs, args.split_label_pair_to_coadd) == (None, None)):  # noqa
         raise ValueError("You must pass at least one of the two: "
                          "'--split_label_pair_to_coadd' "
-                         "or '--split_label_intra_obs'.")
+                         "or '--split_labels_intra_obs'.")
 
-    print("Split labels to individually coadd", split_labels_nocoadd)
-    print("Split labels to coadd together: ", split_labels_coadd)
+    logger.info(f"Split labels to coadd individually: {split_labels_nocoadd}")  # noqa
+    logger.info(f"Split labels to coadd together: {split_labels_coadd}")
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id - inter obs null label
@@ -211,15 +244,6 @@ def main(args):
 
     for null_prop_val in inter_obs_nulls:
         ctimes[null_prop_val] = [ct for ct in ctimes[null_prop_val] if ct in ctimes["science"]]  # noqa
-    
-    # Read restrictive list of atomic-map metadata
-    # (obs_id, wafer, freq_channel) from file, and intersect it
-    # with the metadata in the bundling database.
-    atomic_restrict = []
-    if args.atomic_list is not None:
-        atomic_restrict = list(
-            map(tuple, np.load(args.atomic_list)["atomic_list"])
-        )
 
     # Connect the the atomic map DB
     atomic_metadata = []
@@ -228,16 +252,11 @@ def main(args):
     query_restrict = args.query_restrict
 
     # Query all atomics used for science, filtering ctimes
-    res = db_cur.execute(
-        f"""
-        SELECT obs_id, wafer
-        FROM atomic
-        WHERE freq_channel == '{freq_channel}'
-        AND ctime IN {tuple(ctimes['science'])}
-        AND split_label == 'science'
-        AND {query_restrict}
-        """
+    query = get_query_atomics(
+        freq_channel, ctimes["science"], split_label="science",
+        query_restrict=query_restrict
     )
+    res = db_cur.execute(query)
     res = res.fetchall()
     atomic_metadata = {
         "science": [
@@ -247,16 +266,11 @@ def main(args):
     # Query all atomics used for intra-obs splits
     # filtering ctimes and split labels
     for split_label in split_labels_nocoadd:
-        res = db_cur.execute(
-            f"""
-            SELECT obs_id, wafer
-            FROM atomic
-            WHERE freq_channel == '{freq_channel}'
-            AND ctime IN {tuple(ctimes["science"])}
-            AND split_label == '{split_label}'
-            AND valid == 1
-            """
+        query = get_query_atomics(
+            freq_channel, ctimes["science"], split_label=split_label,
+            query_restrict=query_restrict
         )
+        res = db_cur.execute(query)
         res = res.fetchall()
         atomic_metadata[split_label] = [
             (obs_id, wafer) for obs_id, wafer in res
@@ -268,16 +282,10 @@ def main(args):
     if len(split_labels_coadd) != 0:
         for null_prop_val in inter_obs_nulls:
             for split_label in split_labels_coadd:
-                res = db_cur.execute(
-                    f"""
-                    SELECT obs_id, wafer
-                    FROM atomic
-                    WHERE freq_channel == '{freq_channel}'
-                    AND ctime IN {tuple(ctimes[null_prop_val])}
-                    AND split_label == '{split_label}'
-                    AND {query_restrict}
-                    """
+                query = get_query_atomics(
+                    freq_channel, ctimes["science"], split_label=split_label
                 )
+                res = db_cur.execute(query)
                 res = res.fetchall()
                 atomic_metadata[null_prop_val, split_label] = [
                     (obs_id, wafer) for obs_id, wafer in res
@@ -285,102 +293,77 @@ def main(args):
                 ]
     db_con.close()
 
-    print("Reading atomics ...")
-    for sim_id in sim_ids:
-        maps_dir = f"{atomics_dir}/{sim_id:04d}/{freq_channel}"
-        
-        print(f"  Loading atomics for sim no {sim_id:04d}")
-        # Coadding atomics for intra-obs splits
-        for split_label in split_labels_nocoadd:
-            print(f"    Split label: {split_label}")
+    split_labels_all = list(
+        set(["science"] + split_labels_nocoadd + inter_obs_nulls)
+    )
+    mpi_shared_list = [(sim_id, split_label)
+                       for sim_id in sim_ids
+                       for split_label in split_labels_all]
 
-            
+    task_ids = distribute_tasks(size, rank, len(mpi_shared_list),
+                                logger=logger)
+    local_mpi_list = [mpi_shared_list[i] for i in task_ids]
+
+    for sim_id, split_label in local_mpi_list:
+        map_dir = atomics_dir.format(sim_id=sim_id)
+        assert os.path.isdir(map_dir), map_dir
+
+        logger.info(f"Loading atomics for sim {sim_id:04d} and {split_label}")
+
+        w_list, wmap_list = ([], [])
+
+        if split_label == "science":
+            tracemalloc.start()
+            for sl in split_labels_coadd:
+                wmap_l, w_l = _get_atomics_maps_list(
+                    sim_id, atomic_metadata[sl],
+                    freq_channel, map_dir, sl,
+                    map_string_format, mfmt=mfmt, pix_type=pix_type,
+                    logger=logger
+                )
+                wmap_list += wmap_l
+                w_list += w_l
+            current_gb, peak_gb = [1024**(-3) * c
+                                   for c in tracemalloc.get_traced_memory()]
+            logger.info("Traced Memory for 'science' (Current, Peak): "
+                        f"({current_gb:.2f} GB, {current_gb:.2f} GB")
+            tracemalloc.stop()
+        elif split_label in inter_obs_nulls:
+            for sl in split_labels_coadd:
+                wmap_l, w_l = _get_atomics_maps_list(
+                    sim_id, atomic_metadata[split_label, sl],
+                    freq_channel, map_dir, sl,
+                    map_string_format, mfmt=mfmt, pix_type=pix_type,
+                    logger=logger
+                )
+                wmap_list += wmap_l
+                w_list += w_l
+        else:
             wmap_list, w_list = _get_atomics_maps_list(
-                sim_id, atomic_metadata[split_label], freq_channel, maps_dir,
-                split_label, map_string_format, mfmt=mfmt, pix_type=pix_type
-            )
-            print(f"    Coadding atomics ({split_label})")
-
-            map_filtered, weights = coadd_maps(
-                wmap_list, w_list, pix_type=pix_type,
-                car_template_map=car_template_map, 
-            )
-            del wmap_list, w_list
-            out_fname = map_string_format.format(sim_id=sim_id).replace(
-                ".fits",
-                f"_bundle{bundle_id}_{freq_channel}_{split_label}_filtered.fits"  # noqa
-            )
-            _save_and_plot_map(
-                map_filtered, out_fname, out_dir, plots_dir, pix_type=pix_type
-            )
-            _save_and_plot_map(
-                weights, out_fname.replace(".fits", "_weights.fits"),
-                out_dir, plots_dir, pix_type=pix_type, do_plot=False
+                sim_id, atomic_metadata[split_label],
+                freq_channel, map_dir, split_label,
+                map_string_format, mfmt=mfmt, pix_type=pix_type,
+                logger=logger
             )
 
-        # Exit if there's no intra-obs splits to coadd
-        if len(split_labels_coadd) == 0:
-            return
-        
-        # Coadding atomics for science using the two specified
-        # intra-obs splits
-        wmap_list, w_list = ([], [])
-        for split_label in split_labels_coadd:
-            #for idbatch in ...
-            wmap_l, w_l = _get_atomics_maps_list(
-                sim_id, atomic_metadata[split_label], freq_channel, maps_dir,
-                split_label, map_string_format, mfmt=mfmt, pix_type=pix_type
-            )
-            wmap_list += wmap_l
-            w_list += w_l
-
-        print(f"  Coadding atomics into the science bundle from {split_labels_coadd}")
+        logger.info(f"Coadding atomics for sim {sim_id:04d} and {split_label}")
         map_filtered, weights = coadd_maps(
             wmap_list, w_list, pix_type=pix_type,
             car_template_map=car_template_map
         )
-
-        del wmap_list, w_list
         out_fname = map_string_format.format(sim_id=sim_id).replace(
-            ".fits", f"_bundle{bundle_id}_{freq_channel}_science_filtered.fits"
+            ".fits",
+            f"_bundle{bundle_id}_{freq_channel}_{split_label}_filtered.fits"
         )
         _save_and_plot_map(
-            map_filtered, out_fname, out_dir, plots_dir, pix_type=pix_type
+            map_filtered, out_fname, out_dir, plots_dir,
+            pix_type=pix_type
         )
         _save_and_plot_map(
             weights, out_fname.replace(".fits", "_weights.fits"),
             out_dir, plots_dir, pix_type=pix_type, do_plot=False
         )
-
-        # Coadd atomics for inter-obs splits using the two specified
-        # intra-obs splits
-        for null_prop_val in inter_obs_nulls:
-            wmap_list, w_list = ([], [])
-            for split_label in split_labels_coadd:
-                wmap_l, w_l = _get_atomics_maps_list(
-                    sim_id, atomic_metadata[null_prop_val, split_label], freq_channel, maps_dir,
-                    split_label, map_string_format, mfmt=mfmt, pix_type=pix_type
-                )
-                wmap_list += wmap_l
-                w_list += w_l
-
-            print(f"  Coadding atomics into the {null_prop_val} bundle from {split_labels_coadd}")
-            map_filtered, weights = coadd_maps(
-                wmap_list, w_list, pix_type=pix_type,
-                car_template_map=car_template_map
-            )
-
-            del wmap_list, w_list
-            out_fname = map_string_format.format(sim_id=sim_id).replace(
-                ".fits", f"_bundle{bundle_id}_{freq_channel}_{null_prop_val}_filtered.fits"
-            )
-            _save_and_plot_map(
-                map_filtered, out_fname, out_dir, plots_dir, pix_type=pix_type
-            )
-            _save_and_plot_map(
-                weights, out_fname.replace(".fits", "_weights.fits"),
-                out_dir, plots_dir, pix_type=pix_type, do_plot=False
-            )
+    success = all(comm.allgather(success))
 
 
 if __name__ == "__main__":
@@ -390,11 +373,6 @@ if __name__ == "__main__":
         "--atomic-db",
         help="Path to the atomic maps database.",
         type=str
-    )
-    parser.add_argument(
-        "--atomic_list",
-        help="Npz file with list of atomic maps to restrict the atomic_db to.",
-        default=None
     )
     parser.add_argument(
         "--bundle-db",
@@ -433,12 +411,7 @@ if __name__ == "__main__":
         help="Bundle ID to filter",
     )
     parser.add_argument(
-        "--null_prop_val_inter_obs",
-        help="Null property value for inter-obs splits, e.g. 'pwv_low'.",
-        default=None
-    )
-    parser.add_argument(
-        "--split_label_intra_obs",
+        "--split_labels_intra_obs",
         help="String, or comma-separated string list of intra-obs split "
              "labels, e.g. 'scan_left', or 'scan_left,det_in,det_left'. "
              "For each label passed, the corresponding atomic maps are "
@@ -450,6 +423,12 @@ if __name__ == "__main__":
         help="Pair of split labels, comma-separated, to be coadded into a "
              "science bundle, e.g. 'scan_left,scan_right. The resulting "
              "bundle map carries the new label 'science'.",
+        default=None
+    )
+    parser.add_argument(
+        "--split_labels_inter_obs",
+        help="String, or comma-separated string list of inter-obs split "
+             "labels, e.g. 'low_pwv', or 'low_pwv,high_sun_distance'. ",
         default=None
     )
     parser.add_argument(
