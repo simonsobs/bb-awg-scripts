@@ -1,16 +1,12 @@
 import numpy as np
 import healpy as hp
 import argparse
-import logging
 import sqlite3
 import os
 import sys
 import time
-import sotodlib.mapmaking.demod_mapmaker as dmm
 import sotodlib.preprocess.preprocess_util as pp_util
 
-from sotodlib.mapmaking.noise_model import NmatUnit
-from sotodlib.site_pipeline import preprocess_tod
 from sotodlib.core.metadata import loader
 from pixell import enmap
 from sotodlib.coords import P
@@ -24,11 +20,10 @@ sys.path.append(
 )
 from coordinator import BundleCoordinator  # noqa
 from mpi_utils import distribute_tasks  # noqa
+from sotodlib.coords.demod import make_map  # noqa
 
-from sotodlib.coords.demod import make_map
 
-
-def get_fullsky_geometry(res_arcmin=1., variant="fejer1"):
+def get_fullsky_geometry(res_arcmin=5., variant="fejer1"):
     """
     Generates a fullsky CAR template at resolution res-arcmin.
     """
@@ -36,16 +31,8 @@ def get_fullsky_geometry(res_arcmin=1., variant="fejer1"):
     return enmap.fullsky_geometry(res=res, proj='car', variant=variant)
 
 
-def make_map_wrapper(
-    obs,
-    split_labels,
-    pix_type="hp",
-    shape=None,
-    wcs=None,
-    nside=None,
-    site=None,
-    logger=None
-    ):
+def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
+                     nside=None, site=None, logger=None):
     """
     """
     obs.wrap("weather", np.full(1, "toco"))
@@ -54,50 +41,30 @@ def make_map_wrapper(
         nside = None
         assert wcs is not None
     elif pix_type == "hp":
-        wcs, shape = (None, None)
+        wcs = None
         assert nside is not None
 
     inv_var = 1 / obs.preprocess.noiseQ_nofit.white_noise ** 2
-    
+
     wmap_dict = {}
     weights_dict = {}
 
     for n_split, split_label in enumerate(split_labels):
-        cuts = obs.flags.glitch_flags + ~obs.preprocess.split_flags.cuts[split_label]
-        
-        Proj = P.for_tod(obs, wcs_kernel=wcs, comps='TQU', cuts=cuts, hwp=True, interpol=None)
-        result = make_map(obs, P=Proj, det_weights=2 * inv_var, det_weights_demod=inv_var)
+        cuts = obs.flags.glitch_flags + ~obs.preprocess.split_flags.cuts[split_label]  # noqa
+
+        Proj = P.for_tod(obs, wcs_kernel=wcs, comps='TQU', cuts=cuts,
+                         hwp=True, interpol=None)
+        result = make_map(obs, P=Proj, det_weights=2 * inv_var,
+                          det_weights_demod=inv_var)
         wmap_dict[split_label] = result['weighted_map']
         weights_dict[split_label] = result['weight']
-        # transform (3, 3, N, n) array to (3, N, n) keeping only diagonals in the first two dimensions
-        weights_dict[split_label] = np.moveaxis(weights_dict[split_label].diagonal(), -1, 0)
-    
+        # transform (3, 3, N, n) array to (3, N, n) keeping only diagonals
+        # in the first two dimensions
+        weights_dict[split_label] = np.moveaxis(
+            weights_dict[split_label].diagonal(), -1, 0
+        )
+
     return wmap_dict, weights_dict
-
-
-def get_logger(fmt=None, datefmt=None, debug=False, **kwargs):
-    """Return logger from logging module
-    code from pspipe
-
-    Parameters
-    ----------
-        fmt: string
-        the format string that preceeds any logging message
-        datefmt: string
-        the date format string
-        debug: bool
-        debug flag
-    """
-    # fmt = fmt or "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s: %(message)s" # noqa
-    fmt = fmt or "%(asctime)s - %(message)s"
-    datefmt = datefmt or "%d-%b-%y %H:%M:%S"
-    logging.basicConfig(
-        format=fmt,
-        datefmt=datefmt,
-        level=logging.DEBUG if debug else logging.INFO,
-        force=True
-    )
-    return logging.getLogger(kwargs.get("name"))
 
 
 def main(args):
@@ -115,7 +82,7 @@ def main(args):
     success = True
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=1)
+    logger = pp_util.init_logger("benchmark", verbosity=3)
 
     # Where to store outputs
     out_dir = args.output_directory
@@ -129,7 +96,6 @@ def main(args):
     # Pre-processing configuration files
     preprocess_config_init = args.preprocess_config_init
     preprocess_config_proc = args.preprocess_config_proc
-    
 
     logger.debug(f"Using atomic DB from {atom_db}")
 
@@ -158,9 +124,7 @@ def main(args):
         mfmt = ".fits"  # TODO: fits.gz for HEALPix
     elif pix_type == "car":
         if args.car_map_template is not None:
-            w = enmap.read_map(args.car_map_template)
-            shape = w.shape[-2:]
-            wcs = w.wcs
+            shape, wcs = enmap.read_map_geometry(args.car_map_template)
         else:
             shape, wcs = get_fullsky_geometry() # Could be problematic if using all default values! # noqa
         nside = None
@@ -180,8 +144,7 @@ def main(args):
     if os.path.isfile(bundle_db):
         logger.info(f"Loading from {bundle_db}.")
         bundle_coordinator = BundleCoordinator.from_dbfile(
-            bundle_db, bundle_id=bundle_id,
-            #null_prop_val=null_prop_val_inter_obs
+            bundle_db, bundle_id=bundle_id
         )
     else:
         raise ValueError(f"DB file does not exist: {bundle_db}")
@@ -194,17 +157,17 @@ def main(args):
     db_con = sqlite3.connect(atom_db)
     db_cur = db_con.cursor()
 
+    query = f"""
+            SELECT obs_id, wafer
+            FROM atomic
+            WHERE freq_channel == '{freq_channel}'
+            AND ctime IN {tuple(ctimes)}
+            AND split_label == 'science'
+            """
     query_restrict = args.query_restrict
-    res = db_cur.execute(
-        f"""
-        SELECT obs_id, wafer
-        FROM atomic
-        WHERE freq_channel == '{freq_channel}'
-        AND ctime IN {tuple(ctimes)}
-        AND split_label == 'science'
-        AND {query_restrict}
-        """
-    )
+    if query_restrict:
+        query += f" AND {query_restrict}"
+    res = db_cur.execute(query)
     res = res.fetchall()
     atomic_metadata = {
         "science": [
@@ -229,11 +192,11 @@ def main(args):
         ]
     db_con.close()
 
-    logger.info(f"{len(atomic_metadata)} atomic maps to filter.")
+    logger.info(f"{len(atomic_metadata['science'])} atomic maps to filter.")
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
-    configs_init, ctx_init = pp_util.get_preprocess_context(
+    configs_init, _ = pp_util.get_preprocess_context(
         preprocess_config_init
     )
     configs_proc, ctx_proc = pp_util.get_preprocess_context(
@@ -254,7 +217,6 @@ def main(args):
     for obs_id, wafer in local_mpi_list:
         # Get axis manager metadata for the given obs
         dets = {"wafer_slot": wafer, "wafer.bandpass": freq_channel}
-        ctx = ctx_proc if do_multilayer_preproc else ctx
         meta = ctx_proc.get_meta(obs_id=obs_id, dets=dets)
 
         # Focal plane thinning
@@ -299,7 +261,8 @@ def main(args):
             else:
                 raise ValueError("pix_type must be hp or car")
 
-            logger.info(f"Loading {obs_id} {wafer} {freq_channel} on sim {sim_id}")
+            logger.info(f"Loading {obs_id} {wafer} {freq_channel} "
+                        f"on sim {sim_id}")
 
             try:
                 aman = pp_util.multilayer_load_and_preprocess_sim(
@@ -311,11 +274,11 @@ def main(args):
                     logger=logger,
                     t2ptemplate_aman=data_aman
                 )
-    
+
             except loader.LoaderError:
                 logger.info(
-                    f"ERROR: {obs_id} {wafer} {freq} metadata is not there. "
-                    "SKIPPING."
+                    f"ERROR: {obs_id} {wafer} {freq_channel} metadata is not "
+                    "there. SKIPPING."
                 )
                 continue
 
@@ -329,13 +292,14 @@ def main(args):
             )
 
             for split_label in split_labels:
-                # We save only files for which we actually have data for a given null split
+                # We save only files for which we actually have data for a
+                # given null split
                 if (obs_id, wafer) in atomic_metadata[split_label]:
                     wmap = wmap_dict[split_label]
                     w = weights_dict[split_label]
 
                     # Saving filtered atomics to disk
-                    atomic_fname = map_string_format.format(sim_id=sim_id).replace(
+                    atomic_fname = map_string_format.format(sim_id=sim_id).replace(  # noqa
                         mfmt,
                         f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
                     )
@@ -349,15 +313,19 @@ def main(args):
 
                     elif pix_type == "hp":
                         hp.write_map(
-                            f_wmap, wmap, dtype=np.float32, overwrite=True, nest=True
+                            f_wmap, wmap, dtype=np.float32, overwrite=True,
+                            nest=True
                         )
                         hp.write_map(
                             f_w, w, dtype=np.float32, overwrite=True, nest=True
                         )
             # Stop timer
             end0 = time.time()
-            logger.info(f"Filtering sim {sim_id:04d} in {end0 - start0:.1f} seconds.")
-        logger.info(f"Processed {len(sim_ids)} simulations for {obs_id} {wafer} in {time.time() - start:.1f} seconds.")
+            logger.info(
+                f"Filtering sim {sim_id:04d} in {end0 - start0:.1f} seconds."
+            )
+        logger.info(f"Processed {len(sim_ids)} simulations for "
+                    f"{obs_id} {wafer} in {time.time() - start:.1f} seconds.")
 
     success = all(comm.allgather(success))
 
@@ -413,11 +381,6 @@ if __name__ == "__main__":
         "--query_restrict",
         help="SQL query to restrict obs from the atomic database.",
         default=""
-    )
-    parser.add_argument(
-        "--null_prop_val_inter_obs",
-        help="Null property value for inter-obs splits, e.g. 'pwv_low'.",
-        default=None
     )
     parser.add_argument(
         "--split_labels_intra_obs",
