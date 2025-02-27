@@ -22,13 +22,15 @@ class BundleCoordinator:
         seed: int
             Seed for the random number generator.
         null_props: dict
-            Keys should be strings of (inter-obs null test) props available in atomic db
+            Keys should be strings of (inter-obs null test) props available in
+            atomic db.
             Values can be:
               - "median" to separate into two groups based on median values
               - {"splits": val_splits, "names": [name1, name2, ...]}
               - None to use each string value in the atomic db as its own group
             val_splits can be:
-              - [(min1, max1), (min2, max2), ...] to pick vals in a numerical range
+              - [(min1, max1), (min2, max2), ...] to pick vals in a numerical
+                range
               - [(str1, str2, ...), (str3, str4, ...)] to group string values
         """
         if atomic_db is not None:
@@ -46,7 +48,7 @@ class BundleCoordinator:
             self.bundle_id = bundle_id
             self.null_props = null_props
             if query_restrict != "":
-                query_restrict = f" WHERE split_label='science' AND ({query_restrict})"
+                query_restrict = f" WHERE split_label='science' AND ({query_restrict})"  # noqa
             else:
                 query_restrict = " WHERE split_label='science'"
             if null_props is not None:
@@ -67,14 +69,19 @@ class BundleCoordinator:
                     if np.issubdtype(res.dtype, np.number):
                         if null_val == "median":
                             med = np.median(res)
-                            self.null_props[null_prop] = {"splits": [(-np.inf, med), (med, np.inf)],
-                                                          "names": [f"low_{null_prop}",
-                                                                    f"high_{null_prop}"]}
+                            self.null_props[null_prop] = {
+                                "splits": [(-np.inf, med), (med, np.inf)],
+                                "names": [f"low_{null_prop}",
+                                          f"high_{null_prop}"]
+                            }
                     elif np.issubdtype(res.dtype, np.str_):
                         if null_val is None:
                             # Do 1-1 string matching
                             all_vals = np.unique(res).tolist()  # noqa
-                            self.null_props[null_prop] = {"splits": [(x,) for x in all_vals], "names": all_vals}
+                            self.null_props[null_prop] = {
+                                "splits": [(x,) for x in all_vals],
+                                "names": all_vals
+                            }
 
             query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic"
             query += query_restrict
@@ -124,7 +131,8 @@ class BundleCoordinator:
             keyword = "WHERE" if add_query == "" else "AND"
             null_prop_name = "_".join(null_prop_val.split("_")[1:])
             if null_prop_name not in db_props:
-                raise ValueError(f"Inferred null_prop_name {null_prop_name} not in db_props")
+                raise ValueError(f"Inferred null_prop_name {null_prop_name} "
+                                 "not in db_props")
             add_query += f" {keyword} {null_prop_name} = '{null_prop_val}'"
         query = cursor.execute(f"SELECT {query_fmt} FROM bundles{add_query}")
         results = np.asarray(query.fetchall())
@@ -167,16 +175,13 @@ class BundleCoordinator:
         self.shuffled_props = shuffled_props
         self.bundle_ids = bundle_ids
 
-    def get_ctimes(self, bundle_id, split_label, null_prop_val=None):
+    def get_ctimes(self, bundle_id, null_prop_val=None):
         """
         """
         filter = (self.bundle_ids == int(bundle_id))
         ctimes = self.ctime[filter]
         if null_prop_val not in [None, "science"]:
-            print(f"WARNING: you selected atomics with {null_prop_val} "
-                  f"but you also selected a split_label {split_label}. "
-                  "/n - Are you sure you want to do this?")
-            name_prop = null_prop_val.split("_")[1]
+            name_prop = "_".join(null_prop_val.split("_")[1:])
             prop_val = getattr(self, name_prop)[filter]
             filter = prop_val == null_prop_val
             ctimes = ctimes[filter]
@@ -209,7 +214,8 @@ class BundleCoordinator:
             dbrow = []
             for id_prop, prop in enumerate(self.to_query):
                 try:
-                    # These are saved as strings so we need to convert back to numbers
+                    # These are saved as strings so we need to convert back to
+                    # numbers
                     val = np.float64(row[id_prop])
                 except ValueError:
                     val = row[id_prop]
@@ -221,7 +227,7 @@ class BundleCoordinator:
                     for isplit in range(len(null_dict['splits'])):
                         split = null_dict['splits'][isplit]
                         # We expect a tuple of numbers
-                        if len(split) == 2 and np.issubdtype(type(split[0]), np.number):
+                        if len(split) == 2 and np.issubdtype(type(split[0]), np.number):  # noqa
                             if split[0] <= val < split[1]:  # In the range
                                 dbrow.append(null_dict['names'][isplit])
                         # Or a tuple of strings
@@ -253,7 +259,8 @@ class BundleCoordinator:
                     dbrow.append(", ".join(split))
                 db_data.append(dbrow)
         table_format = ",".join(["?" for _ in range(len(fmt))])
-        bundle_db.executemany(f"INSERT INTO metadata VALUES ({table_format})", db_data)
+        bundle_db.executemany(f"INSERT INTO metadata VALUES ({table_format})",
+                              db_data)
 
         db_con.commit()
         db_con.close()
