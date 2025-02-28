@@ -595,6 +595,13 @@ class Cfg:
         Apply stored absolute calibration factors
     tel: str
         Telescope identifier for abscal
+    coadd_splits_name: str
+        "split" name for the coadd of two splits
+    coadd_split_pair: list
+        List of two (or more) splits to coadd
+    coadd_bundles_splitname: str
+        Split name for which to coadd all bundles to a full map.
+        May also be a list of names.
     """
     bundle_db: str
     atomic_db: str
@@ -620,6 +627,9 @@ class Cfg:
     atomic_list: Optional[str] = None
     abscal: bool = False
     tel: Optional[str] = None
+    coadd_splits_name: str = "full"
+    coadd_split_pair: Optional[list] = None
+    coadd_bundles_splitname: Optional[str] = None
 
     def __post_init__(self):
         # Add extra defaults for private args not expected in config file

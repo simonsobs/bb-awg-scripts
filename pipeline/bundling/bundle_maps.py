@@ -1,5 +1,5 @@
 import argparse
-from bundling_utils import Cfg
+import bundling_utils
 from coadder import Bundler
 import os
 import healpy as hp
@@ -198,45 +198,91 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    config = Cfg.from_yaml(args.config_file)
+    config = bundling_utils.Cfg.from_yaml(args.config_file)
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
-    bundle_db_format = config.bundle_db
 
     for patch in np.atleast_1d(patch_list):
-        config.patch = patch
         patch_tag = "" if patch is None else patch
-        config.bundle_db = bundle_db_format.format(patch=patch_tag,
-                                                   seed=config.seed)
+        bundle_db = config.bundle_db.format(patch=patch_tag,
+                                            seed=config.seed)
         # Hacky but remove any (presumed accidental) double underscores
-        config.bundle_db = config.bundle_db.replace("__", "_")
+        bundle_db = bundle_db.replace("__", "_")
 
         # Make db only
         if config.only_make_db:
-            main(config)
-            continue
+            config1 = config.copy()
+            config1.patch = patch
+            config1.bundle_db = bundle_db
+            main(config1)
 
-        for it in itertools.product(*its):
-            config.freq_channel, config.wafer = it
-            print(config.patch, config.freq_channel, config.wafer)
+        else:
+            for it in itertools.product(*its):
+                print(patch, it)
 
-            # Inter-obs
-            if config.inter_obs_splits is not None:
-                config.split_label_intra_obs = config.intra_obs_pair
-                for null_prop_val in config.inter_obs_splits:
-                    print(null_prop_val)
-                    config.null_prop_val_inter_obs = null_prop_val
-                    try:
-                        main(config)
-                    except ValueError as e:
-                        print(e)
+                config1 = config.copy()
+                config1.patch = patch
+                config1.bundle_db = bundle_db
+                config1.freq_channel, config1.wafer = it
 
-            # Intra-obs
-            if config.intra_obs_splits is not None:
-                for split_val in config.intra_obs_splits:
-                    print(split_val)
-                    config.split_label_intra_obs = split_val
-                    try:
-                        main(config)
-                    except ValueError as e:
-                        print(e)
+                # Inter-obs
+                if config1.inter_obs_splits is not None:
+                    config2 = config1.copy()
+                    config2.split_label_intra_obs = config2.intra_obs_pair
+                    for null_prop_val in config2.inter_obs_splits:
+                        print(null_prop_val)
+                        config2.null_prop_val_inter_obs = null_prop_val
+                        try:
+                            main(config2)
+                        except ValueError as e:
+                            print(e)
+
+                # Intra-obs
+                if config1.intra_obs_splits is not None:
+                    config2 = config1.copy()
+                    config2.null_prop_val_inter_obs = None
+
+                    for split_val in config2.intra_obs_splits:
+                        print(split_val)
+                        config2.split_label_intra_obs = split_val
+                        try:
+                            main(config2)
+                        except ValueError as e:
+                            print(e)
+
+                wafer_tag = "" if config1.wafer is None else config1.wafer
+                template = os.path.join(config1.output_dir,
+                                        config1.map_string_format.format(split="{}",
+                                                                         bundle_id="{}",
+                                                                         wafer=wafer_tag,
+                                                                         patch=patch_tag,
+                                                                         freq_channel=config1.freq_channel
+                                                                         ))
+                template = template.replace("__", "_")
+                template = template.replace("map.fits", "{}.fits")
+
+                # Make full coadds
+                if config1.coadd_split_pair is not None:
+                    print("Making full maps")
+
+                    savename = template.format(config1.coadd_splits_name, "{}", "{}")
+                    bundling_utils.make_full(template,
+                                             config1.coadd_split_pair,
+                                             config1.n_bundles,
+                                             config1.pix_type,
+                                             do_hits=True,
+                                             savename=savename,
+                                             return_maps=False)
+
+                if config1.coadd_bundles_splitname is not None:
+                    print("Co-adding bundles")
+                    for coadd_bundles_splitname in np.atleast_1d(config1.coadd_bundles_splitname):
+                        print(coadd_bundles_splitname)
+                        temp = template.format(coadd_bundles_splitname, "{}", "{}")
+                        sum_vals = list(range(config1.n_bundles))
+                        savename = temp.format("!", "{}").replace("_bundle!", "")
+                        bundling_utils.coadd_bundles(temp,
+                                                     sum_vals,
+                                                     config1.pix_type,
+                                                     do_hits=True,
+                                                     savename=savename)

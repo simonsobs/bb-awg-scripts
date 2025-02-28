@@ -76,3 +76,36 @@ nproc: 56
 atomic_list: null
 abscal: False
 tel: null
+
+## Coadding ##
+# Also uses: output_dir, map_string_format, patch, wafer, freq_channel, n_bundles, pix_type
+
+coadd_splits_name: "full"
+coadd_split_pair:
+  - "det_left"
+  - "det_right"
+coadd_bundles_splitname:
+  - "full"
+  - "det_left"
+  - "det_right"
+  - "det_upper"
+  - "det_lower"
+  - "det_in"
+  - "det_out"
+  - "scan_left"
+  - "scan_right"
+  - "low_pwv"
+  - "high_pwv"
+  - "low_dpwv"
+  - "high_dpwv"
+  - "low_sun_distance"
+  - "high_sun_distance"
+  - "low_ambient_temperature"
+  - "high_ambient_temperature"
+  - "rising_azimuth"
+  - "setting_azimuth"
+  - "-45_roll_angle"
+  - "0_roll_angle"
+  - "+45_roll_angle"
+  - "neg_f_hwp"
+  - "pos_f_hwp"
