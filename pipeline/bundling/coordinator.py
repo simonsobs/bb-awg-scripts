@@ -42,8 +42,8 @@ class BundleCoordinator:
             ).fetchall()
             db_props = [prop[0] for prop in db_props]
             print("Available info atomic_maps.db: ", db_props)
-            self.to_query = {"obs_id": "INTEGER",
-                             "ctime": "INTEGER"}
+            self.to_query = {"obs_id": "TEXT",
+                             "timestamp": "INTEGER"}
 
             self.bundle_id = bundle_id
             self.null_props = null_props.copy()
@@ -84,6 +84,7 @@ class BundleCoordinator:
                             }
 
             query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic"
+            query = query.replace("timestamp", "ctime")
             query += query_restrict
             res = np.asarray(cursor.execute(query).fetchall())
 
@@ -175,6 +176,8 @@ class BundleCoordinator:
             setattr(self, prop, shuffled_props[:, i])
         self.shuffled_props = shuffled_props
         self.bundle_ids = bundle_ids
+        if getattr(self, "ctime", None) is None:
+            self.ctime = self.timestamp
 
     def get_ctimes(self, bundle_id, null_prop_val=None):
         """
