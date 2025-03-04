@@ -98,16 +98,13 @@ def main(args):
         # Map naming convention
         if (split_intra_obs, split_inter_obs) == (None, None):
             split_tag = "science"
-        elif (split_intra_obs is not None) and (split_inter_obs is not None):
-            # Assume this is an inter with summed intras
+        elif split_inter_obs is not None:
+            # Inter; potentially with summed intras
             split_tag = split_inter_obs
         elif split_intra_obs is not None:
-            if isinstance(split_intra_obs, list):
-                split_tag = '_'.join(split_intra_obs)
-            else:
-                split_tag = split_intra_obs
-        elif split_inter_obs is not None:
-            split_tag = split_inter_obs
+            split_tag = split_intra_obs
+        if isinstance(split_tag, list):
+            split_tag = '_'.join(split_tag)
 
         wafer_tag = args.wafer if args.wafer is not None else ""
         patch_tag = args.patch if args.patch is not None else ""

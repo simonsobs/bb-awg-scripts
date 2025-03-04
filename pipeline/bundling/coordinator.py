@@ -128,12 +128,13 @@ class BundleCoordinator:
             keyword = "WHERE" if add_query == "" else "AND"
             add_query += f" {keyword} bundle_id = {bundle_id}"
         if null_prop_val not in [None, "science"]:
-            keyword = "WHERE" if add_query == "" else "AND"
-            null_prop_name = "_".join(null_prop_val.split("_")[1:])
-            if null_prop_name not in db_props:
-                raise ValueError(f"Inferred null_prop_name {null_prop_name} "
-                                 "not in db_props")
-            add_query += f" {keyword} {null_prop_name} = '{null_prop_val}'"
+            for npv in np.atleast_1d(null_prop_val):
+                keyword = "WHERE" if add_query == "" else "AND"
+                null_prop_name = "_".join(npv.split("_")[1:])
+                if null_prop_name not in db_props:
+                    raise ValueError(f"null_prop_name {null_prop_name} "
+                                      "not in db_props")
+                add_query += f" {keyword} {null_prop_name} = '{npv}'"
         query = cursor.execute(f"SELECT {query_fmt} FROM bundles{add_query}")
         results = np.asarray(query.fetchall())
 
