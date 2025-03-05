@@ -24,8 +24,15 @@ inter_obs_props:
   f_hwp:
     splits: [[-2.3, -1.9], [1.9, 2.3]]
     names: ["neg_f_hwp", "pos_f_hwp"]
+  scan_speed:
+    splits: [[0.5, 0.51], [0.8, 0.81], [1.0, 1.1], [1.5, 1.6]]
+    names: ["0.5_scan_speed", "0.8_scan_speed", "1.0_scan_speed", "1.5_scan_speed"]
+  scan_acc:
+    splits: [[0.25, 0.33], [0.54, 0.76], [0.76, 1.04], [1.48, 1.53]]
+    names: ["0.25_scan_acc", "0.57_scan_acc", "0.9_scan_acc", "1.5_scan_acc"]
+  ctime: "median"
 
-overwrite: True
+overwrite: False
 
 ## Required for bundle_maps ##
 pix_type: 'car'
@@ -66,6 +73,14 @@ inter_obs_splits:
   - "+45_roll_angle"
   - "neg_f_hwp"
   - "pos_f_hwp"
+  - ["0.5_scan_speed", "0.25_scan_acc"]
+  - ["0.5_scan_speed", "0.57_scan_acc"]
+  - ["0.8_scan_speed", "0.25_scan_acc"]
+  - ["0.8_scan_speed", "0.9_scan_acc"]
+  - ["1.0_scan_speed", "0.9_scan_acc"]
+  - ["1.5_scan_speed", "1.5_scan_acc"]
+  - "low_ctime"
+  - "high_ctime"
 
 car_map_template: "mapmaking/full_car_fejer1_5arcmin.fits"
 
@@ -109,3 +124,11 @@ coadd_bundles_splitname:
   - "+45_roll_angle"
   - "neg_f_hwp"
   - "pos_f_hwp"
+  - "0.5_scan_speed_0.25_scan_acc"
+  - "0.5_scan_speed_0.57_scan_acc"
+  - "0.8_scan_speed_0.25_scan_acc"
+  - "0.8_scan_speed_0.9_scan_acc"
+  - "1.0_scan_speed_0.9_scan_acc"
+  - "1.5_scan_speed_1.5_scan_acc"
+  - "low_ctime"
+  - "high_ctime"
