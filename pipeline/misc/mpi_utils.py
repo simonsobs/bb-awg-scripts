@@ -47,6 +47,7 @@ def init(switch=False):
     except ImportError as exc:
         sys.stderr.write("IMPORT ERROR: " + __file__ + " (" + str(exc) + "). "
                          "Could not load mpi4py. MPI will not be used.\n")
+    return rank, size, comm
 
 
 def is_initialized():
@@ -132,8 +133,8 @@ def distribute_tasks(size, rank, ntasks, logger=None):
             local_task_ids.append(leftover[rank])
 
     if logger is not None:
-        logger.info(f"Rank {rank} has {len(local_task_ids)} tasks")
+        logger.info(f"Rank {rank} has {len(local_task_ids)} tasks.")
         logger.info(f"Total number of tasks is {ntasks}")
-    print("local_task_ids", np.array(local_task_ids, dtype=int))
+        logger.info(f"local_task_ids: {np.array(local_task_ids, dtype=int)}")
 
     return local_task_ids
