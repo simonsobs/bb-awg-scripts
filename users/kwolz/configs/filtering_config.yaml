@@ -7,7 +7,7 @@ atomic_db: /scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_db.sq
 freq_channel: &freq_channel f150
 output_dir: &output_dir /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp1/f150
 sim_string_format: "{pure_type}_1.0arcmin_fwhm30.0_sim{sim_id:04d}_CAR.fits"
-sim_ids: [0, 1, 2, 3]
+sim_ids: [0]  # [0, 1, 2, 3]
 
 # (Optional for coadd_filtered_sims)
 intra_obs_splits: [scan_left, scan_right, det_left, det_right, det_in,
@@ -33,7 +33,7 @@ fp_thin: 8
 
 
 ## Required arguments for coadd_filtered_sims ##
-atomic_sim_dir: !path [*output_dir, *freq_channel, "{sim_id:04d}", *freq_channel]
+atomic_sim_dir: !path [*output_dir, "{sim_id:04d}", *freq_channel]
 # atomic_sim_dir: !path [*output_dir, atomic_sims, *freq_channel, "{sim_id:04d}"]
 
 
