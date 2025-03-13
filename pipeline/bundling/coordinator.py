@@ -134,7 +134,7 @@ class BundleCoordinator:
                 null_prop_name = "_".join(npv.split("_")[1:])
                 if null_prop_name not in db_props:
                     raise ValueError(f"null_prop_name {null_prop_name} "
-                                      "not in db_props")
+                                     "not in db_props")
                 add_query += f" {keyword} {null_prop_name} = '{npv}'"
         query = cursor.execute(f"SELECT {query_fmt} FROM bundles{add_query}")
         results = np.asarray(query.fetchall())
@@ -183,14 +183,17 @@ class BundleCoordinator:
         """
         """
         filter = (self.bundle_ids == int(bundle_id))
-        ctimes = self.ctime[filter]
+        if hasattr(self, "timestamp"):
+            timestamps = self.timestamp[filter]
+        else:  # old bundle_db before 20250304
+            timestamps = self.ctime[filter]
         if null_prop_val not in [None, "science"]:
             name_prop = "_".join(null_prop_val.split("_")[1:])
             prop_val = getattr(self, name_prop)[filter]
             filter = prop_val == null_prop_val
-            ctimes = ctimes[filter]
+            timestamps = timestamps[filter]
 
-        return ctimes
+        return timestamps
 
     def save_db(self, db_path, overwrite=True):
         """
