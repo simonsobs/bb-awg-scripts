@@ -630,6 +630,7 @@ class Cfg:
     coadd_splits_name: str = "full"
     coadd_split_pair: Optional[list] = None
     coadd_bundles_splitname: Optional[str] = None
+    n_sims: Optional[int] = None
 
     def __post_init__(self):
         # Add extra defaults for private args not expected in config file
