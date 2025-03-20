@@ -1,4 +1,5 @@
 import argparse
+import os
 import numpy as np
 
 import qpoint as qp
@@ -26,108 +27,198 @@ def get_radec(az, el, ctime):
     return ra, dec
 
 
+def sqlite_db(path):
+    if not os.path.isfile(path):
+        print(f"{path} doesn't exist; creating new file.")
+
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    # test if this is really sqlite file
+    cur = conn.cursor()
+    cur.execute('SELECT 1 from sqlite_master where type = "table"')
+    try:
+        cur.fetchone()
+    except sqlite3.DatabaseError:
+        msg = '%s can\'t be read as SQLite DB' % path
+        raise argparse.ArgumentTypeError(msg)
+
+    return conn
+
+
+def copy_db_structure(src_db, dst_db):
+    src_cur = src_db.cursor()
+    dst_cur = dst_db.cursor()
+
+    src_cur.execute('SELECT * from sqlite_master')
+    src_master = src_cur.fetchall()
+
+    src_tables = list(filter(lambda r: r['type'] == 'table', src_master))
+    src_indices = list(filter(lambda r: r['type'] == 'index'
+                              and r['sql'] is not None, src_master))
+
+    for table in src_tables:
+        print('Processing table:', table['name'])
+        print('Delete old table in destination db, if exists')
+        dst_cur.execute("DROP TABLE IF EXISTS " + table['name'])
+        print('Creating table structure')
+        dst_cur.execute(table['sql'])
+        table_idx = list(filter(lambda r: r['tbl_name'] == table['name'],
+                                src_indices))
+        for idx in table_idx:
+            dst_cur.execute(idx['sql'])
+
+    src_db.close()
+    dst_db.close()
+
+
 def make_minimal_patch(atomics_dict, outdir, delta_ra, delta_dec,
                        ra_min=None, ra_max=None, dec_min=None, dec_max=None):
     """
     Loops over all atomics, then removes all atomics with (ra, dec) within
-    a radius of (delta_ra, delta_dec) within any other map in the list.
+    a square of (delta_ra, delta_dec) within any other map in the list.
+
+    Arguments
+    ---------
+        atomics_dict: dict
+            items are lists of tuples containing RA, DEC, ctime sorted by RA
+        outdir: str
+            Output directory
+        delta_ra: float
+            minimum RA distance between two nearest observations
+        delta_dec: float
+            minimum DEC distance between two nearest observations
+        ra_min: float
+            Minimum right ascension of any observation
+        ra_max: float
+            Maximum right ascension of any observation
+        dec_min: float
+            Minimum declination of any observation
+        dec_max: float
+            Maximum declination of any observation
+
+    Returns
+    -------
+        atomics_keep: dict
+            items are lists of tuples containing RA, DEC, ctime sorted by RA
+            corresponding to the kept entries
     """
-    radec = list(atomics_dict.values())
+    #wafer_list = [f"ws{i}" for i in range(7)]
+    wafer_list = ["ws0"]
 
-    # Sort 2d coordinates by ascending ra metric
-    plus = np.array([r for r, d in radec])
-    # obs_ids = [k[0] for k in list(atomics_dict.keys())]
-    indexes = np.argsort(plus)
-    indexes_keep = []
+    colors = [f"C{i}" for i in range(7)]
+    atomics_keep = {w: [] for w in wafer_list}
 
-    # Start at minimum
-    cur = radec[indexes[0]]
-    # ocur = obs_ids[indexes[0]]
+    for w in wafer_list:
+        atomics = atomics_dict[w]
 
-    for idx in indexes[1:]:
-        next = radec[idx]
-        # onext = obs_ids[idx]
-        dra, ddec = (np.fabs(next[0] - cur[0]), np.fabs(next[1] - cur[1]))
+        # Start at minimum RA
+        cur = (atomics[0][0], atomics[0][1])
 
-        too_close = (dra < delta_ra and ddec < delta_dec)
-        if None in [ra_min, ra_max, dec_min, dec_max]:
-            outside_box = False
-        else:
-            outside_box = ((next[0] > ra_max) or (next[0] < ra_min)
-                           or (next[1] > dec_max) or (next[1] < dec_min))
-        if too_close or outside_box:
-            continue
-        cur = next
-        # ocur = onext
+        # Loop through ascending RA
+        for ra, dec, ctime in atomics[1:]:
+            next = (ra, dec)
+            dra, ddec = (np.fabs(next[0] - cur[0]), np.fabs(next[1] - cur[1]))
+            too_close = (dra < delta_ra and ddec < delta_dec)
 
-        indexes_keep.append(idx)
+            if None in [ra_min, ra_max, dec_min, dec_max]:
+                outside_box = False
+            else:
+                outside_box = ((next[0] > ra_max) or (next[0] < ra_min)
+                               or (next[1] > dec_max) or (next[1] < dec_min))
+            if too_close or outside_box:
+                continue
+            cur = next
 
-    atomic_list = [list(atomics_dict.keys())[idx] for idx in indexes_keep]
+            atomics_keep[w] += [(ra, dec, ctime)]
 
-    print(f"  Reduced number of atomics from {len(indexes)} to {len(indexes_keep)}")  # noqa
-    radec_keep = [radec[i] for i in indexes_keep]
-    ra = np.array([rd[0] for rd in radec])
-    dec = np.array([rd[1] for rd in radec])
-    rap = np.array([rd[0] for rd in radec_keep])
-    decp = np.array([rd[1] for rd in radec_keep])
+    ra, dec, rap, decp = ({}, {}, {}, {})
+    for w in wafer_list:
+        ra[w] = np.array([at[0] for at in atomics_dict[w]])
+        dec[w] = np.array([at[1] for at in atomics_dict[w]])
+        rap[w] = np.array([at[0] for at in atomics_keep[w]])
+        decp[w] = np.array([at[1] for at in atomics_keep[w]])
 
-    print(f"## delta_ra={delta_ra} | delta_dec={delta_dec} ###")
-    plt.hist(ra, alpha=0.3, label="ra")
-    plt.hist(rap, alpha=0.3, label="ra_keep")
-    plt.savefig(f"{outdir}/ra_hist.png")
+    for iw, w in enumerate(wafer_list):
+        c = colors[iw]
+        plt.hist(ra[w], alpha=0.3, facecolor=c, label=w)
+        plt.hist(rap[w], alpha=0.3, facecolor=c, edgecolor='black', label=f"{w} (keep)")
     plt.title(f"## delta_ra={delta_ra} | delta_dec={delta_dec} ###")
     plt.legend()
-    plt.xlabel("ra [deg]")
+    plt.xlabel("RA [deg]")
+    plt.savefig(f"{outdir}/ra_hist.png")
     plt.clf()
 
-    plt.hist(dec, alpha=0.3, label="dec")
-    plt.hist(decp, alpha=0.3, label="dec_keep")
+    for iw, w in enumerate(wafer_list):
+        c = colors[iw]
+        plt.hist(dec[w], alpha=0.3, facecolor=c, label=w)
+        plt.hist(decp[w], alpha=0.3, facecolor=c, edgecolor='black', label=f"{w} (keep)")
     plt.title(f"## delta_ra={delta_ra} | delta_dec={delta_dec} ###")
-    plt.xlabel("dec [deg]")
     plt.legend()
+    plt.xlabel("DEC [deg]")
     plt.savefig(f"{outdir}/dec_hist.png")
     plt.clf()
-    plt.close()
 
+    for iw, w in enumerate(wafer_list):
+        c = colors[iw]
+        plt.hist(dec[w], alpha=0.3, facecolor=c, label=w)
+        plt.hist(decp[w], alpha=0.3, facecolor=c, edgecolor='black', label=f"{w} (keep)")
     plt.title(f"## delta_ra={delta_ra} | delta_dec={delta_dec} ###")
-    plt.scatter(ra, dec, color="b", marker="o",  label="before")
-    plt.scatter(rap, decp, color="r", marker="x", label="after")
     plt.legend()
-    plt.xlabel("ra")
-    plt.ylabel("dec")
-    plt.savefig(f"{outdir}/radec.png")
+    plt.xlabel("DEC [deg]")
+    plt.savefig(f"{outdir}/dec_hist.png")
     plt.clf()
-    plt.close()
 
-    print(f"  Before:     ra {np.mean(ra)} +- {np.std(ra)}")
-    print(f"  After:      ra {np.mean(rap)} +- {np.std(rap)}")
-    print(f"  Before:     dec {np.mean(dec)} +- {np.std(dec)}")
-    print(f"  After:      dec {np.mean(decp)} +- {np.std(decp)}")
+    for w in wafer_list:
+        plt.title(f"## delta_ra={delta_ra} | delta_dec={delta_dec} ###")
+        plt.scatter(ra[w], dec[w], color="b", marker="o",  label="before")
+        plt.scatter(rap[w], decp[w], color="r", marker="x", label="after")
+        plt.legend()
+        plt.xlabel("ra")
+        plt.ylabel("dec")
+        plt.savefig(f"{outdir}/radec_{w}.png")
+        plt.clf()
+        plt.close()
 
-    return atomic_list
+        print(f"\n   ### wafer {w} ###")
+        print(f"  Reduced number of atomics from {len(atomics)} "
+              f"to {len(atomics_keep[w])}")
+        print(f"  Before:     ra {np.mean(ra[w])} +- {np.std(ra[w])}")
+        print(f"  After:      ra {np.mean(rap[w])} +- {np.std(rap[w])}")
+        print(f"  Before:     dec {np.mean(dec[w])} +- {np.std(dec[w])}")
+        print(f"  After:      dec {np.mean(decp[w])} +- {np.std(decp[w])}")
+    print(f"saving to {outdir}")
+
+    return atomics_keep
 
 
 def main(args):
     """
     """
     # Load atomics.db
-    atomic_db = sqlite3.connect(args.atomic_db)
+    atomic_db = sqlite_db(args.atomic_db)
     cursor = atomic_db.cursor()
 
-    # Get dictionary with {(obs_id, wafer, freq): (el, az)}
-    to_query = ["obs_id", "freq_channel", "wafer", "elevation", "azimuth",
-                "ctime"]
-    query = f"SELECT {', '.join(to_query)} FROM atomic"
-    res = np.asarray(cursor.execute(query).fetchall())
-    atomics_dict = {
-        (o, w, f): get_radec(float(el), float(az), int(ct))
-        for o, f, w, el, az, ct in res
-    }
-    # This is a patch. FIXME: this should be included in the SQL query above.
-    if args.freq_channel is not None:
-        atomics_dict = {(o, w, f): radec
-                        for (o, w, f), radec in atomics_dict.items()
-                        if f == args.freq_channel}
+    # Get dictionary with {wafer: (ra, dec, ctime)}
+    atomics_dict = {}
+    to_query = ["elevation", "azimuth", "ctime"]
+    query = f"SELECT {', '.join(to_query)} FROM atomic WHERE freq_channel='{args.freq_channel}'"  # noqa
+
+    #wafer_list = [f"ws{i}" for i in range(7)]
+    wafer_list = ["ws0"]
+
+    if args.wafer is not None:
+        wafer_list = [args.wafer]
+    for wafer in wafer_list:
+        print(wafer)
+        query_add = f" AND wafer = '{wafer}'"
+        res = np.asarray(cursor.execute(query + query_add).fetchall())
+        atomics_list = [
+            sum([get_radec(float(el), float(az), int(ctime)), (ctime,)], ())
+            for el, az, ctime in res
+        ]
+
+        # Sort list by right ascension
+        atomics_dict[wafer] = sorted(atomics_list, key=lambda tup: tup[0])
 
     ra_min, ra_max, dec_min, dec_max = (None, None, None, None)
     if args.radec_minmax is not None:
@@ -142,8 +233,19 @@ def main(args):
         ra_min=ra_min, ra_max=ra_max, dec_min=dec_min, dec_max=dec_max
     )
 
-    # DEBUG
-    print("len(atomic_lilst) = {len(atomic_list)}")
+    for wafer in wafer_list:
+        new_db = sqlite_db(f"{args.output_dir}/atomic_db_{wafer}.sqlite")
+        copy_db_structure(atomic_db, new_db)
+
+        for _, _, ctime in atomic_list[wafer]:
+            # TODO: Query atomic_db
+            # f"SELECT * from atomic WHERE ctime = '{int(ctime)}' and wafer = '{wafer}'"
+            # Then insert resulting column into new_db
+            pass
+
+        new_db.close()
+        atomic_db.close()
+        print(f"{args.output_dir}/atomic_db_{wafer}.sqlite")
 
     np.savez(
         f"{args.output_dir}/atomic_list.npz", atomic_list=atomic_list
@@ -155,8 +257,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--atomic_db", help="Atomic database")
     parser.add_argument("--output_dir", help="Output directory")
-    parser.add_argument("--freq_channel", help="Frequency channel",
-                        default=None)
+    parser.add_argument("--freq_channel", help="Frequency channel")
+    parser.add_argument("--wafer", help="Wafer slot", default=None)
     parser.add_argument(
         "--delta_dec", type=int,
         help="Scales the average distance in DEC between neighboring "

@@ -1,7 +1,8 @@
 # # Make list
 atomic_db=/scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/atomic_db.sqlite
-car_map_template=/global/homes/k/kwolz/bbdev/pwg-scripts/iso-sat-review/mapmaking/band_car_fejer1_5arcmin.fits
-output_dir=/pscratch/sd/k/kwolz/bbdev/simpure/sky_patch/satp1_iso
+# car_map_template=/global/homes/k/kwolz/bbdev/pwg-scripts/iso-sat-review/mapmaking/band_car_fejer1_5arcmin.fits
+car_map_template=/scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/soopercool_inputs/band_car_fejer1_5arcmin.fits
+output_dir=/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/sky_patch/satp1_iso
 freq_channel=f090
 delta_ra=1
 delta_dec=1
