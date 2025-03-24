@@ -4,7 +4,17 @@ import os
 from bundling_utils import read_map, coadd_maps
 from coordinator import BundleCoordinator
 import re
+from pixell import enmap
 
+def map_union(map1, map2):
+	"""Given two maps with compatible wcs but possibly covering different
+	parts of the sky, return a new map that contains all pixels of both maps.
+	If the input maps overlap, then those pixels will have the sum of the two maps"""
+	oshape, owcs = enmap.union_geometry([map1.geometry, map2.geometry])
+	omap = enmap.zeros(map1.shape[:-2]+oshape[-2:], owcs, map1.dtype)
+	omap.insert(map1)
+	omap.insert(map2, op=lambda a,b:a+b)
+	return omap
 
 class _Coadder:
     def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
@@ -117,7 +127,7 @@ class _Coadder:
         cursor = con.cursor()
 
         if return_weights:
-            subquery = "ctime, wafer, freq_channel, prefix_path, median_weight_qu"
+            subquery = "ctime, wafer, freq_channel, prefix_path, median_weight_qu, ra_centre, dec_centre"
         else:
             subquery = "ctime, wafer, freq_channel, prefix_path"
 
@@ -165,17 +175,22 @@ class _Coadder:
             fnames = [
                 os.path.join(
                     map_dir, f"{str(ctime)[:5]}",
-                    f"{os.path.basename(prefix_path)}_wmap{suffix}"  # noqa
+                    #f"{os.path.basename(prefix_path)}_wmap{suffix}"  # noqa
+                    f"atomic_{str(ctime)}_{wafer}_{freq_channel}_{split_label}_wmap{suffix}"
                 )
-                for ctime, _, _, prefix_path, _ in result
+                for ctime, wafer, freq_channel, prefix_path, _, _, _ in result
             ]
-            weights = [weight for _, _, weight in result]
-            return fnames, weights
+            weights = [weight for _, _, _, _, weight, _, _ in result]
+            ras = [ra for _, _, _, _, _, ra, _ in result]
+            decs = [dec for _, _, _, _, _, _, dec in result]
+            
+            return fnames, weights, ras, decs
         else:
             fnames = [
                 os.path.join(
                     map_dir, f"{str(ctime)[:5]}",
-                    f"{os.path.basename(prefix_path)}_wmap{suffix}"  # noqa
+                    #f"{os.path.basename(prefix_path)}_wmap{suffix}"  # noqa
+                    f"atomic_{str(ctime)}_{wafer}_{freq_channel}_{split_label}_wmap{suffix}"
                 )
                 for ctime, _, _, prefix_path in result
             ]
@@ -230,6 +245,8 @@ class _Coadder:
         fnames = []
         if return_weights:
             weights = []
+            ra_list = []
+            dec_list = []
 
         if (split_label is None) or isinstance(split_label, str):
             split_labels = [split_label]
@@ -239,16 +256,20 @@ class _Coadder:
         for obs_id in obs_ids:
             for split_label in split_labels:
                 if return_weights:
-                    fname_list, weight_list = self._obsid2fnames(
+                    fname_list, weight_list, ras, decs = self._obsid2fnames(
                         obs_id,
                         return_weights=return_weights,
                         split_label=split_label,
                         map_dir=map_dir
                     )
-                    for fname, weight in zip(fname_list, weight_list):
+                    for fname, weight, ra, dec in zip(fname_list, weight_list, ras, decs):
                         if self._check_maps_exist(fname):
                             fnames.append(fname)
                             weights.append(weight)
+                            ra_list.append(ra)
+                            dec_list.append(dec)
+                        else:
+                            print(f"Missing map: {fname} !")
                 else:
                     fname_list = self._obsid2fnames(
                         obs_id,
@@ -260,7 +281,7 @@ class _Coadder:
                         if self._check_maps_exist(fname):
                             fnames.append(fname)
         if return_weights:
-            return fnames, weights
+            return fnames, weights, ra_list, dec_list
         return fnames
 
 
@@ -371,54 +392,117 @@ class Bundler(_Coadder):
         return signal, weights, hits, fnames
 
 
-class SignFlipper(_Coadder):
+class SignFlipper(Bundler):
     """
-    Child class of _Coadder, with the purpose of sign-flipping and coadding
+    Child class of Bundler, with the purpose of sign-flipping and coadding
     atomic maps for the purpose of generating per-bundle noise maps.
     """
-    def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
-                 bundle_id=None, null_prop_val=None, pix_type="hp", map_dir=None):
+    def load_maps(self, map_dir, bundle_id, split_labels, null_prop_val=None):
         """
-        Constructor for the SignFlipper class. Creates a SignFlipper object,
-        given map information from atomic_db and bundling information from
-        bundle_db.
-
-        Parameters
-        ----------
-        atomic_db: str
-            Path to the atomic database.
-        bundle_db: str
-            Path to the bundling database.
-        freq_channel: str
-            Frequency channel label indicating the frequency to be read from.
-            For SAT1 and SAT3, possible choices are "f090", "f150".
-        wafer: str
-            Optional; label indicating the telescope wafer to include.
-            If no wafer is provided, coadd maps made for all the wafers.
-        bundle_id: int
-            Optional; ID corresponding to the bundle that observations belong
-            to. If None, coadd maps from all bundles.
-        null_prop_val: str
-            String of format "{quality}_{null_property}", e.g. "low_pwv"
-            indicating the null split that observations belong to.
-        pix_type : str
-            Pixelization type. Admissible values are "hp", "car.
         """
-        super().__init__(atomic_db, bundle_db, freq_channel, wafer,
-                         pix_type=pix_type)
+        self.wmaps, self.weights = [], []
+        self.ras, self.decs = [], []
 
-        self.fnames, self.ws = self._get_fnames(
-             bundle_id, null_prop_val, return_weights=True, map_dir=map_dir
-         )
+        for split_label in split_labels:
 
-        self.wmaps = [read_map(fname, pix_type=self.pix_type,
-                               fields_hp=self.fields_hp)
-                      for fname in self.fnames]
-        self.weights = [read_map(fname.replace("wmap", "weights"),
-                                 pix_type=self.pix_type,
-                                 fields_hp=self.fields_hp,
-                                 is_weights=True)
-                        for fname in self.fnames]
+            fnames, ws, ras, decs = self._get_fnames(
+                bundle_id,
+                null_prop_val,
+                return_weights=True,
+                map_dir=map_dir,
+                split_label=split_label
+            )
+            ras = np.rad2deg(ras)
+            decs = np.rad2deg(decs)
+
+            self.wmaps.append([
+                read_map(
+                    fname,
+                    pix_type=self.pix_type,
+                    fields_hp=self.fields_hp
+                )
+                for fname in fnames
+            ])
+            self.weights.append([
+                read_map(
+                    fname.replace("wmap", "weights"),
+                    pix_type=self.pix_type,
+                    fields_hp=self.fields_hp,
+                    is_weights=True
+                )
+                for fname in fnames
+            ])            
+            self.ras.append(ras)
+            self.decs.append(decs)
+
+        if len(split_labels) == 2:
+            
+            wmaps, weights = [], []
+            for i in range(len(self.wmaps[0])):
+                wm1 = self.wmaps[0][i]
+                wm2 = self.wmaps[1][i]
+                w1 = self.weights[0][i]
+                w2 = self.weights[1][i]
+                
+                wm = map_union(wm1, wm2)
+                w = map_union(w1, w2)
+    
+                #good = w > 0
+                #wm[good] /= w[good]
+                wmaps.append(wm)
+                weights.append(w)
+
+            self.wmaps = wmaps
+            self.weights = weights
+
+            self.ras = np.array([(ra1 + ra2) / 2 for ra1, ra2 in zip(self.ras[0], self.ras[1])])
+            self.decs = np.array([(dec1 + dec2) / 2 for dec1, dec2 in zip(self.decs[0], self.decs[1])])
+
+        self.ws = [
+            np.median(w[1:][w[1:] > 0]) for w in self.weights
+        ]
+
+
+    def batch_inputs(self, bins_ra, bins_dec):
+        """
+        """
+        ra_perc = np.linspace(0, 100, bins_ra + 1)[1:-1]
+        dec_perc = np.linspace(0, 100, bins_dec + 1)[1:-1]
+
+        ra_lims = np.percentile(self.ras, ra_perc)
+        ra_lims = np.concatenate(([self.ras.min()], ra_lims, [self.ras.max()]))
+        
+        dec_lims_list = []
+        for i in range(bins_ra):
+            dec_sub = self.decs[(self.ras >= ra_lims[i]) & (self.ras < ra_lims[i + 1])]
+            dec_lims = np.percentile(dec_sub, dec_perc)
+            dec_lims = np.concatenate(([dec_sub.min()], dec_lims, [dec_sub.max()]))
+            dec_lims_list.append(dec_lims)
+
+        # Batch maps
+        wmaps = []
+        weights = []
+        ws = []
+        for i in range(bins_ra):
+            for j in range(bins_dec):
+                if i == bins_ra - 1:
+                    ra_mask = (self.ras >= ra_lims[i]) & (self.ras <= ra_lims[i + 1])
+                else:
+                    ra_mask = (self.ras >= ra_lims[i]) & (self.ras < ra_lims[i + 1])
+                
+                if j == bins_dec - 1:
+                    dec_mask = (self.decs >= dec_lims_list[i][j]) & (self.decs <= dec_lims_list[i][j + 1])
+                else:
+                    dec_mask = (self.decs >= dec_lims_list[i][j]) & (self.decs < dec_lims_list[i][j + 1])
+                tot_mask = ra_mask & dec_mask
+
+                wmaps.append([self.wmaps[k] for k in range(len(tot_mask)) if tot_mask[k]])
+                weights.append([self.weights[k] for k in range(len(tot_mask)) if tot_mask[k]])
+                ws.append([self.ws[k] for k in range(len(tot_mask)) if tot_mask[k]])
+        self.wmaps = wmaps
+        self.weights = weights
+        self.ws = ws
+
 
     def signflip(self, seed=None):
         """
@@ -437,18 +521,27 @@ class SignFlipper(_Coadder):
         """
         if seed is not None:
             np.random.seed(seed)
-        perm_idx = np.random.permutation(len(self.wmaps))
-        maps_list, weights_list = ([self.wmaps[i] for i in perm_idx],
-                                   [self.weights[i] for i in perm_idx])
-        mean_wQU_list = [self.ws[i] for i in perm_idx]
 
-        weight_cumsum = np.cumsum(mean_wQU_list) / np.sum(mean_wQU_list)
-        pm_one = np.random.choice([-1, 1])
-        sign_list = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
+        wmaps = []
+        weights = []
+        signs = []
+        for wmap_group, weights_group, w_group in zip(self.wmaps, self.weights, self.ws):
+            print("GROUP LENGTH is ", len(wmap_group))
+            perm_idx = np.random.permutation(len(wmap_group))
+            maps_list, weights_list = ([wmap_group[i] for i in perm_idx],
+                                          [weights_group[i] for i in perm_idx])
+            mean_wQU_list = [w_group[i] for i in perm_idx]
+            weight_cumsum = np.cumsum(mean_wQU_list) / np.sum(mean_wQU_list)
+            pm_one = np.random.choice([-1, 1])
+            sign_list = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
+
+            signs = np.concatenate((signs, sign_list))
+            wmaps += maps_list
+            weights += weights_list
 
         signflip_noise = coadd_maps(
-            maps_list, weights_list, pix_type=self.pix_type,
-            sign_list=sign_list, car_map_template=self.car_map_template
-        )
+            wmaps, weights, pix_type=self.pix_type,
+            sign_list=signs, abscal=1.,
+        )[0]
 
         return signflip_noise
