@@ -2,6 +2,6 @@
 
 . setup.sh
 
-srun -n 112 -c 4 --cpu_bind=cores \
-python ${bb_awg_scripts_dir}/pipeline/filtering/filter_sims_simpure.py \
+srun -n 224 -c 2 --cpu_bind=cores \
+python ${bb_awg_scripts_dir}/pipeline/filtering/filter_simple.py \
     --config_file $filtering_config

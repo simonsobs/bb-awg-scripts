@@ -187,7 +187,7 @@ process_pipe:
         noise_fit_array: "noiseQ_fit"
         filter_params:
           fk: 0.1
-          n: 2. # TODO: insert Susanna's value
+          n: 0.5 # TODO: insert Susanna's value
 
     - name: "sub_polyf"
       skip_on_sim: True # Ignore for purification study

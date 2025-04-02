@@ -67,8 +67,8 @@ def copy_db_structure(src_db, dst_db):
         for idx in table_idx:
             dst_cur.execute(idx['sql'])
 
-    src_db.close()
-    dst_db.close()
+    # src_db.close()
+    # dst_db.close()
 
 
 def make_minimal_patch(atomics_dict, outdir, delta_ra, delta_dec,
@@ -102,8 +102,8 @@ def make_minimal_patch(atomics_dict, outdir, delta_ra, delta_dec,
             items are lists of tuples containing RA, DEC, ctime sorted by RA
             corresponding to the kept entries
     """
-    #wafer_list = [f"ws{i}" for i in range(7)]
-    wafer_list = ["ws0"]
+    wafer_list = [f"ws{i}" for i in range(1)]
+    #wafer_list = ["ws0"]
 
     colors = [f"C{i}" for i in range(7)]
     atomics_keep = {w: [] for w in wafer_list}
@@ -194,6 +194,8 @@ def make_minimal_patch(atomics_dict, outdir, delta_ra, delta_dec,
 def main(args):
     """
     """
+    overwrite = True
+
     # Load atomics.db
     atomic_db = sqlite_db(args.atomic_db)
     cursor = atomic_db.cursor()
@@ -203,8 +205,7 @@ def main(args):
     to_query = ["elevation", "azimuth", "ctime"]
     query = f"SELECT {', '.join(to_query)} FROM atomic WHERE freq_channel='{args.freq_channel}'"  # noqa
 
-    #wafer_list = [f"ws{i}" for i in range(7)]
-    wafer_list = ["ws0"]
+    wafer_list = [f"ws{i}" for i in range(1)]
 
     if args.wafer is not None:
         wafer_list = [args.wafer]
@@ -227,35 +228,55 @@ def main(args):
         print(f"ra_min = {ra_min}, ra_max = {ra_max}, "
               f"dec_min = {dec_min}, dec_max = {dec_max}, ")
 
-    atomic_list = make_minimal_patch(
+    atomics_dict = make_minimal_patch(
         atomics_dict, outdir=args.output_dir,
         delta_ra=args.delta_ra, delta_dec=args.delta_dec,
         ra_min=ra_min, ra_max=ra_max, dec_min=dec_min, dec_max=dec_max
     )
 
     for wafer in wafer_list:
-        new_db = sqlite_db(f"{args.output_dir}/atomic_db_{wafer}.sqlite")
+        db_fname = f"{args.output_dir}/atomic_db_{wafer}.sqlite"
+        if overwrite and os.path.isfile(db_fname):
+            print(f"Overwriting {args.output_dir}/atomic_db_{wafer}.sqlite")
+            os.remove(db_fname)
+        new_db = sqlite_db(db_fname)
         copy_db_structure(atomic_db, new_db)
 
-        for _, _, ctime in atomic_list[wafer]:
-            # TODO: Query atomic_db
-            # f"SELECT * from atomic WHERE ctime = '{int(ctime)}' and wafer = '{wafer}'"
-            # Then insert resulting column into new_db
-            pass
+        for _, _, ctime in atomics_dict[wafer]:
+            query = "SELECT * from atomic WHERE "
+            query += f"ctime = {int(ctime)} AND "
+            query += f"wafer='{wafer}' AND "
+            query += f"freq_channel='{args.freq_channel}' AND "
+            query += "(split_label='scan_left' OR split_label='scan_right')"
+
+            query = cursor.execute(query)
+
+            results = np.asarray(query.fetchall())
+            table_format = ",".join(["?" for _ in results[0]])
+            results_list = []
+            for result in results:
+                result_sql = []
+                for r in result:
+                    if str(r) != "":
+                        result_sql += [str(r)]
+                    else:
+                        result_sql += ["NULL"]
+                results_list.append(result_sql)
+
+            query2 = f"INSERT INTO atomic VALUES ({table_format})"
+
+            new_db.executemany(query2, results_list)
+            new_db.commit()
 
         new_db.close()
-        atomic_db.close()
-        print(f"{args.output_dir}/atomic_db_{wafer}.sqlite")
-
-    np.savez(
-        f"{args.output_dir}/atomic_list.npz", atomic_list=atomic_list
-    )
+    atomic_db.close()
+    print(f"{args.output_dir}/atomic_db_{wafer}.sqlite")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Get atomics list")
 
-    parser.add_argument("--atomic_db", help="Atomic database")
+    parser.add_argument("--atomic_db", help="Atomic database input")
     parser.add_argument("--output_dir", help="Output directory")
     parser.add_argument("--freq_channel", help="Frequency channel")
     parser.add_argument("--wafer", help="Wafer slot", default=None)
