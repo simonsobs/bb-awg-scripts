@@ -1,6 +1,8 @@
 tags:
-  basedir:  /global/cfs/cdirs/sobs/metadata/satp3
-  manifestdir: /global/cfs/cdirs/sobs/metadata/satp3/manifests
+  # basedir:  /global/cfs/cdirs/sobs/metadata/satp3
+  basedir:  /scratch/gpfs/SIMONSOBS/so/tracked/metadata/satp3
+  # manifestdir: /global/cfs/cdirs/sobs/metadata/satp3/manifests
+  manifestdir: /scratch/gpfs/SIMONSOBS/so/tracked/metadata/satp3/manifests
 imports:
   - sotodlib.io.load_book
   - sotodlib.io.metadata
