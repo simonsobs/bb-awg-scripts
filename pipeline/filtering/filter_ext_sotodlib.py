@@ -129,7 +129,7 @@ def main(args):
     query_restrict = args.query_restrict
     query = fu.get_query_atomics(freq_channel, ctimes,
                                  query_restrict=query_restrict)
-    print(query)
+    
     res = db_cur.execute(query)
     res = res.fetchall()
     atomic_metadata = {
@@ -149,10 +149,10 @@ def main(args):
     db_con.close()
 
     logger.info(f"{len(atomic_metadata['science'])} atomic maps to filter.")
-    print('preprocess_config_init', preprocess_config_init)
+
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
-    print(preprocess_config_init)
+
     configs_init, _ = pp_util.get_preprocess_context(
         preprocess_config_init
     )
