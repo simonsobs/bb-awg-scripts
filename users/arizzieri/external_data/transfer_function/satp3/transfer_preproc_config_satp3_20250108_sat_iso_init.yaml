@@ -1,18 +1,19 @@
-context_file: "/global/homes/a/arianna/SO/pwg-scripts/iso-sat-review/contexts/satp3/use_this_local_20241124.yaml"
-# plot_dir: '/global/cfs/cdirs/sobs/sat-iso/preprocessing/satp3_20250108_init/preprocess_plots'
-plot_dir: '/pscratch/sd/a/arianna/SO/external_data/preprocess_plots'
+# context_file: '/global/homes/a/arianna/SO/bb-awg-scripts/users/arizzieri/external_data/contexts/satp3/use_this_local_20241124.yaml'
+context_file: '/home/ar3186/bb-awg-scripts/users/arizzieri/external_data/contexts/satp3/use_this_local_20241124.yaml'
+# plot_dir: '/pscratch/sd/a/arianna/SO/external_data/preprocess_plots'
+plot_dir: '/scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/plots'
 
 subobs:
   use: ['wafer_slot', 'wafer.bandpass']
   label: wafer_slot
   
 archive:
-  index: '/global/cfs/cdirs/sobs/sat-iso/preprocessing/satp3_20250108_init/process_archive.sqlite'
-  # index: '/scratch/gpfs/SIMONSOBS/sat-iso/preprocessing/satp3_20250108_init/process_archive.sqlite'
+  # index: '/global/cfs/cdirs/sobs/sat-iso/preprocessing/satp3_20250108_init/process_archive.sqlite'
+  index: '/scratch/gpfs/SIMONSOBS/sat-iso/preprocessing/satp3_20250108_init/process_archive.sqlite'
   policy:
     type: 'simple'
-    filename: '/global/cfs/cdirs/sobs/sat-iso/preprocessing/satp3_20250108_init/preprocess_archive.h5'
-    # filename: '/scratch/gpfs/SIMONSOBS/sat-iso/preprocessing/satp3_20250108_init/preprocess_archive.h5'
+    # filename: '/global/cfs/cdirs/sobs/sat-iso/preprocessing/satp3_20250108_init/preprocess_archive.h5'
+    filename: '/scratch/gpfs/SIMONSOBS/sat-iso/preprocessing/satp3_20250108_init/preprocess_archive.h5'
 
 process_pipe:
     - name: "pointing_model"
