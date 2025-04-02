@@ -12,10 +12,21 @@ def main(args):
     lmax_plot = 600
 
     # Just insert labels and paths as needed
-    tf_files = {args.tf_label: args.tf_file}
+    tf_files = {
+        args.tf_label: args.tf_file,
+        #"nsims1": "/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/transfer_function/satp1_iso/f090/transfer_functions/transfer_function_SATp1_f090_south_science_x_SATp1_f090_south_science.npz",
+        "nsims1_apo": "/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/transfer_function/satp1_iso_apo/f090/transfer_functions/transfer_function_SATp1_f090_south_science_x_SATp1_f090_south_science.npz",
+        "satp1_iso": "/scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp1/soopercool_outputs/science_custom_binning/transfer_functions/transfer_function_SATp1_f090_south_science_x_SATp1_f090_south_science.npz"
+    }
 
-    colors = {args.tf_label: "navy"}
-    linestyles = {args.tf_label: "-"}
+    colors = {args.tf_label: "navy",
+              "nsims1": "green",
+              "nsims1_apo": "darkorange",
+              "satp1_iso": "red"}
+    linestyles = {args.tf_label: "-",
+                  "nsims1": "-",
+                  "nsims1_apo": "-",
+                  "satp1_iso": "--"}
 
     _, axes = plt.subplots(4, 4, figsize=(13, 13))
     mask = lb <= lmax_plot
@@ -35,7 +46,7 @@ def main(args):
                 axes[i, j].errorbar(
                     lb[mask],
                     tf[f"{f1}_to_{f2}"][mask],
-                    yerr=tf[f"{f1}_to_{f2}_std"][mask],
+                    #yerr=tf[f"{f1}_to_{f2}_std"][mask],
                     ls=linestyles[lab], lw=1.2,
                     #markerfacecolor="white",
                     #marker=".",
@@ -64,6 +75,7 @@ def main(args):
                 if i != j:
                     axes[i, j].ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
 
+    print("Saved to", args.plot_fname)
     plt.savefig(args.plot_fname, bbox_inches="tight")
 
 
@@ -71,6 +83,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Plot transfer function"
     )
+    parser.add_argument("--binning_file", help="Binning npz")
     parser.add_argument("--plot_fname", help="Name for plot")
     parser.add_argument("--tf_label", help="Label for TF")
     parser.add_argument("--tf_file", help="File name for TF")
