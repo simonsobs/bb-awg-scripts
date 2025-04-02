@@ -56,6 +56,7 @@ def main(args):
     logger.debug(f"Using atomic DB from {atom_db}")
 
     # Sim related arguments
+    atomic_sim_dir = args.atomic_sim_dir
     sim_dir = args.sim_dir
     sim_string_format = args.sim_string_format
     sim_ids = args.sim_ids
@@ -75,7 +76,8 @@ def main(args):
     # Create output directories
     atomics_dir = {}
     for sim_id in sim_ids:
-        atomics_dir[sim_id] = f"{out_dir}/atomic_sims/{args.freq_channel}/{sim_id:04d}"  # noqa
+        atomics_dir[sim_id] = atomic_sim_dir.format(sim_id=sim_id)
+        # atomics_dir[sim_id] = f"{out_dir}/{sim_id:04d}/{args.freq_channel}"  # noqa
         os.makedirs(atomics_dir[sim_id], exist_ok=True)
 
     # Arguments related to pixellization
