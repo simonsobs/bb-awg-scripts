@@ -37,7 +37,7 @@ sim_dir: /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/data/planck/maps/npi
 
 ## Optional arguments for filter_sims_sotodlib ##
 # nside: 512
-fp_thin: 64   #8
+fp_thin: 8
 
 
 ## Optional arguments for coadd_filtered_sims ##
