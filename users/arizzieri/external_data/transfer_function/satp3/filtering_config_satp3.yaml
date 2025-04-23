@@ -42,5 +42,5 @@ fp_thin: 8
 
 ## Optional arguments for coadd_filtered_sims ##
 intra_obs_pair: [det_lower, det_upper]
-inter_obs_splits: []
+inter_obs_splits: [low_pwv, high_pwv]
 nbatch_atomics: 1
