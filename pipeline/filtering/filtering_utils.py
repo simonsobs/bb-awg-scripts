@@ -59,8 +59,11 @@ def get_atomics_maps_list(sim_id, pure_type, atomic_metadata, freq_channel,
         print("WARNING: atomic_metadata is empty.")
 
     for id, (obs_id, wafer) in enumerate(atomic_metadata):
-        atomic_fname = sim_string_format.format(sim_id=sim_id,
-                                                pure_type=pure_type)
+        if not sim_id:
+            atomic_fname = sim_string_format
+        else:
+            atomic_fname = sim_string_format.format(sim_id=sim_id,
+                                                    pure_type=pure_type)
         atomic_fname = atomic_fname.replace(
             mfmt,
             f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"

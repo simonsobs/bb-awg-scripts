@@ -79,7 +79,7 @@ def main(args):
     # Create output directories
     atomics_dir = {}
     for sim_id in sim_ids:
-        atomics_dir[sim_id] = f"{out_dir}/atomic_sims/{args.freq_channel}/{sim_id:04d}"  # noqa
+        atomics_dir[sim_id] = f"{out_dir}/atomic_maps"  # noqa
         os.makedirs(atomics_dir[sim_id], exist_ok=True)
 
     # Arguments related to pixellization
@@ -119,7 +119,6 @@ def main(args):
 
     # Extract all ctimes for the given bundle_id
     ctimes = bundle_coordinator.get_ctimes(bundle_id=bundle_id)
-    ctimes = [int(ctime) for ctime in ctimes]
 
     # Connect the the atomic map DB
     atomic_metadata = []
@@ -129,7 +128,7 @@ def main(args):
     query_restrict = args.query_restrict
     query = fu.get_query_atomics(freq_channel, ctimes,
                                  query_restrict=query_restrict)
-    
+
     res = db_cur.execute(query)
     res = res.fetchall()
     atomic_metadata = {
@@ -152,7 +151,6 @@ def main(args):
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
-
     configs_init, _ = pp_util.get_preprocess_context(
         preprocess_config_init
     )
