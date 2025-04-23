@@ -1,21 +1,21 @@
 output_directory: &out_dir /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/soopercool_outputs
 
 map_sets:
-  # SATp3_f150_south_science:
-  #   map_dir: /scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp3_20250108/bundles/south
-  #   beam_dir: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/soopercool_inputs
-  #   map_template: "satp3_f150_full_bundle{id_bundle}_{map|hits}.fits"
-  #   beam_file: "beam_unity.dat"
-  #   n_bundles: 4          # Number of bundles
-  #   freq_tag: 150         # Freq. tag (e.g. useful to coadd freqs)
-  #   exp_tag: "SATp3"      # Experiment tag (useful to get noise-bias free cross-split spectra)
-  #   filtering_tag: "SATp3_f150_south_science"
+  SATp3_f090_south_science:
+    map_dir: /scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp3_20250108/bundles/south
+    beam_dir: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/soopercool_inputs
+    map_template: "satp3_f090_full_bundle{id_bundle}_{map|hits}.fits"
+    beam_file: "beam_unity.dat"
+    n_bundles: 4          # Number of bundles
+    freq_tag: 90         # Freq. tag (e.g. useful to coadd freqs)
+    exp_tag: "SATp3"      # Experiment tag (useful to get noise-bias free cross-split spectra)
+    filtering_tag: "SATp3_f090_south_science"
   planck_f100_filtered_SATp3_f090_south_science:
-    map_dir: /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/planck/npipe6v20/satp3/f090/coadded_maps
+    map_dir: /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/planck/npipe6v20_A_B/satp3/f090/coadded_maps
     beam_dir: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/soopercool_inputs 
-    map_template: "planck_car_100_res1.0amin_coords_c_bundle{id_bundle}_f090_science_{filtered|filtered_weights}.fits"  # name of SO map, only to get the mask
+    map_template: "planck_car_100_bundle{id_bundle}_res1.0amin_coords_c_f090_science_{filtered|filtered_weights}.fits"  # name of SO map, only to get the mask #TODO: in the maps computed already remove bundle0 --> my info of the bundle is in A or B
     beam_file: "beam_unity.dat"  # for now only unit beams TODO: replace with Placnk beams
-    n_bundles: 1          # Number of bundles (only one boundle for planck) --> eventually do for split A and B, to rename 0 and 1 in the filtered maps, and 2 boundles
+    n_bundles: 2          # Number of bundles --> for planck it's 2: split A and B --> generalized the soopercool script so that if it doesn't find the file with 0 and 1 it tries with A and B
     freq_tag: 100         # Freq. tag (e.g. useful to coadd freqs) Used the planck one
     exp_tag: "planck"      # Experiment tag (useful to get noise-bias free cross-split spectra)
     filtering_tag: "SATp3_f090_south_science"  # tag only used for couplings and transfer function
@@ -62,62 +62,66 @@ transfer_settings:
   # if not defined the couplings will be expected to live in {output_directory/couplings}
   external_couplings_dir: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp3/south/soopercool_outputs/science/couplings
   
-  # For estimation
-  ## Number of sims for tf estimation and validation
-  tf_est_num_sims: 10  # for now only 4, to be redone once more
-  sim_id_start: 0
+#   # For estimation  # Note: this part computes the transfer function, so I don't need it 
+#   ## Number of sims for tf estimation and validation
+#   tf_est_num_sims: 10  # for now only 4, to be redone once more
+#   sim_id_start: 0
 
-  ## Parameters of the PL sims used for TF estimation
-  power_law_pars_tf_est:
-    amp: 1.0
-    delta_ell: 15
-    power_law_index: 2.
+#   ## Parameters of the PL sims used for TF estimation
+#   power_law_pars_tf_est:
+#     amp: 1.0
+#     delta_ell: 15
+#     power_law_index: 2.
 
-  ## Optional beams applied on PL sims
-  # If true, beams will be applied only on the validation simulations. By default (false)
-  # beam are applied to both the estimation and validation sims,
-  # to account for potential effect of the beam on the TF (e.g. commutativity)
-  do_not_beam_est_sims: True
-  beams_list: []
+#   ## Optional beams applied on PL sims
+#   # If true, beams will be applied only on the validation simulations. By default (false)
+#   # beam are applied to both the estimation and validation sims,
+#   # to account for potential effect of the beam on the TF (e.g. commutativity)
+#   do_not_beam_est_sims: True
+#   beams_list: []
 
-  ## Path to the sims for TF estimation
-  unfiltered_map_dir:
-    SATp3_f090_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/input_sims
-    SATp3_f150_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/input_sims
-  unfiltered_map_template:
-    SATp3_f090_south_science: "{pure_type}_5.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR.fits"
-    SATp3_f150_south_science: "{pure_type}_5.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR.fits"
-  filtered_map_dir:
-    SATp3_f090_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp3/f090/coadded_sims
-    SATp3_f150_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp3/f150/coadded_sims
-  filtered_map_template:
-    SATp3_f090_south_science: "{pure_type}_1.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR_bundle0_f090_science_filtered.fits"
-    SATp3_f150_south_science: "{pure_type}_1.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR_bundle0_f150_science_filtered.fits"
+#   ## Path to the sims for TF estimation
+#   unfiltered_map_dir:
+#     SATp3_f090_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/input_sims
+#     SATp3_f150_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/input_sims
+#   unfiltered_map_template:
+#     SATp3_f090_south_science: "{pure_type}_5.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR.fits"
+#     SATp3_f150_south_science: "{pure_type}_5.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR.fits"
+#   filtered_map_dir:
+#     SATp3_f090_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp3/f090/coadded_sims
+#     SATp3_f150_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp3/f150/coadded_sims
+#   filtered_map_template:
+#     SATp3_f090_south_science: "{pure_type}_1.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR_bundle0_f090_science_filtered.fits"
+#     SATp3_f150_south_science: "{pure_type}_1.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR_bundle0_f150_science_filtered.fits"
 
 # Covariance-related parameters
 covariance:
-  ## Number of sims for covariance estimation
-  cov_num_sims: 50  # todo
+  # fiducial_cmb: /scratch/gpfs/SIMONSOBS/users/ar3186/common/camb_spectra/cls_planck_TT_EE_BB_TE.fits  # only needed for the plots, if nothing passed, uses planck2018 TT EE BB TE
+  fiducial_cmb:
+  fiducial_dust:  # .fits from healpy_write_cl, only needed for the plots, if nothing passed nothing plotted
+  fiducial_synch:  # .fits from healpy_write_cl, only needed for the plots, if nothing passed nothing plotted
+  # ## Number of sims for covariance estimation
+  # cov_num_sims: 50  # todo
 
-  ## Directories and file names of simulated noise maps
-  noise_map_sims_dir:
-    SATp3_f090_south_science: ../signflip_maps  # todo
-    SATp3_f150_south_science: ../signflip_maps  # todo
+  # ## Directories and file names of simulated noise maps
+  # noise_map_sims_dir:
+  #   SATp3_f090_south_science: ../signflip_maps  # todo
+  #   SATp3_f150_south_science: ../signflip_maps  # todo
 
-  # The file name templates for noise sims. The parameters id_sim, map_set, and
-  # id_bundle will be recognized when written inside braces, and interpreted
-  # during python string formatting.
-  noise_map_sims_template:
-    SATp3_f090_south_science: "{map_set}_bundle{id_bundle}_sim{id_sim:04d}_noise.fits"  # todo
-    SATp3_f150_south_science: "{map_set}_bundle{id_bundle}_sim{id_sim:04d}_noise.fits"  # todo
+  # # The file name templates for noise sims. The parameters id_sim, map_set, and
+  # # id_bundle will be recognized when written inside braces, and interpreted
+  # # during python string formatting.
+  # noise_map_sims_template:
+  #   SATp3_f090_south_science: "{map_set}_bundle{id_bundle}_sim{id_sim:04d}_noise.fits"  # todo
+  #   SATp3_f150_south_science: "{map_set}_bundle{id_bundle}_sim{id_sim:04d}_noise.fits"  # todo
 
-  # FIXME: We need the products below
-  ## Directories and file names of simulated signal alms
-  signal_alm_sims_dir:
-    SATp3_f090_south_science: ../cmb_sims/filtered_science  # todo
-    SATp3_f150_south_science: ../cmb_sims/filtered_science  # todo
-  # The parameters id_sim, freq_tag, and id_sim will be recognized during 
-  # python string formatting if written inside braces.
-  signal_alm_sims_template:
-    SATp3_f090_south_science: "alm_cmb_lmax..._fwhm30.0_{id_sim:04}_bundle0_filtered.fits"  # todo
-    SATp3_f150_south_science: "alm_cmb_lmax..._fwhm30.0_{id_sim:04}_bundle0_filtered.fits"  # todo
+  # # FIXME: We need the products below
+  # ## Directories and file names of simulated signal alms
+  # signal_alm_sims_dir:
+  #   SATp3_f090_south_science: ../cmb_sims/filtered_science  # todo
+  #   SATp3_f150_south_science: ../cmb_sims/filtered_science  # todo
+  # # The parameters id_sim, freq_tag, and id_sim will be recognized during 
+  # # python string formatting if written inside braces.
+  # signal_alm_sims_template:
+  #   SATp3_f090_south_science: "alm_cmb_lmax..._fwhm30.0_{id_sim:04}_bundle0_filtered.fits"  # todo
+  #   SATp3_f150_south_science: "alm_cmb_lmax..._fwhm30.0_{id_sim:04}_bundle0_filtered.fits"  # todo
