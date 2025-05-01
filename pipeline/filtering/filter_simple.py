@@ -30,11 +30,11 @@ def main(args):
         raise ValueError(
             "Unknown pixel type, must be 'car' or 'hp'."
         )
-    for required_tag in ["{sim_id", "{pure_type}"]:
+    for required_tag in ["{sim_id"]:  # , "{pure_type}"]:
         if required_tag not in args.sim_string_format:
             raise ValueError(f"sim_string_format does not have \
                              required placeholder {required_tag}")
-    
+
         # MPI related initialization
     rank, size, comm = mpi.init(True)
 
@@ -131,7 +131,6 @@ def main(args):
     )
 
     # Initialize tasks for MPI sharing
-    # Removing sim_id from the MPI loop
     mpi_shared_list = atomic_metadata[intra_obs_pair[0]]
 
     # Every rank must have the same shared list
@@ -144,6 +143,9 @@ def main(args):
     # * read simulated map
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
+
+    # UPDATE: bring back parallel loop over sims
+    # for obs_id, wafer, sim_id in local_mpi_list:
     for obs_id, wafer in local_mpi_list:
         # Get axis manager metadata for the given obs
         dets = {"wafer_slot": wafer, "wafer.bandpass": freq_channel}
@@ -162,14 +164,15 @@ def main(args):
         # Only need to run it once for all simulations
         # and only the pre-demodulation part.
         print(obs_id, wafer)
-        data_aman = pp_util.multilayer_load_and_preprocess(
-            obs_id,
-            configs_init,
-            configs_proc,
-            meta=meta,
-            logger=logger,
-            init_only=True
-        )
+        # UPDATE: We don't worry about T-P leakage for purification (for now)
+        # data_aman = pp_util.multilayer_load_and_preprocess(
+        #     obs_id,
+        #     configs_init,
+        #     configs_proc,
+        #     meta=meta,
+        #     logger=logger,
+        #     init_only=True
+        # )
 
         start = time.time()
         logger.info(f"Processing {obs_id} {wafer}")
@@ -204,7 +207,7 @@ def main(args):
                     sim_map=sim,
                     meta=meta,
                     logger=logger,
-                    t2ptemplate_aman=data_aman
+                    t2ptemplate_aman=None  # data_aman
                 )
 
             except loader.LoaderError:
