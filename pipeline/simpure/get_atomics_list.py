@@ -103,7 +103,7 @@ def make_minimal_patch(atomics_dict, outdir, delta_ra, delta_dec,
             corresponding to the kept entries
     """
     wafer_list = [f"ws{i}" for i in range(1)]
-    #wafer_list = ["ws0"]
+    # wafer_list = ["ws0"]
 
     colors = [f"C{i}" for i in range(7)]
     atomics_keep = {w: [] for w in wafer_list}
@@ -141,7 +141,8 @@ def make_minimal_patch(atomics_dict, outdir, delta_ra, delta_dec,
     for iw, w in enumerate(wafer_list):
         c = colors[iw]
         plt.hist(ra[w], alpha=0.3, facecolor=c, label=w)
-        plt.hist(rap[w], alpha=0.3, facecolor=c, edgecolor='black', label=f"{w} (keep)")
+        plt.hist(rap[w], alpha=0.3, facecolor=c, edgecolor='black',
+                 label=f"{w} (keep)")
     plt.title(f"## delta_ra={delta_ra} | delta_dec={delta_dec} ###")
     plt.legend()
     plt.xlabel("RA [deg]")
@@ -151,7 +152,8 @@ def make_minimal_patch(atomics_dict, outdir, delta_ra, delta_dec,
     for iw, w in enumerate(wafer_list):
         c = colors[iw]
         plt.hist(dec[w], alpha=0.3, facecolor=c, label=w)
-        plt.hist(decp[w], alpha=0.3, facecolor=c, edgecolor='black', label=f"{w} (keep)")
+        plt.hist(decp[w], alpha=0.3, facecolor=c, edgecolor='black',
+                 label=f"{w} (keep)")
     plt.title(f"## delta_ra={delta_ra} | delta_dec={delta_dec} ###")
     plt.legend()
     plt.xlabel("DEC [deg]")
@@ -161,7 +163,8 @@ def make_minimal_patch(atomics_dict, outdir, delta_ra, delta_dec,
     for iw, w in enumerate(wafer_list):
         c = colors[iw]
         plt.hist(dec[w], alpha=0.3, facecolor=c, label=w)
-        plt.hist(decp[w], alpha=0.3, facecolor=c, edgecolor='black', label=f"{w} (keep)")
+        plt.hist(decp[w], alpha=0.3, facecolor=c, edgecolor='black',
+                 label=f"{w} (keep)")
     plt.title(f"## delta_ra={delta_ra} | delta_dec={delta_dec} ###")
     plt.legend()
     plt.xlabel("DEC [deg]")
