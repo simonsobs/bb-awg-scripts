@@ -97,18 +97,20 @@ def read_map(map_file,
 
     return conv*m
 
+
 def bandlim_sine2(x, xc, dx):
     xmin = xc - dx
     xmax = xc + dx
     return 1 - np.where(
-        x<xmin,
-        0, 
+        x < xmin,
+        0,
         np.where(
-            x>xmax,
+            x > xmax,
             1.,
             np.sin(np.pi/2*(x-xmin)/(xmax-xmin))**2
         )
     )
+
 
 def main(args):
     """
@@ -117,6 +119,7 @@ def main(args):
     n_sims = args.n_sims
     smooth_fwhm = args.smooth_fwhm
     nside = args.nside
+    do_plot = not args.no_plots
 
     out_dir = args.out_dir
     if not os.path.isdir(out_dir):
@@ -140,7 +143,7 @@ def main(args):
     ps = 1 / (ells + 10) ** 2
     fl = bandlim_sine2(ells, 650, 50)
 
-    for id_sim in range(n_sims):
+    for id_sim in range(100, n_sims+100):
 
         np.random.seed(id_sim)
         alms = hp.synalm(ps, lmax=1000)
@@ -169,12 +172,15 @@ def main(args):
                     f"{out_dir}/{tag}_{args.res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
                     map
                 )
+                if not do_plot:
+                    continue
                 for i, fp in enumerate("TQU"):
                     plot = enplot.plot(
-                        map.downgrade(8)[i], color="planck", ticks=10, range=1.7, colorbar=True
+                        map.downgrade(8)[i], color="planck", ticks=10,
+                        range=1.7, colorbar=True
                     )
                     enplot.write(
-                        f"{out_dir}/{tag}_{args.res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits_{fp}",
+                        f"{out_dir}/{tag}_{args.res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits_{fp}",  # noqa
                         plot
                     )
 
@@ -214,6 +220,11 @@ if __name__ == "__main__":
         "--res_arcmin",
         type=float,
         help="Resolution in arcmin"
+    )
+    parser.add_argument(
+        "--no_plots",
+        action="store_true",
+        help="do not plot maps"
     )
     args = parser.parse_args()
 
