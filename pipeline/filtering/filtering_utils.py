@@ -97,12 +97,15 @@ def get_atomics_maps_list(sim_id, pure_type, atomic_metadata, freq_channel,
 
 
 def save_and_plot_map(map, out_fname, out_dir, plot_dir, pix_type="car",
-                      overwrite=False, do_plot=True):
+                      overwrite=True, do_plot=True):
     """
     Saves and optionally plots TQU map.
     """
-    if os.path.isfile(f"{out_dir}/{out_fname}"):
-        print(" FILE EXISTS: {out_dir}/{out_fname}")
+    # DEBUG
+    print(" SAVE MAP:", out_fname, np.any(map))
+
+    if os.path.isfile(f"{out_dir}/{out_fname}") and not overwrite:
+        print(f" FILE EXISTS: {out_dir}/{out_fname}")
         return
     if pix_type == "car":
         enmap.write_map(f"{out_dir}/{out_fname}", map)

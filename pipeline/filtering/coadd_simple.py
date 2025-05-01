@@ -24,10 +24,12 @@ def main(args):
         raise ValueError(
             "Unknown pixel type, must be 'car' or 'hp'."
         )
-    for required_tag in ["{sim_id", "{pure_type}"]:
+    for required_tag in ["{sim_id"]:  # , "{pure_type}"]:
         if required_tag not in args.sim_string_format:
-            raise ValueError(f"sim_string_format does not have \
-                             required placeholder {required_tag}")
+            print("WARNING: sim_string_format does not have "
+                  f"required placeholder {required_tag}")
+            # raise ValueError(f"sim_string_format does not have \
+            #                  required placeholder {required_tag}")
 
     # MPI related initialization
     rank, size, comm = mpi.init(True)
@@ -114,7 +116,6 @@ def main(args):
         for split_label in intra_obs_pair:
             print(split_label, "len(atomic_metadata):",
                   len(atomic_metadata[split_label]))
-                  #len(atomic_metadata[split_label]))
             wmap_l, w_l = fu.get_atomics_maps_list(
                 sim_id, pure_type, atomic_metadata[split_label],
                 freq_channel, map_dir, split_label,
