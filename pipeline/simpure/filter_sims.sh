@@ -1,7 +1,7 @@
 #! /bin/bash
 
-#. setup.sh
-. setup_cmb_sims.sh
+# . setup_cmb_sims.sh  # for CMB sims
+. setup_tf_sims.sh
 
 # SATp3: 117, SATp1: 138
 srun -n 117 -c 3 --cpu_bind=cores \

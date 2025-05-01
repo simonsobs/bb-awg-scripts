@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. setup.sh
+. setup_tf_sims.sh
 
 out_dir=/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/soopercool_inputs
 pix_type=car

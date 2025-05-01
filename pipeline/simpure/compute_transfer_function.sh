@@ -1,6 +1,6 @@
 #! /bin/bash
 
-. setup.sh
+. setup_tf_sims.sh
 
 python ${soopercool_dir}/pipeline/transfer/compute_transfer_function.py --globals ${soopercool_config}
 python ${soopercool_dir}/pipeline/get_mode_coupling.py --globals ${soopercool_config}

@@ -1,6 +1,6 @@
 #! /bin/bash
 
-. setup.sh
+. setup_tf_sims.sh
 
 # Must set n = (# sims) * (# map sets) * (# map sets + 1) / 2
 # maximum allowed c = (# nodes) * 112 / n  (at tiger3)
