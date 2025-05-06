@@ -14,11 +14,12 @@ import bundling_utils
 sys.path.append("/home/sa5705/software/bb-awg-scripts/pipeline/misc")
 import mpi_utils as mpi  # noqa
 
-
 def main(args):
     """
+    Main function to create sign-flipped noise realizations.
     """
-    args = args_dict = args.copy()  # Convert Namespace to dict and copy it  # Make sure we don't accidentally modify the input args
+
+    args = args_dict = args.copy()  # Make sure we don't modify input
     patch = args.patch
     query_restrict = args.query_restrict
     if patch is not None:
@@ -29,7 +30,7 @@ def main(args):
         elif patch == "north":
             query_restrict += "(azimuth < 90 OR azimuth > 270)"
         else:
-            raise ValueError(f"patch {patch} not recognized.")
+            raise ValueError(f"Patch {patch} not recognized.")
     
     # Read bundle.db
     if os.path.isfile(args.bundle_db) and not args.overwrite:
@@ -40,23 +41,13 @@ def main(args):
         )
     else:
         raise FileNotFoundError(f"File {args.bundle_db} does not exist.")
-        # TODO: we don't need a db here right? 
-        #print(f"Writing to {args.bundle_db}.")
-        #bundle_coordinator = BundleCoordinator(
-        #    args.atomic_db, n_bundles=args.n_bundles,
-        #    seed=args.seed, null_props=args.inter_obs_props,
-        #    query_restrict=query_restrict
-        #)
-        #bundle_coordinator.save_db(args.bundle_db)
-    
+
     if args.pix_type not in ["hp", "car"]:
-        raise ValueError(
-            "Unknown pixel type, must be 'car' or 'hp'."
-        )
+        raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
 
     out_dir = args.output_dir
     os.makedirs(out_dir, exist_ok=True)
-    
+
     atomic_list = None
     if args.atomic_list is not None:
         atomic_list = np.load(args.atomic_list)["atomic_list"]
@@ -64,16 +55,65 @@ def main(args):
     car_map_template = args.car_map_template
 
     bundle_ids = range(args.n_bundles)
+    n_sims = config.n_sims
 
+    # Figure out split tag ahead of time
+    split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
+                                        args.null_prop_val_inter_obs)
+
+    if (split_intra_obs, split_inter_obs) == (None, None):
+        split_tag = "science"
+    elif split_inter_obs is not None:
+        split_tag = split_inter_obs
+    elif split_intra_obs is not None:
+        split_tag = split_intra_obs
+    if isinstance(split_tag, list):
+        split_tag = '_'.join(split_tag)
+
+    wafer_tag = args.wafer if args.wafer is not None else ""
+    patch_tag = args.patch if args.patch is not None else ""
+
+    # --------------------------------------------
+    # Precompute all missing tasks
+    missing_tasks = []
+    print(split_tag)
+    for bundle_id in bundle_ids:
+        print("  ", bundle_id)
+        for sim_id in range(n_sims):
+            out_fname = os.path.join(
+                out_dir,
+                args.map_string_format.format(
+                    split=split_tag,
+                    bundle_id=bundle_id,
+                    wafer=wafer_tag,
+                    patch=patch_tag,
+                    freq_channel=args.freq_channel
+                )
+            )
+            out_fname = out_fname.replace("__", "_")
+            out_fname = out_fname.replace("_map.fits", f"_{sim_id:04d}_map.fits")
+            if not os.path.exists(out_fname) or args.overwrite:
+                print(f"{sim_id:04d}") #{out_fname}")
+                missing_tasks.append((bundle_id, sim_id))
+    # --------------------------------------------
+
+    n_missing = len(missing_tasks)
+    print(f"{n_missing} tasks missing out of {args.n_bundles * n_sims} total.")
+
+    if n_missing == 0:
+        print("All requested simulations already exist. Nothing to do.")
+        return
+
+    # Initialize MPI
     mpi.init(True)
 
-    for bundle_id in bundle_ids:
-        print(" - bundle_id", bundle_id)
-        split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
-                                            args.null_prop_val_inter_obs)
-        
-        print(split_intra_obs, split_inter_obs)
-        
+    # Loop over only missing tasks
+    #for task_id in mpi.taskrange(len(missing_tasks)):
+    for task_id in mpi.taskrange(n_missing - 1):
+        bundle_id, sim_id = missing_tasks[task_id]
+        print(f"Running bundle_id={bundle_id} sim_id={sim_id}")
+
+        # Now construct the signflipper (only for needed bundle_id)
         signflipper = SignFlipper(
             atomic_db=args.atomic_db,
             bundle_db=args.bundle_db,
@@ -87,122 +127,75 @@ def main(args):
             map_dir=args.map_dir
         )
         
-        for sim_id in mpi.taskrange(config.n_sims - 1):
-            print("    sim_id", sim_id)
-            noise_map, noise_weight = signflipper.signflip(seed=12345*bundle_id+sim_id)
+        print(len(signflipper.fnames))
 
-            # Map naming convention
-            if (split_intra_obs, split_inter_obs) == (None, None):
-                split_tag = "science"
-            elif split_inter_obs is not None:
-                # Inter; potentially with summed intras
-                split_tag = split_inter_obs
-            elif split_intra_obs is not None:
-                split_tag = split_intra_obs
-            if isinstance(split_tag, list):
-                split_tag = '_'.join(split_tag)
+        # NEW check here
+        if not signflipper.fnames:
+            print(f"Skipping bundle_id={bundle_id} sim_id={sim_id} (no atomic files)")
+            continue
 
-            wafer_tag = args.wafer if args.wafer is not None else ""
-            patch_tag = args.patch if args.patch is not None else ""
+        # Make noise map
+        noise_map, noise_weight = signflipper.signflip(seed=12345*bundle_id + sim_id)
 
-            for required_tag in ["{split}", "{bundle_id}", "{freq_channel}"]:
-                if required_tag not in args.map_string_format:
-                    raise ValueError(f"map_string_format does not have \
-                                    required placeholder {required_tag}")
-            for optional_tag, tag_val in zip(["{wafer}", "{patch}"], [wafer_tag, patch_tag]):
-                if optional_tag not in args.map_string_format and tag_val:
-                    print(f"Warning: map_string_format does not have optional \
-                        placeholder {optional_tag} but value is passed")
-
-            out_fname = os.path.join(
-                out_dir,
-                args.map_string_format.format(split=split_tag,
-                                            bundle_id=bundle_id,
-                                            wafer=wafer_tag,
-                                            patch=patch_tag,
-                                            freq_channel=args.freq_channel)
+        # Output filenames
+        out_fname = os.path.join(
+            out_dir,
+            args.map_string_format.format(
+                split=split_tag,
+                bundle_id=bundle_id,
+                wafer=wafer_tag,
+                patch=patch_tag,
+                freq_channel=args.freq_channel
             )
-            
-            # Again hacky removal of hopefully accidental double underscores
-            out_fname = out_fname.replace("__", "_")
-            out_fname = out_fname.replace("_map.fits", f"_{sim_id:04d}_map.fits")
-            # For plot titles
-            name_tag = f"{args.freq_channel}_{wafer_tag}_{patch_tag}_{split_tag}"
-            name_tag = name_tag.replace("__", "_")
+        )
+        out_fname = out_fname.replace("__", "_")
+        out_fname = out_fname.replace("_map.fits", f"_{sim_id:04d}_map.fits")
+        os.makedirs(os.path.dirname(out_fname), exist_ok=True)
 
-            os.makedirs(os.path.dirname(out_fname), exist_ok=True)
-            
-            if args.pix_type == "car":
-                enmap.write_map(out_fname, noise_map)
-                enmap.write_map(out_fname.replace("map.fits", "weights.fits"),
-                                noise_weight)
-                
-                # Plot a couple of noise realizations
-                if sim_id % (args.n_sims // 3) != 0:
-                    continue
-                
-                plot = enplot.plot(
-                    noise_map*1e6, colorbar=True,
-                    min=-50, max=50, ticks=10
-                )
+        # Save maps
+        if args.pix_type == "car":
+            enmap.write_map(out_fname, noise_map)
+            enmap.write_map(out_fname.replace("map.fits", "weights.fits"), noise_weight)
+            print(out_fname)
+
+            # Quickplots
+            if sim_id % (n_sims // 3) == 0:
+                plot = enplot.plot(noise_map*1e6, colorbar=True, min=-50, max=50, ticks=10)
                 for ip, p in enumerate(["Q", "U"]):
-                    enplot.write(
-                        out_fname.replace(".fits", f"{p}.png"),
-                        plot[ip+1]
-                    )
-            else:
-                # HEALPix input
-                hp.write_map(out_fname, noise_map, overwrite=True,
-                            dtype=np.float32)
-                hp.write_map(out_fname.replace("map.fits", "weights.fits"),
-                                noise_weight, overwrite=True, dtype=np.float32)
+                    enplot.write(out_fname.replace(".fits", f"{p}.png"), plot[ip+1])
 
-                # Plot a couple of noise realizations
-                if sim_id % (args.n_sims // 3) != 0:
-                    continue
+        else:  # HEALPix
+            hp.write_map(out_fname, noise_map, overwrite=True, dtype=np.float32)
+            hp.write_map(out_fname.replace("map.fits", "weights.fits"), noise_weight, overwrite=True, dtype=np.float32)
 
-                os.makedirs(f"{out_dir}/plots", exist_ok=True)
-                plot_fname = out_fname.replace(".fits", f"{p}.png")
-
+            if sim_id % (n_sims // 3) == 0:
                 for ip, p in enumerate(["Q", "U"]):
-                    hp.mollview(
-                        noise_map[ip+1]*1e6, cmap="RdYlBu_r",
-                        title=f"{p} Noise {bundle_id}{label} sim{sim_id}",
-                        min=-100, max=100, unit=r"$\mu$K"
-                    )
-                    plt.savefig(plot_fname.replace(".fits", f"{p}.png"))
+                    hp.mollview(noise_map[ip+1]*1e6, cmap="RdYlBu_r",
+                                title=f"{p} Noise {bundle_id} sim{sim_id}",
+                                min=-100, max=100, unit=r"$\mu$K")
+                    plt.savefig(out_fname.replace(".fits", f"{p}.png"))
                     plt.close()
 
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Make bundled maps")
-    parser.add_argument(
-        "--config_file", type=str, help="yaml file with configuration."
-    )
-
+    parser = argparse.ArgumentParser(description="Make bundled noise maps.")
+    parser.add_argument("--config_file", type=str, help="yaml file with configuration.")
     args = parser.parse_args()
+
     config = bundling_utils.Cfg.from_yaml(args.config_file)
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
 
     for patch in np.atleast_1d(patch_list):
         patch_tag = "" if patch is None else patch
-        bundle_db = config.bundle_db.format(patch=patch_tag,
-                                            seed=config.seed)
-        # Hacky but remove any (presumed accidental) double underscores
-        bundle_db = bundle_db.replace("__", "_")
+        bundle_db = config.bundle_db.format(patch=patch_tag, seed=config.seed).replace("__", "_")
 
-        # Make db only
         if config.only_make_db:
             config1 = config.copy()
             config1.patch = patch
             config1.bundle_db = bundle_db
             main(config1)
-
         else:
             for it in itertools.product(*its):
-                print(patch, it)
-
                 config1 = config.copy()
                 config1.patch = patch
                 config1.bundle_db = bundle_db
@@ -213,7 +206,6 @@ if __name__ == "__main__":
                     config2 = config1.copy()
                     config2.split_label_intra_obs = config2.intra_obs_pair
                     for null_prop_val in config2.inter_obs_splits:
-                        print(null_prop_val)
                         config2.null_prop_val_inter_obs = null_prop_val
                         try:
                             main(config2)
@@ -224,22 +216,9 @@ if __name__ == "__main__":
                 if config1.intra_obs_splits is not None:
                     config2 = config1.copy()
                     config2.null_prop_val_inter_obs = None
-
                     for split_val in config2.intra_obs_splits:
-                        print(split_val)
                         config2.split_label_intra_obs = split_val
                         try:
                             main(config2)
                         except ValueError as e:
                             print(e)
-
-                wafer_tag = "" if config1.wafer is None else config1.wafer
-                template = os.path.join(config1.output_dir,
-                                        config1.map_string_format.format(split="{}",
-                                                                         bundle_id="{}",
-                                                                         wafer=wafer_tag,
-                                                                         patch=patch_tag,
-                                                                         freq_channel=config1.freq_channel
-                                                                         ))
-                template = template.replace("__", "_")
-                template = template.replace("map.fits", "{}.fits")

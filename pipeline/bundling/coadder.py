@@ -414,6 +414,7 @@ class SignFlipper(_Coadder):
         
         # TODO: temporary workaround to remove maps with unphysically low weights (flat maps)
         self.fnames, self.ws = zip(*[(fname, w) for fname, w in zip(self.fnames, self.ws) if w < 2e+10])
+        print("!!!!!!!!", len(self.fnames))
         
         # DEBUG
         if len(set(self.fnames)) < len(self.fnames):
@@ -428,11 +429,14 @@ class SignFlipper(_Coadder):
                                fields_hp=self.fields_hp)
                       for fname in self.fnames]
         
+        print("wmaps: ", len(self.wmaps))
+        
         self.weights = [read_map(fname.replace("wmap", "weights"),
                                  pix_type=self.pix_type,
                                  fields_hp=self.fields_hp,
                                  is_weights=True)
                         for fname in self.fnames]
+        print("weights: ", len(self.wmaps))
         
 
     def signflip(self, seed=None):
