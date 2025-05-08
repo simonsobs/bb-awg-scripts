@@ -5,66 +5,22 @@ import sqlite3
 import os
 import sys
 import time
-import sotodlib.preprocess.preprocess_util as pp_util
+from itertools import product
 
+import sotodlib.preprocess.preprocess_util as pp_util
 from sotodlib.core.metadata import loader
 from pixell import enmap
-from sotodlib.coords import P
-from mpi4py import MPI
 
+# TODO: Make it an actual module
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'bundling'))
 )
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
 )
-from coordinator import BundleCoordinator  # noqa
-from mpi_utils import distribute_tasks  # noqa
-from sotodlib.coords.demod import make_map  # noqa
-
-
-def get_fullsky_geometry(res_arcmin=5., variant="fejer1"):
-    """
-    Generates a fullsky CAR template at resolution res-arcmin.
-    """
-    res = res_arcmin * np.pi/180/60
-    return enmap.fullsky_geometry(res=res, proj='car', variant=variant)
-
-
-def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
-                     nside=None, site=None, logger=None):
-    """
-    """
-    obs.wrap("weather", np.full(1, "toco"))
-    obs.wrap("site", np.full(1, site))
-    if pix_type == "car":
-        nside = None
-        assert wcs is not None
-    elif pix_type == "hp":
-        wcs = None
-        assert nside is not None
-
-    inv_var = 1 / obs.preprocess.noiseQ_nofit.white_noise ** 2
-
-    wmap_dict = {}
-    weights_dict = {}
-
-    for n_split, split_label in enumerate(split_labels):
-        cuts = obs.flags.glitch_flags + ~obs.preprocess.split_flags.cuts[split_label]  # noqa
-
-        Proj = P.for_tod(obs, wcs_kernel=wcs, comps='TQU', cuts=cuts,
-                         hwp=True, interpol=None)
-        result = make_map(obs, P=Proj, det_weights=2 * inv_var,
-                          det_weights_demod=inv_var)
-        wmap_dict[split_label] = result['weighted_map']
-        weights_dict[split_label] = result['weight']
-        # transform (3, 3, N, n) array to (3, N, n) keeping only diagonals
-        # in the first two dimensions
-        weights_dict[split_label] = np.moveaxis(
-            weights_dict[split_label].diagonal(), -1, 0
-        )
-
-    return wmap_dict, weights_dict
+import coordinator as coord  # noqa
+import filtering_utils as fu  # noqa
+import mpi_utils as mpi  # noqa
 
 
 def main(args):
@@ -74,19 +30,19 @@ def main(args):
         raise ValueError(
             "Unknown pixel type, must be 'car' or 'hp'."
         )
+    for required_tag in ["{sim_id", "{pure_type}"]:
+        if required_tag not in args.sim_string_format:
+            raise ValueError(f"sim_string_format does not have \
+                             required placeholder {required_tag}")
 
     # MPI related initialization
-    comm = MPI.COMM_WORLD
-    size = comm.Get_size()
-    rank = comm.Get_rank()
-    success = True
+    rank, size, comm = mpi.init(True)
 
     # Initialize the logger
     logger = pp_util.init_logger("benchmark", verbosity=3)
 
     # Where to store outputs
-    out_dir = args.output_directory
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = args.output_dir
     logger.info(f"Outputs to be written to {out_dir}")
 
     # Path to databases
@@ -100,21 +56,26 @@ def main(args):
     logger.debug(f"Using atomic DB from {atom_db}")
 
     # Sim related arguments
-    map_dir = args.map_dir
-    map_string_format = args.map_string_format
+    sim_dir = args.sim_dir
+    sim_string_format = args.sim_string_format
     sim_ids = args.sim_ids
 
     # Creating the simulation indices range to filter
-    if "," in sim_ids:
-        id_min, id_max = sim_ids.split(",")
-        sim_ids = np.arange(int(id_min), int(id_max)+1)
+    if isinstance(sim_ids, list):
+        sim_ids = np.array(sim_ids, dtype=int)
+    elif isinstance(sim_ids, str):
+        if "," in sim_ids:
+            id_min, id_max = sim_ids.split(",")
+            sim_ids = np.arange(int(id_min), int(id_max)+1)
+        else:
+            sim_ids = np.array([int(sim_ids)])
     else:
-        sim_ids = np.array([int(sim_ids)])
+        raise ValueError("Argument 'sim_ids' has the wrong format")
 
     # Create output directories
     atomics_dir = {}
     for sim_id in sim_ids:
-        atomics_dir[sim_id] = f"{out_dir}/{sim_id:04d}/{args.freq_channel}"
+        atomics_dir[sim_id] = f"{out_dir}/atomic_sims/{args.freq_channel}/{sim_id:04d}"  # noqa
         os.makedirs(atomics_dir[sim_id], exist_ok=True)
 
     # Arguments related to pixellization
@@ -124,26 +85,29 @@ def main(args):
         mfmt = ".fits"  # TODO: fits.gz for HEALPix
     elif pix_type == "car":
         if args.car_map_template is not None:
-            shape, wcs = enmap.read_map_geometry(args.car_map_template)
+            _, wcs = enmap.read_map_geometry(args.car_map_template)
         else:
-            shape, wcs = get_fullsky_geometry() # Could be problematic if using all default values! # noqa
+            _, wcs = fu.get_fullsky_geometry() # Could be problematic if using all default values! # noqa
         nside = None
         mfmt = ".fits"
 
     # Bundle query arguments
     freq_channel = args.freq_channel
     bundle_id = args.bundle_id
+
     # Gather all intra obs split labels in a list
-    if "," not in args.split_labels_intra_obs:
-        split_labels = [args.split_labels_intra_obs]
-    else:
-        split_labels = args.split_labels_intra_obs.split(",")
+    intra_obs_splits = args.intra_obs_splits
+    if isinstance(intra_obs_splits, str):
+        if "," not in intra_obs_splits:
+            intra_obs_splits = [intra_obs_splits]
+        else:
+            intra_obs_splits = intra_obs_splits.split(",")
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id - null split combination
     if os.path.isfile(bundle_db):
         logger.info(f"Loading from {bundle_db}.")
-        bundle_coordinator = BundleCoordinator.from_dbfile(
+        bundle_coordinator = coord.BundleCoordinator.from_dbfile(
             bundle_db, bundle_id=bundle_id
         )
     else:
@@ -157,16 +121,10 @@ def main(args):
     db_con = sqlite3.connect(atom_db)
     db_cur = db_con.cursor()
 
-    query = f"""
-            SELECT obs_id, wafer
-            FROM atomic
-            WHERE freq_channel == '{freq_channel}'
-            AND ctime IN {tuple(ctimes)}
-            AND split_label == 'science'
-            """
     query_restrict = args.query_restrict
-    if query_restrict:
-        query += f" AND {query_restrict}"
+    query = fu.get_query_atomics(freq_channel, ctimes,
+                                 query_restrict=query_restrict)
+
     res = db_cur.execute(query)
     res = res.fetchall()
     atomic_metadata = {
@@ -174,17 +132,10 @@ def main(args):
             (obs_id, wafer) for obs_id, wafer in res
         ]
     }
-    for split_label in split_labels:
-        res = db_cur.execute(
-            f"""
-            SELECT obs_id, wafer
-            FROM atomic
-            WHERE freq_channel == '{freq_channel}'
-            AND ctime IN {tuple(ctimes)}
-            AND split_label == '{split_label}'
-            AND valid == 1
-            """
-        )
+    for split_label in intra_obs_splits:
+        query = fu.get_query_atomics(freq_channel, ctimes,
+                                     split_label=split_label)
+        res = db_cur.execute(query)
         res = res.fetchall()
         atomic_metadata[split_label] = [
             (obs_id, wafer) for obs_id, wafer in res
@@ -206,8 +157,11 @@ def main(args):
     # Initialize tasks for MPI sharing
     # Removing sim_id from the MPI loop
     mpi_shared_list = atomic_metadata["science"]
-    task_ids = distribute_tasks(size, rank, len(mpi_shared_list),
-                                logger=logger)
+
+    # Every rank must have the same shared list
+    mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
+    task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list),
+                                    logger=logger)
     local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
     # Loop over local tasks (sim_id, atomic_id). For each of these, do:
@@ -244,13 +198,14 @@ def main(args):
         start = time.time()
         logger.info(f"Processing {obs_id} {wafer}")
 
-        for sim_id in sim_ids:
-            logger.info(f"Processing sim_id {sim_id:04d}")
+        for sim_id, pure_type in product(sim_ids, [f"pure{i}" for i in "TEB"]):
+            logger.info(f"Processing {pure_type} for sim_id {sim_id:04d}")
             # Initialize a timer
             start0 = time.time()
             # Path to simulation
-            map_fname = map_string_format.format(sim_id=sim_id)
-            map_file = f"{map_dir}/{map_fname}"
+            map_fname = sim_string_format.format(sim_id=sim_id,
+                                                 pure_type=pure_type)
+            map_file = f"{sim_dir}/{map_fname}"
             # Handling pixellization
             if args.pix_type == "car":
                 logger.info(f"Loading CAR map: {map_file}")
@@ -262,7 +217,7 @@ def main(args):
                 raise ValueError("pix_type must be hp or car")
 
             logger.info(f"Loading {obs_id} {wafer} {freq_channel} "
-                        f"on sim {sim_id}")
+                        f"on {pure_type}, sim {sim_id}")
 
             try:
                 aman = pp_util.multilayer_load_and_preprocess_sim(
@@ -286,12 +241,12 @@ def main(args):
                 continue
 
             # Run the mapmaker
-            wmap_dict, weights_dict = make_map_wrapper(
-                aman, split_labels, pix_type, shape=None, wcs=wcs, nside=nside,
-                logger=logger
+            wmap_dict, weights_dict = fu.make_map_wrapper(
+                aman, intra_obs_splits, pix_type, shape=None, wcs=wcs,
+                nside=nside, logger=logger
             )
 
-            for split_label in split_labels:
+            for split_label in intra_obs_splits:
                 # We save only files for which we actually have data for a
                 # given null split
                 if (obs_id, wafer) in atomic_metadata[split_label]:
@@ -299,7 +254,7 @@ def main(args):
                     w = weights_dict[split_label]
 
                     # Saving filtered atomics to disk
-                    atomic_fname = map_string_format.format(sim_id=sim_id).replace(  # noqa
+                    atomic_fname = map_fname.replace(
                         mfmt,
                         f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
                     )
@@ -322,92 +277,20 @@ def main(args):
             # Stop timer
             end0 = time.time()
             logger.info(
-                f"Filtering sim {sim_id:04d} in {end0 - start0:.1f} seconds."
+                f"Filtered {pure_type} sim {sim_id:04d} in "
+                f"{end0 - start0:.1f} seconds."
             )
-        logger.info(f"Processed {len(sim_ids)} simulations for "
+        logger.info(f"Processed 3 x {len(sim_ids)} simulations for "
                     f"{obs_id} {wafer} in {time.time() - start:.1f} seconds.")
-
-    success = all(comm.allgather(success))
+    comm.Barrier()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
     parser.add_argument(
-        "--atomic-db",
-        help="Path to the atomic maps database."
-    )
-    parser.add_argument(
-        "--bundle-db",
-        help="Path to the bundling database."
-    )
-    parser.add_argument(
-        "--preprocess-config-init",
-        help="Path to the init preprocessing config (multilayer) file.",
-        default=None
-    )
-    parser.add_argument(
-        "--preprocess-config-proc",
-        help="Path to the proc preprocessing config (multilayer) file.",
-        default=None
-    )
-    parser.add_argument(
-        "--map-dir",
-        help="Directory containing the maps to filter."
-    )
-    parser.add_argument(
-        "--map_string_format",
-        help="String formatting; must contain {sim_id}."
-    )
-    parser.add_argument(
-        "--sim-ids",
-        help="String of format 'sim_id_min,sim_id_max', or only 'sim_id'."
-    )
-    parser.add_argument(
-        "--output-directory",
-        help="Output directory for the filtered maps."
-    )
-    parser.add_argument(
-        "--freq-channel",
-        help="Frequency channel to filter."
-    )
-    parser.add_argument(
-        "--bundle-id",
-        type=int,
-        default=0,
-        help="Bundle ID to filter.",
-    )
-    parser.add_argument(
-        "--query_restrict",
-        help="SQL query to restrict obs from the atomic database.",
-        default=""
-    )
-    parser.add_argument(
-        "--split_labels_intra_obs",
-        help="Comma-separated list of split label for intra-obs splits, "
-             "e.g. 'scan_left,scan_right,det_left,det_right'.",
-    )
-    parser.add_argument(
-        "--nside",
-        help="Nside parameter for HEALPIX mapmaker.",
-        type=int,
-        default=512
-    )
-    parser.add_argument(
-        "--pix_type",
-        help="Pixelization type; 'hp' or 'car",
-        default='hp'
-    )
-    parser.add_argument(
-        "--car_map_template",
-        help="path to CAR coadded (hits) map to be used as geometry template",
-        default=None
-    )
-    parser.add_argument(
-        "--fp-thin",
-        help="Focal plane thinning factor",
-        default=None
+        "--config_file", type=str, help="yaml file with configuration."
     )
 
     args = parser.parse_args()
-    main(args)
+    config = fu.Cfg.from_yaml(args.config_file)
+    main(config)
