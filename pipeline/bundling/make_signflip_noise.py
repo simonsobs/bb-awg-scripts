@@ -110,6 +110,7 @@ def main(args):
     # Loop over only missing tasks
     #for task_id in mpi.taskrange(len(missing_tasks)):
     for task_id in mpi.taskrange(n_missing - 1):
+        if task_id >= n_missing: continue
         bundle_id, sim_id = missing_tasks[task_id]
         print(f"Running bundle_id={bundle_id} sim_id={sim_id}")
 
