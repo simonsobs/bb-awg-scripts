@@ -11,10 +11,10 @@ from coadder import SignFlipper
 from coordinator import BundleCoordinator
 import bundling_utils
 
-sys.path.append("/home/sa5705/software/bb-awg-scripts/pipeline/misc")
+sys.path.append("/home/ccaimapo/SimonsObs/bb-awg-scripts/pipeline/misc")
 import mpi_utils as mpi  # noqa
 
-def main(args):
+def main(args, size, rank, comm):
     """
     Main function to create sign-flipped noise realizations.
     """
@@ -98,18 +98,18 @@ def main(args):
     # --------------------------------------------
 
     n_missing = len(missing_tasks)
-    print(f"{n_missing} tasks missing out of {args.n_bundles * n_sims} total.")
-
+    if rank==0:
+        print(f"{n_missing} tasks missing out of {args.n_bundles * n_sims} total.")
     if n_missing == 0:
-        print("All requested simulations already exist. Nothing to do.")
         return
 
-    # Initialize MPI
-    mpi.init(True)
+    task_ids = mpi.distribute_tasks(size, rank, n_missing,)
+    #local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
     # Loop over only missing tasks
     #for task_id in mpi.taskrange(len(missing_tasks)):
-    for task_id in mpi.taskrange(n_missing - 1):
+    #for task_id in mpi.taskrange(n_missing - 1):
+    for task_id in task_ids:
         bundle_id, sim_id = missing_tasks[task_id]
         print(f"Running bundle_id={bundle_id} sim_id={sim_id}")
 
@@ -175,6 +175,7 @@ def main(args):
                                 min=-100, max=100, unit=r"$\mu$K")
                     plt.savefig(out_fname.replace(".fits", f"{p}.png"))
                     plt.close()
+    comm.Barrier()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled noise maps.")
@@ -185,6 +186,9 @@ if __name__ == "__main__":
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
 
+    # MPI related initialization
+    rank, size, comm = mpi.init(True)
+
     for patch in np.atleast_1d(patch_list):
         patch_tag = "" if patch is None else patch
         bundle_db = config.bundle_db.format(patch=patch_tag, seed=config.seed).replace("__", "_")
@@ -193,7 +197,7 @@ if __name__ == "__main__":
             config1 = config.copy()
             config1.patch = patch
             config1.bundle_db = bundle_db
-            main(config1)
+            main(config1, size, rank, comm)
         else:
             for it in itertools.product(*its):
                 config1 = config.copy()
@@ -208,7 +212,7 @@ if __name__ == "__main__":
                     for null_prop_val in config2.inter_obs_splits:
                         config2.null_prop_val_inter_obs = null_prop_val
                         try:
-                            main(config2)
+                            main(config2, size, rank, comm)
                         except ValueError as e:
                             print(e)
 
@@ -219,6 +223,6 @@ if __name__ == "__main__":
                     for split_val in config2.intra_obs_splits:
                         config2.split_label_intra_obs = split_val
                         try:
-                            main(config2)
+                            main(config2, size, rank, comm)
                         except ValueError as e:
                             print(e)
