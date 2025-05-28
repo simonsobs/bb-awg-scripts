@@ -409,12 +409,11 @@ class SignFlipper(_Coadder):
         """
         super().__init__(atomic_db, bundle_db, freq_channel, wafer,
                          pix_type=pix_type, car_map_template=car_map_template)
-        
+
         self.fnames, self.ws = self._get_fnames(bundle_id, null_prop_val, split_label, return_weights=True, map_dir=map_dir)
-        
         # TODO: temporary workaround to remove maps with unphysically low weights (flat maps)
         self.fnames, self.ws = zip(*[(fname, w) for fname, w in zip(self.fnames, self.ws) if w < 2e+10])
-        print("!!!!!!!!", len(self.fnames))
+        #print("!!!!!!!!", len(self.fnames))
         
         # DEBUG
         if len(set(self.fnames)) < len(self.fnames):

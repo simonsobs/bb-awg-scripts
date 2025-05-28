@@ -33,14 +33,14 @@ def main(args, size, rank, comm):
             raise ValueError(f"Patch {patch} not recognized.")
     
     # Read bundle.db
-    if os.path.isfile(args.bundle_db) and not args.overwrite:
-        print(f"Loading from {args.bundle_db}.")
-        bundle_coordinator = BundleCoordinator.from_dbfile(
-            args.bundle_db,
-            null_prop_val=args.null_prop_val_inter_obs
-        )
-    else:
-        raise FileNotFoundError(f"File {args.bundle_db} does not exist.")
+    sat_bundle_dbs = np.atleast_1d(getattr(args, "bundle_db", []))
+    sat_atomic_dbs = np.atleast_1d(getattr(args, "atomic_db", []))
+    sat_map_dirs = np.atleast_1d(args.map_dir)
+
+    # Validate each bundle_db exists before proceeding
+    for db in sat_bundle_dbs:
+        if not os.path.isfile(db):
+            raise FileNotFoundError(f"File {db} does not exist.")
 
     if args.pix_type not in ["hp", "car"]:
         raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
@@ -113,29 +113,54 @@ def main(args, size, rank, comm):
         bundle_id, sim_id = missing_tasks[task_id]
         print(f"Running bundle_id={bundle_id} sim_id={sim_id}")
 
-        # Now construct the signflipper (only for needed bundle_id)
-        signflipper = SignFlipper(
-            atomic_db=args.atomic_db,
-            bundle_db=args.bundle_db,
-            freq_channel=args.freq_channel,
-            wafer=args.wafer,
-            bundle_id=bundle_id,
-            null_prop_val=split_inter_obs,
-            pix_type=args.pix_type,
-            car_map_template=args.car_map_template,
-            split_label=split_intra_obs,
-            map_dir=args.map_dir
-        )
+        combined_map = None
+        combined_weight = None
         
-        print(len(signflipper.fnames))
+        # Now construct the signflipper (only for needed bundle_id)
+        for atomic_db, bundle_db, map_dir_i in zip(sat_atomic_dbs, sat_bundle_dbs, sat_map_dirs):
+            signflipper = SignFlipper(
+                atomic_db=atomic_db,
+                bundle_db=bundle_db,
+                freq_channel=args.freq_channel,
+                wafer=args.wafer,
+                bundle_id=bundle_id,
+                null_prop_val=split_inter_obs,
+                pix_type=args.pix_type,
+                car_map_template=args.car_map_template,
+                split_label=split_intra_obs,
+                map_dir=map_dir_i
+            )
+        
+            print(len(signflipper.fnames))
 
-        # NEW check here
-        if not signflipper.fnames:
-            print(f"Skipping bundle_id={bundle_id} sim_id={sim_id} (no atomic files)")
-            continue
+            # NEW check here
+            if not signflipper.fnames:
+                print(f"Skipping bundle_id={bundle_id} sim_id={sim_id} (no atomic files)")
+                continue
 
-        # Make noise map
-        noise_map, noise_weight = signflipper.signflip(seed=12345*bundle_id + sim_id)
+            # Make noise map
+            try:
+                result = signflipper.signflip(seed=12345 * bundle_id + sim_id)
+                if not isinstance(result, (tuple, list)) or len(result) != 2:
+                    print(f"SignFlipper returned unexpected result for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {result}")
+                    continue
+                noise_map, noise_weight = result
+            except Exception as e:
+                print(f"SignFlipper crashed for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {e}")
+                continue
+            
+            # Initialize or accumulate
+            if combined_map is None:
+                combined_map = noise_map.copy()
+                combined_weight = noise_weight.copy()
+            else:
+                combined_map += noise_map
+                combined_weight += noise_weight
+                
+            if combined_map is None:
+                print(f"No valid maps for bundle_id={bundle_id} sim_id={sim_id}, skipping save.")
+                exut()
+ 
 
         # Output filenames
         out_fname = os.path.join(
@@ -154,23 +179,23 @@ def main(args, size, rank, comm):
 
         # Save maps
         if args.pix_type == "car":
-            enmap.write_map(out_fname, noise_map)
-            enmap.write_map(out_fname.replace("map.fits", "weights.fits"), noise_weight)
+            enmap.write_map(out_fname, combined_map)
+            enmap.write_map(out_fname.replace("map.fits", "weights.fits"), combined_weight)
             print(out_fname)
 
             # Quickplots
             if sim_id % (n_sims // 3) == 0:
-                plot = enplot.plot(noise_map*1e6, colorbar=True, min=-50, max=50, ticks=10)
+                plot = enplot.plot(combined_map*1e6, colorbar=True, min=-50, max=50, ticks=10)
                 for ip, p in enumerate(["Q", "U"]):
                     enplot.write(out_fname.replace(".fits", f"{p}.png"), plot[ip+1])
 
         else:  # HEALPix
-            hp.write_map(out_fname, noise_map, overwrite=True, dtype=np.float32)
-            hp.write_map(out_fname.replace("map.fits", "weights.fits"), noise_weight, overwrite=True, dtype=np.float32)
+            hp.write_map(out_fname, combined_map, overwrite=True, dtype=np.float32)
+            hp.write_map(out_fname.replace("map.fits", "weights.fits"), combined_weight, overwrite=True, dtype=np.float32)
 
             if sim_id % (n_sims // 3) == 0:
                 for ip, p in enumerate(["Q", "U"]):
-                    hp.mollview(noise_map[ip+1]*1e6, cmap="RdYlBu_r",
+                    hp.mollview(combined_map[ip+1]*1e6, cmap="RdYlBu_r",
                                 title=f"{p} Noise {bundle_id} sim{sim_id}",
                                 min=-100, max=100, unit=r"$\mu$K")
                     plt.savefig(out_fname.replace(".fits", f"{p}.png"))
@@ -179,33 +204,33 @@ def main(args, size, rank, comm):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled noise maps.")
-    parser.add_argument("--config_file", type=str, help="yaml file with configuration.")
+    parser.add_argument("--config_file", type=str, help="YAML file with configuration.")
     args = parser.parse_args()
 
+    # Load config
     config = bundling_utils.Cfg.from_yaml(args.config_file)
+
+    # Build frequency x wafer combinations
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
 
-    # MPI related initialization
+    # MPI initialization
     rank, size, comm = mpi.init(True)
 
     for patch in np.atleast_1d(patch_list):
         patch_tag = "" if patch is None else patch
-        bundle_db = config.bundle_db.format(patch=patch_tag, seed=config.seed).replace("__", "_")
 
         if config.only_make_db:
             config1 = config.copy()
             config1.patch = patch
-            config1.bundle_db = bundle_db
             main(config1, size, rank, comm)
         else:
             for it in itertools.product(*its):
                 config1 = config.copy()
                 config1.patch = patch
-                config1.bundle_db = bundle_db
                 config1.freq_channel, config1.wafer = it
 
-                # Inter-obs
+                # Inter-obs splits
                 if config1.inter_obs_splits is not None:
                     config2 = config1.copy()
                     config2.split_label_intra_obs = config2.intra_obs_pair
@@ -216,7 +241,7 @@ if __name__ == "__main__":
                         except ValueError as e:
                             print(e)
 
-                # Intra-obs
+                # Intra-obs splits
                 if config1.intra_obs_splits is not None:
                     config2 = config1.copy()
                     config2.null_prop_val_inter_obs = None
