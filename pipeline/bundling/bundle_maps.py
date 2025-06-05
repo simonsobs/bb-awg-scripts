@@ -9,7 +9,7 @@ from coordinator import BundleCoordinator
 import itertools
 
 import matplotlib.pyplot as plt
-
+from procs_pool import get_exec_env
 
 def car2healpix(norm_hits_map):
     """
@@ -92,7 +92,7 @@ def main(args):
             null_prop_val=split_inter_obs,
             map_dir=args.map_dir,
             abscal=args.abscal,
-            nproc=args.nproc
+            parallelizor=args.parallelizor
         )
 
         # Map naming convention
@@ -187,15 +187,10 @@ def main(args):
                 plt.savefig(out_fname.replace(".fits", f"{p}.png"))
                 plt.close()
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Make bundled maps")
-    parser.add_argument(
-        "--config_file", type=str, help="yaml file with configuration."
-    )
-
-    args = parser.parse_args()
-    config = bundling_utils.Cfg.from_yaml(args.config_file)
+                
+def _main(config_file, parallelizor):
+    config = bundling_utils.Cfg.from_yaml(config_file)
+    config.parallelizor = parallelizor
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
 
@@ -287,3 +282,18 @@ if __name__ == "__main__":
                         plot = enplot.plot(coadd_map*1e6, colorbar=True, color='gray', range="100:20:20", ticks=10, downgrade=2, autocrop=True)
                         enplot.write(savename.replace("{}.fits", "mapQ.png"), plot[1])
                         enplot.write(savename.replace("{}.fits", "mapU.png"), plot[2])
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Make bundled maps")
+    parser.add_argument(
+        "--config_file", type=str, help="yaml file with configuration."
+    )
+
+    args = parser.parse_args()
+    config = bundling_utils.Cfg.from_yaml(args.config_file)
+    nprocs = config.nprocs
+    rank, executor, as_completed_callable = get_exec_env(nprocs)
+    if rank == 0:
+        _main(args.config_file, (executor, as_completed_callable, nprocs))
+                        
+

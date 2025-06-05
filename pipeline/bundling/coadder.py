@@ -324,7 +324,7 @@ class Bundler(_Coadder):
         return ws, freq
 
     def bundle(self, bundle_id, split_label=None, null_prop_val=None,
-               map_dir=None, abscal=False, nproc=1):
+               map_dir=None, abscal=False, parallelizor=None):
         """
         Make a map bundle given a bundle ID and, optionally, null properties.
 
@@ -367,7 +367,7 @@ class Bundler(_Coadder):
 
         signal, weights, hits = coadd_maps(
             fnames, weights_list, hits_list, pix_type=self.pix_type,
-            car_template_map=self.car_map_template, abscal=abfac, nproc=nproc
+            car_template_map=self.car_map_template, abscal=abfac, parallelizor=parallelizor
             )
 
         return signal, weights, hits, fnames
