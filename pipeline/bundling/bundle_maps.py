@@ -19,7 +19,7 @@ def car2healpix(norm_hits_map):
     return reproject.map2healpix(norm_hits_map, spin=[0])
 
 
-def main(args):
+def main(args, parallelizor=None):
     """
     """
     args = args.copy()  # Make sure we don't accidentally modify the input args
@@ -92,7 +92,7 @@ def main(args):
             null_prop_val=split_inter_obs,
             map_dir=args.map_dir,
             abscal=args.abscal,
-            parallelizor=args.parallelizor
+            parallelizor=parallelizor
         )
 
         # Map naming convention
@@ -190,7 +190,6 @@ def main(args):
                 
 def _main(config_file, parallelizor):
     config = bundling_utils.Cfg.from_yaml(config_file)
-    config.parallelizor = parallelizor
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
 
@@ -225,7 +224,7 @@ def _main(config_file, parallelizor):
                         print(null_prop_val)
                         config2.null_prop_val_inter_obs = null_prop_val
                         try:
-                            main(config2)
+                            main(config2, parallelizor)
                         except ValueError as e:
                             print(e)
 
@@ -238,7 +237,7 @@ def _main(config_file, parallelizor):
                         print(split_val)
                         config2.split_label_intra_obs = split_val
                         try:
-                            main(config2)
+                            main(config2, parallelizor)
                         except ValueError as e:
                             print(e)
 
@@ -291,9 +290,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     config = bundling_utils.Cfg.from_yaml(args.config_file)
-    nprocs = config.nprocs
-    rank, executor, as_completed_callable = get_exec_env(nprocs)
+    nproc = config.nproc
+    rank, executor, as_completed_callable = get_exec_env(nproc)
     if rank == 0:
-        _main(args.config_file, (executor, as_completed_callable, nprocs))
+        _main(args.config_file, (executor, as_completed_callable, nproc))
                         
 
