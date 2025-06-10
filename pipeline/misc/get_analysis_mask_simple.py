@@ -54,7 +54,7 @@ def main(args):
             map = mu.read_map(
                 f"{map_dir}/{map_file}",
                 pix_type=args.pix_type,
-                car_map_template=args.car_template
+                car_template=args.car_template
             )
             maps.append(map)
 
@@ -129,6 +129,8 @@ def main(args):
         ext_mask = mu.read_map(args.external_mask,
                                pix_type=args.pix_type,
                                geometry=analysis_mask.geometry)
+        # smooth external mask to avoid sharp edges for apodization
+        ext_mask = mu.smooth_map(ext_mask, fwhm_deg=1, pix_type=args.pix_type)
         if do_plots:
             mu.plot_map(
                 ext_mask,
@@ -138,6 +140,21 @@ def main(args):
                 lims=[-1, 1]
             )
         analysis_mask *= ext_mask
+    if args.box_mask is not None:
+        from pixell import enmap, utils
+        box = np.deg2rad(args.box_mask)
+        decs, ras = sum_hits.posmap()
+        mask_box = enmap.zeros(shape=sum_hits.shape, wcs=sum_hits.wcs, dtype=float)
+        mask_box[(box[0][0] * utils.degrees < decs)
+                 & (decs < box[1][0])
+                 & (box[0][1] * utils.degrees < ras)
+                 & (ras < box[1][1] * utils.degrees)] = 1.
+
+        # smooth box mask to avoid sharp edges for apodization
+        mask_box = mu.smooth_map(mask_box, fwhm_deg=1, pix_type=args.pix_type)
+        binary *= mask_box
+        sum_hits *= mask_box
+
 
     analysis_mask = mu.apodize_mask(
         analysis_mask,
@@ -173,7 +190,7 @@ def main(args):
     # Weight with hitmap
     analysis_mask *= sum_maps
     mu.write_map(
-        f"{masks_dir}/analysis_mask.fits",
+        f"{masks_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}.fits",
         analysis_mask,
         pix_type=args.pix_type
     )
@@ -182,7 +199,7 @@ def main(args):
         mu.plot_map(
             analysis_mask,
             title="Analysis mask",
-            file_name=f"{plot_dir}/analysis_mask_apo{apod_radius}_{apod_type}",
+            file_name=f"{plot_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}",
             pix_type=args.pix_type,
             lims=[-1, 1]
         )
@@ -242,11 +259,12 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument("--point_source_mask",
                         help="Point source mask", default=None)
-    parser.add_argument("--apod_radius", help="Apodization radius in degreed",
+    parser.add_argument("--apod_radius", type=int,
+                        help="Apodization radius in degrees",
                         default=10)
     parser.add_argument("--apod_type", help="Apodization type; C1 or C2",
                         default="C1")
-    parser.add_argument("--apod_radius_point_source",
+    parser.add_argument("--apod_radius_point_source", type=int,
                         help="Apodization radius for point sources in degrees",
                         default=1)
 
