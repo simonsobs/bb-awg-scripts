@@ -81,6 +81,7 @@ def main(args):
     """
     nside = args.nside
     n_sims = args.n_sims
+    id_start = args.id_start
     smooth_fwhm = args.smooth_fwhm
     pix_type = args.pix_type
     pols_keep = args.pols_keep
@@ -119,10 +120,12 @@ def main(args):
        "r": 0.0,
     }
 
-    _, clth = get_theory_cls(
+    lth, clth = get_theory_cls(
         cosmo,
         lmax=lmax_sim
     )
+    # np.savez("clth_r0_AL1.npz", l=lth, **clth)
+
     pairs_keep = {
         "TEB": ["TT", "TE", "EE", "BB"],
         "EB": ["EE", "BB"],
@@ -139,7 +142,7 @@ def main(args):
     if do_plots:
         os.makedirs(f"{out_dir}/plots", exist_ok=True)
 
-    for id_sim in range(n_sims):
+    for id_sim in range(id_start, id_start + n_sims):
         print(f"sim {id_sim+1} / {n_sims}")
         alms = hp.synalm(
             [clth["TT"], clth["TE"], clth["EE"], clth["BB"]],
@@ -156,9 +159,10 @@ def main(args):
         elif args.pix_type == "car":
             map = curvedsky.alm2map(alms, template, copy=True)
             enmap.write_map(
-                f"{out_dir}/cmb{pols_keep}_{int(res)}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
+                f"{out_dir}/cmb{pols_keep}_{round(res)}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
                 map
             )
+            print(f"{out_dir}/cmb{pols_keep}_{round(res)}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits")
             if do_plots:
                 for i, fp in enumerate("TQU"):
                     lim = 3e-6 if i else 2e-4
@@ -204,6 +208,12 @@ if __name__ == "__main__":
         "--n_sims",
         type=int,
         help="Number of simulations"
+    )
+    parser.add_argument(
+        "--id_start",
+        type=int,
+        default=0,
+        help="Start ID of simulations"
     )
     parser.add_argument(
         "--out_dir",
