@@ -124,8 +124,6 @@ def main(args):
         cosmo,
         lmax=lmax_sim
     )
-    # np.savez("clth_r0_AL1.npz", l=lth, **clth)
-
     pairs_keep = {
         "TEB": ["TT", "TE", "EE", "BB"],
         "EB": ["EE", "BB"],
@@ -143,7 +141,7 @@ def main(args):
         os.makedirs(f"{out_dir}/plots", exist_ok=True)
 
     for id_sim in range(id_start, id_start + n_sims):
-        print(f"sim {id_sim+1} / {n_sims}")
+        print(f"sim {id_sim+1} / {id_start + n_sims}")
         alms = hp.synalm(
             [clth["TT"], clth["TE"], clth["EE"], clth["BB"]],
             lmax=lmax_sim
@@ -162,7 +160,6 @@ def main(args):
                 f"{out_dir}/cmb{pols_keep}_{round(res)}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
                 map
             )
-            print(f"{out_dir}/cmb{pols_keep}_{round(res)}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits")
             if do_plots:
                 for i, fp in enumerate("TQU"):
                     lim = 3e-6 if i else 2e-4
