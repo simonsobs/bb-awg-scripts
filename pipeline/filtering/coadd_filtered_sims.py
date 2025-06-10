@@ -28,7 +28,7 @@ def main(args):
         raise ValueError(
             "Unknown pixel type, must be 'car' or 'hp'."
         )
-    for required_tag in ["{sim_id", "{pure_type}"]:
+    for required_tag in ["{sim_id"]:
         if required_tag not in args.sim_string_format:
             raise ValueError(f"sim_string_format does not have \
                              required placeholder {required_tag}")
@@ -62,6 +62,7 @@ def main(args):
             sim_ids = np.arange(int(id_min), int(id_max)+1)
         else:
             sim_ids = np.array([int(sim_ids)])
+    pure_types = [f"pure{i}" for i in "TEB"] if "{pure_type}" in sim_string_format else ["signal map"]  # noqa
 
     # Pixelization arguments
     pix_type = args.pix_type
@@ -206,7 +207,7 @@ def main(args):
     mpi_shared_list = [(sim_id, split_label, pure_type)
                        for sim_id in sim_ids
                        for split_label in split_labels_all
-                       for pure_type in [f"pure{i}" for i in "TEB"]]
+                       for pure_type in pure_types]
 
     # Every rank must have the same shared list
     mpi_shared_list = comm.bcast(mpi_shared_list, root=0)

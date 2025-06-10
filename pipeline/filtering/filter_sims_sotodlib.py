@@ -30,7 +30,7 @@ def main(args):
         raise ValueError(
             "Unknown pixel type, must be 'car' or 'hp'."
         )
-    for required_tag in ["{sim_id", "{pure_type}"]:
+    for required_tag in ["{sim_id"]:
         if required_tag not in args.sim_string_format:
             raise ValueError(f"sim_string_format does not have \
                              required placeholder {required_tag}")
@@ -60,6 +60,7 @@ def main(args):
     sim_dir = args.sim_dir
     sim_string_format = args.sim_string_format
     sim_ids = args.sim_ids
+    pure_types = [f"pure{i}" for i in "TEB"] if "{pure_type}" in sim_string_format else ["signal map"]  # noqa
 
     # Creating the simulation indices range to filter
     if isinstance(sim_ids, list):
@@ -77,7 +78,6 @@ def main(args):
     atomics_dir = {}
     for sim_id in sim_ids:
         atomics_dir[sim_id] = atomic_sim_dir.format(sim_id=sim_id)
-        # atomics_dir[sim_id] = f"{out_dir}/{sim_id:04d}/{args.freq_channel}"  # noqa
         os.makedirs(atomics_dir[sim_id], exist_ok=True)
 
     # Arguments related to pixellization
@@ -200,7 +200,7 @@ def main(args):
         start = time.time()
         logger.info(f"Processing {obs_id} {wafer}")
 
-        for sim_id, pure_type in product(sim_ids, [f"pure{i}" for i in "TEB"]):
+        for sim_id, pure_type in product(sim_ids, pure_types):
             logger.info(f"Processing {pure_type} for sim_id {sim_id:04d}")
             # Initialize a timer
             start0 = time.time()
