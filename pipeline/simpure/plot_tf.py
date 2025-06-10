@@ -10,7 +10,6 @@ which_tf_panels = "EE_to_BB"
 normalize_to_cmb_pol = False
 lmax_plot = 600
 
-
 tf_files = {
     "butter4_nmt_pure": "butter4_cutoff_1e-2/soopercool_outputs_nsims_200_nmt_purify/transfer_functions/transfer_function_SATp3_f090_south_science_x_SATp3_f090_south_science.npz",  # noqa
     "butter4_nopure": "butter4_cutoff_1e-2/soopercool_outputs_nsims_200/transfer_functions/transfer_function_SATp3_f090_south_science_x_SATp3_f090_south_science.npz",  # noqa
@@ -65,8 +64,6 @@ if which_tf_panels == "all":
     text_fontsize = 8
 elif which_tf_panels == "all_BB":
     _, axes = plt.subplots(9, 2, figsize=(7, 28))
-    #for i in range(9):
-    #    axes[i, 1].set_yticklabels([])
     def tf_panels_iterator():
         for i, f1 in enumerate(field_pairs):
             yield i, f1, 0, "BB"
@@ -115,14 +112,6 @@ if normalize_to_cmb_pol:
         (fp1, fp2): (clb_theory[fp1] / clb_theory[fp2], fp2)
         for fp1 in ["TT", "TE", "ET", "EE", "BB"]
         for fp2 in ["TT", "TE", "ET", "EE", "BB"]
-        # ("EE", "BB"): (clb_theory["EE"] / clb_theory["BB"], "BB"),
-        # ("TE", "BB"): (clb_theory["TE"] / clb_theory["BB"], "BB"),
-        # ("ET", "BB"): (clb_theory["TE"] / clb_theory["BB"], "BB"),
-        # ("TT", "BB"): (clb_theory["TT"] / clb_theory["BB"], "BB"),
-        # ("TE", "EE"): (clb_theory["TE"] / clb_theory["EE"], "EE"),
-        # ("ET", "EE"): (clb_theory["TE"] / clb_theory["EE"], "EE"),
-        # ("TT", "EE"): (clb_theory["TT"] / clb_theory["EE"], "EE"),
-
     }
     # plt.loglog(lb, clb_theory["EE"], "r")
     # plt.loglog(range(lmax + 1), clth["EE"], "k--")
@@ -189,6 +178,6 @@ for ilab, (tf_label, tf_file) in enumerate(tf_files.items()):
                 pass
 
     norm_lab = "_normalized" if normalize_to_cmb_pol else ""
-    plot_fname = f"{plot_dir}/transfer_functions_{which_tf_panels}{norm_lab}.pdf"
+    plot_fname = f"{plot_dir}/transfer_functions_{which_tf_panels}{norm_lab}.pdf"  # noqa
     print("Saved to", plot_fname)
     plt.savefig(plot_fname, bbox_inches="tight")
