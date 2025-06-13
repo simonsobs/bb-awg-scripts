@@ -166,20 +166,21 @@ _, clth = get_theory_cls(cosmo, lmax=lmax_sim, beam_fwhm=beam_fwhm)
 clbb_in = clth["BB"][:lmax+1]
 
 # general
-nsims_purify = 200
-nsims_cmb = 100
+nsims_purify = 20
+nsims_cmb = 10
 nsims_transfer = 50
 nsims_deproj = 50
 
-apo_scale = 30
+apo_scale = 10
 apo_type = "C1"
-out_dir = f"/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/purification/butter4_cutoff_1e-2/apo{apo_scale}_{apo_type}{bin_label}"  # noqa
+box_str = "_-47_-33_-10_130"
+out_dir = f"/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/purification/butter4_cutoff_1e-2/apo{apo_scale}_{apo_type}{box_str}{bin_label}"  # noqa
 plot_dir = f"{out_dir}/plots"
 os.makedirs(plot_dir, exist_ok=True)
 lmax_plot = 500
 
 # apodized mask
-mask_file = f"/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/soopercool_inputs/masks/analysis_mask_apo{apo_scale}_{apo_type}.fits"  # noqa
+mask_file = f"/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/soopercool_inputs/masks/analysis_mask_apo{apo_scale}_{apo_type}{box_str}.fits"  # noqa
 mask = mu.read_map(mask_file,
                    pix_type=pix_type,
                    car_template=car_template)
