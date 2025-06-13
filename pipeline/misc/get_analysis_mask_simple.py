@@ -1,5 +1,4 @@
 import argparse
-import re
 import sys
 import os
 sys.path.append(
@@ -140,27 +139,40 @@ def main(args):
                 lims=[-1, 1]
             )
         analysis_mask *= ext_mask
-    if args.box_mask is not None:
+    if args.decra_minmax is not None:
+        if args.pix_type != "car":
+            raise NotImplementedError(
+                "decra_minmax: only CAR supported for now."
+            )
         from pixell import enmap, utils
-        box = np.deg2rad(args.box_mask)
-        decs, ras = sum_hits.posmap()
-        mask_box = enmap.zeros(shape=sum_hits.shape, wcs=sum_hits.wcs, dtype=float)
-        mask_box[(box[0][0] * utils.degrees < decs)
+        dec_min, dec_max, ra_min, ra_max = args.decra_minmax
+        print("DECRA minmax", dec_min, dec_max, ra_min, ra_max)
+        box_str = f"_{dec_min}_{dec_max}_{ra_min}_{ra_max}"
+        box = np.array([[dec_min, ra_min], [dec_max, ra_max]]) * utils.degree
+        shape, wcs = analysis_mask.geometry
+        decs, ras = enmap.posmap(shape, wcs)
+        mask_box = enmap.zeros(shape=shape, wcs=wcs, dtype=float)
+        mask_box[(box[0][0] < decs)
                  & (decs < box[1][0])
-                 & (box[0][1] * utils.degrees < ras)
-                 & (ras < box[1][1] * utils.degrees)] = 1.
+                 & (box[0][1] < ras)
+                 & (ras < box[1][1])] = 1.
+        # This pixell function creates suprious features when sigma <=1 degree.
+        mask_box = enmap.smooth_gauss(mask_box, 2.*utils.degree)
+        #binary *= mask_box
+        #sum_hits *= mask_box
+        analysis_mask *= mask_box
+    else:
+        box_str = ""
 
-        # smooth box mask to avoid sharp edges for apodization
-        mask_box = mu.smooth_map(mask_box, fwhm_deg=1, pix_type=args.pix_type)
-        binary *= mask_box
-        sum_hits *= mask_box
-
-
-    analysis_mask = mu.apodize_mask(
-        analysis_mask,
-        apod_radius_deg=args.apod_radius,
-        apod_type=args.apod_type,
-        pix_type=args.pix_type
+    # analysis_mask = mu.apodize_mask(
+    #     analysis_mask,
+    #     apod_radius_deg=args.apod_radius,
+    #     apod_type=args.apod_type,
+    #     pix_type=args.pix_type
+    # )
+    from pixell import utils as pixut
+    analysis_mask = enmap.apod_mask(
+        analysis_mask, width=args.apod_radius*pixut.degree
     )
 
     if args.point_source_mask is not None:
@@ -190,7 +202,7 @@ def main(args):
     # Weight with hitmap
     analysis_mask *= sum_maps
     mu.write_map(
-        f"{masks_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}.fits",
+        f"{masks_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}.fits",
         analysis_mask,
         pix_type=args.pix_type
     )
@@ -199,7 +211,7 @@ def main(args):
         mu.plot_map(
             analysis_mask,
             title="Analysis mask",
-            file_name=f"{plot_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}",
+            file_name=f"{plot_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}",
             pix_type=args.pix_type,
             lims=[-1, 1]
         )
@@ -232,7 +244,8 @@ def main(args):
 
     print("\nSUMMARY")
     print("-------")
-    print(f"Wrote analysis mask to {masks_dir}/analysis_mask.fits")
+    print(f"Wrote analysis mask to {masks_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}.fits")
+    print(f"Plot: {plot_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}.png")  # noqa
     print("Parameters")
     print(f"    Galactic mask: {args.galactic_mask}")
     print(f"    External mask: {args.external_mask}")
@@ -267,6 +280,9 @@ if __name__ == "__main__":
     parser.add_argument("--apod_radius_point_source", type=int,
                         help="Apodization radius for point sources in degrees",
                         default=1)
+    parser.add_argument("--decra_minmax", nargs=4, type=int,
+                        help="DEC min, DEC max, RA min, RA max for box mask",
+                        default=None)
 
     parser.add_argument("--verbose", help="Verbose mode",
                         action="store_true")
