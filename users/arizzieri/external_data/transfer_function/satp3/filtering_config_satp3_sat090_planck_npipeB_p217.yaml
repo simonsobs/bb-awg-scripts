@@ -4,10 +4,10 @@ bb_awg_scripts_dir: &bb_awg_scripts_dir /home/ar3186/bb-awg-scripts
 
 bundle_db: /scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp3_20250108/bundles/bundles_south_seed17_20250312.db
 atomic_db: /scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp3_20250108/atomic_db.sqlite
-freq_channel: &freq_channel f150  # this is the one to use to filter
-output_dir: &output_dir /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/planck/npipe6v20_A_B/satp3/f143
-atomic_sim_dir: /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/planck/npipe6v20_A_B/satp3/f143/atomic_maps
-sim_string_format: "planck_car_143_bundle0_res1.0amin_coords_c.fits"
+freq_channel: &freq_channel f090
+output_dir: &output_dir /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/planck/npipe6v20_A_B/satp3/f217
+atomic_sim_dir: /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/planck/npipe6v20_A_B/satp3/f217/atomic_maps
+sim_string_format: "planck_car_217_bundle1_res1.0amin_coords_c.fits"
 sim_ids: [0]
 
 # (Optional for coadd_filtered_sims)
@@ -17,14 +17,14 @@ intra_obs_splits: [det_lower, det_upper]
 ## Optional shared arguments (for the output) ##
 pix_type: car
 car_map_template: !path [*pwg_scripts_dir, iso-sat-review/mapmaking/band_car_fejer1_5arcmin.fits]
-bundle_id: 0
+bundle_id: 1
 query_restrict: "median_weight_qu < 2e10"
 
 
 ## Required arguments for filter_sims_sotodlib ##
 preprocess_config_init: !path [*bb_awg_scripts_dir, users/arizzieri/external_data/transfer_function/satp3/transfer_preproc_config_satp3_20250108_sat_iso_init.yaml]
 preprocess_config_proc: !path [*bb_awg_scripts_dir, users/arizzieri/external_data/transfer_function/satp3/transfer_preproc_config_satp3_20250108_sat_iso_proc.yaml]
-sim_dir: /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/data/planck/maps/npipe6v20A
+sim_dir: /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/data/planck/maps/npipe6v20B
 
 
 ## Optional arguments for filter_sims_sotodlib ##
