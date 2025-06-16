@@ -1,0 +1,71 @@
+output_directory: &out_dir /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/planck/npipe6v20_A_B/satp1/f143/soopercool_outputs/not_beam_corrected
+
+map_sets:
+  SATp1_f150_south_science:
+    map_dir: /scratch/gpfs/SIMONSOBS/sat-iso/mapmaking/satp1_20250108/bundles/south
+    beam_dir: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/soopercool_inputs
+    map_template: "satp1_f150_full_bundle{id_bundle}_{map|hits}.fits"
+    beam_file: "beam_unity.dat"  # "beam_gauss_30arcmin.dat"
+    n_bundles: 4          # Number of bundles
+    freq_tag: 150         # Freq. tag (e.g. useful to coadd freqs)
+    exp_tag: "SATp1"      # Experiment tag (useful to get noise-bias free cross-split spectra)
+    filtering_tag: "SATp1_f150_south_science"
+  planck_f143_filtered_SATp1_f150_south_science:
+    map_dir: /scratch/gpfs/SIMONSOBS/users/ar3186/external_data/filtered_data/planck/npipe6v20_A_B/satp1/f143/coadded_maps
+    beam_dir: /home/ar3186/bb-awg-scripts/users/arizzieri/external_data #/scratch/gpfs/SIMONSOBS/users/ar3186/external_data/data/planck/beams/beam_window_functions/ 
+    map_template: "planck_car_143_bundle{id_bundle}_res1.0amin_coords_c_f150_science_{filtered|filtered_weights}.fits"
+    beam_file: "beam_unity.dat"  # "beam_gauss_10arcmin.dat"
+    n_bundles: 2          # Number of bundles --> for planck it's 2: split A and B --> generalized the soopercool script so that if it doesn't find the file with 0 and 1 it tries with A and B
+    freq_tag: 143         # Freq. tag (e.g. useful to coadd freqs) Used the planck one
+    exp_tag: "planck"      # Experiment tag (useful to get noise-bias free cross-split spectra)
+    filtering_tag: "SATp1_f150_south_science"  # tag only used for couplings and transfer function
+
+####################
+# Masking metadata #
+####################
+masks:
+  analysis_mask: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp1/south/soopercool_outputs/science/masks/analysis_mask.fits  # where the analysis mask is stored
+  # When specifying this file, the mapset/bundle-specific hits files will
+  # be ignored and instead a global hits file will be used (testing puroposes)
+  global_hits:
+
+  # Path to products (binary)
+  galactic_mask: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/soopercool_inputs/planck_gal_mask_proj/planck_galmask_070_CAR_5arcmin.fits  # additional mask added to the data one to mask the galactic plane
+  point_source_catalog: null
+  point_source_mask: null  # "/path/to/point_source_mask.fits"
+
+  external_mask: null
+
+  apod_radius: 10.0
+  apod_radius_point_source: 1.0
+  apod_type: "C1"
+
+####################################
+# Metadata related to the analysis #
+####################################
+## General parameters
+general_pars:
+  pix_type: car
+  car_template: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/soopercool_inputs/band_car_fejer1_5arcmin.fits
+  nside: 512  # not used but has to be passed
+  lmin: 0
+  lmax: 600 # not sure if it's used or taken the max by default
+  binning_file: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/soopercool_inputs/binning_car_lmax2160_deltal15_large_first_bin.npz   # custom.npz # to have 3 initial bins to 
+  pure_B: True
+  # Where the beam window is lower than beam_floor, set it to beam_floor
+  beam_floor: 1.e-2
+
+transfer_settings:
+  transfer_directory: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp1/south/soopercool_outputs/science/transfer_functions #!path [*out_dir, transfer_functions]
+
+  # Directory where external soopercool coupling products live
+  # if not defined the couplings will be expected to live in {output_directory/couplings}
+  external_couplings_dir: /scratch/gpfs/SIMONSOBS/sat-iso/transfer_function/satp1/south/soopercool_outputs/science/couplings
+  
+
+# Covariance-related parameters
+covariance:
+  # fiducial_cmb: /scratch/gpfs/SIMONSOBS/users/ar3186/common/camb_spectra/cls_planck_TT_EE_BB_TE.fits  # only needed for the plots, if nothing passed, uses planck2018 TT EE BB TE
+  fiducial_cmb:
+  fiducial_dust:  # .fits from healpy_write_cl, only needed for the plots, if nothing passed nothing plotted
+  fiducial_synch:  # .fits from healpy_write_cl, only needed for the plots, if nothing passed nothing plotted
