@@ -22,7 +22,7 @@ def yaml_loader(config):
         return yaml.load(f, Loader=yaml.SafeLoader)
 
 
-def get_atomics_maps_list(sim_id, pure_type, atomic_metadata, freq_channel,
+def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_channel,
                           atomic_sim_dir, split_label, sim_string_format,
                           mfmt=".fits", pix_type="car", remove_atomics=False,
                           logger=None):
@@ -39,7 +39,7 @@ def get_atomics_maps_list(sim_id, pure_type, atomic_metadata, freq_channel,
             Map string label corresponding to the split, e.g. 'det_left'
         sim_string_format: str
             String format for the filtered atomic maps.
-            Must contain {sim_id}, {pure_type}.
+            Must contain {sim_id}, {sim_type}.
         mfmt: str
             Atomic file name ending.
         pix_type: str
@@ -61,7 +61,7 @@ def get_atomics_maps_list(sim_id, pure_type, atomic_metadata, freq_channel,
             atomic_fname = sim_string_format
         else:
             atomic_fname = sim_string_format.format(sim_id=sim_id,
-                                                    pure_type=pure_type)
+                                                    sim_type=sim_type)
         atomic_fname = atomic_fname.replace(
             mfmt,
             f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
@@ -178,7 +178,7 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
         wcs = None
         assert nside is not None
 
-    inv_var = 1 / obs.preprocess.noiseQ_nofit.white_noise ** 2
+    inv_var = 1 / obs.preprocess.noiseQ_mapmaking.white_noise ** 2
 
     wmap_dict = {}
     weights_dict = {}
@@ -232,9 +232,14 @@ class Cfg:
         Bundle ID to be filtered
     sim_string_format: str
         String formatting for unfiltered input sims
-        must contain {sim_id} and {pure_type}.
-    freq_channel: str
-        Frequency channel, e.g. 'f090'.
+        must contain {sim_id} and {sim_type}.
+    sim_types: list
+        Strings that define the simulation types to be filtered, e.g.
+        ['pureT', 'pureE', 'pureB'], or ['cmbEB', 'cmbB'] etc.
+    freq_channels: list
+        Frequency channels, e.g. ['f090', 'f150'].
+    patches: list
+        Sky patches, e.g. ['south', 'north'].
     intra_obs_splits: list
         List of split labels for intra-obs splits, e.g. 'scan_left'.
     intra_obs_pair: list
@@ -252,8 +257,6 @@ class Cfg:
         Number of batches to divide the bundle into, based on random timestamp
         splits
     """
-    pwg_scripts_dir: str
-    bb_awg_scripts_dir: str
     bundle_db: str
     atomic_db: str
     preprocess_config_init: str
@@ -263,7 +266,9 @@ class Cfg:
     output_dir: str
     sim_ids: list
     sim_string_format: str
-    freq_channel: str
+    sim_types: list
+    freq_channels: list
+    patches: list
     intra_obs_splits: list
     query_restrict: Optional[str] = ""
     pix_type: Optional[str] = "car"
