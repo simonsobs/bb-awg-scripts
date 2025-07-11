@@ -22,7 +22,7 @@ def yaml_loader(config):
         return yaml.load(f, Loader=yaml.SafeLoader)
 
 
-def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_channel,
+def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
                           atomic_sim_dir, split_label, sim_string_format,
                           mfmt=".fits", pix_type="car", remove_atomics=False,
                           logger=None):
@@ -34,7 +34,7 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_channel,
         sim_id: int
             Simulation ID.
         atomic_metadata: list
-            List of tuples if strings (obs_id, wafer, freq_channel).
+            List of tuples of strings (obs_id, wafer).
         split_label: str
             Map string label corresponding to the split, e.g. 'det_left'
         sim_string_format: str
@@ -57,15 +57,18 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_channel,
     wmap_list, w_list = ([], [])
 
     for id, (obs_id, wafer) in enumerate(atomic_metadata):
-        if not sim_id:
-            atomic_fname = sim_string_format
+        if sim_id is None:
+            atomic_fname = sim_string_format.format(sim_id="NULL",
+                                                    sim_type=sim_type,
+                                                    freq_channel=freq_label)
         else:
             atomic_fname = sim_string_format.format(sim_id=sim_id,
-                                                    sim_type=sim_type)
+                                                    sim_type=sim_type,
+                                                    freq_channel=freq_label)
         atomic_fname = atomic_fname.replace(
             mfmt,
-            f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
-        )
+            f"_{obs_id}_{wafer}_{split_label}{mfmt}"
+        ).split("/")[-1]
         fname_wmap, fname_w = (
             f"{atomic_sim_dir}/{atomic_fname.replace(mfmt, f'_{s}{mfmt}')}"
             for s in ("wmap", "weights")
@@ -90,8 +93,15 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_channel,
         if remove_atomics:
             os.remove(fname_wmap)
             os.remove(fname_w)
-
-    logger.info(f"{id+1} atomics expected, {len(wmap_list)} atomics at disk.")
+    num_ideal = id+1
+    num_real = len(wmap_list)
+    completeness = float(num_real / num_ideal)
+    logging = logger.info
+    if completeness < 0.98:
+        logging = logger.warning
+    if completeness < 0.90:
+        logging = logger.error
+    logging(f"{num_ideal} atomics expected, {num_real} atomics at disk.")
 
     return wmap_list, w_list
 
@@ -178,7 +188,12 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
         wcs = None
         assert nside is not None
 
-    inv_var = 1 / obs.preprocess.noiseQ_mapmaking.white_noise ** 2
+    if hasattr(obs.preprocess, "noiseQ_mapmaking"):  # ISO v2
+        inv_var = 1 / obs.preprocess.noiseQ_mapmaking.white_noise ** 2
+    elif hasattr(obs.preprocess, "noiseQ_nofit"):  # ISO v1
+        inv_var = 1 / obs.preprocess.noiseQ_nofit.white_noise ** 2
+    else:
+        logger.error("No white noise fits available in the metadata.")
 
     wmap_dict = {}
     weights_dict = {}
@@ -256,6 +271,8 @@ class Cfg:
     nbatch_atomics: int
         Number of batches to divide the bundle into, based on random timestamp
         splits
+    remove_atomics: bool
+        Removes atomic maps from disk upon coadding them
     """
     bundle_db: str
     atomic_db: str
@@ -279,6 +296,7 @@ class Cfg:
     nside: Optional[int] = None
     fp_thin: Optional[int] = 8
     nbatch_atomics: Optional[int] = None
+    remove_atomics: Optional[bool] = False
 
     def __post_init__(self):
         # Add extra defaults for private args not expected in config file
