@@ -97,18 +97,20 @@ def read_map(map_file,
 
     return conv*m
 
+
 def bandlim_sine2(x, xc, dx):
     xmin = xc - dx
     xmax = xc + dx
     return 1 - np.where(
-        x<xmin,
-        0, 
+        x < xmin,
+        0,
         np.where(
-            x>xmax,
+            x > xmax,
             1.,
             np.sin(np.pi/2*(x-xmin)/(xmax-xmin))**2
         )
     )
+
 
 def main(args):
     """
@@ -124,9 +126,17 @@ def main(args):
 
     if pix_type == "car":
         if args.car_template_map is not None:
+            print(f"Reading car_template_map: {args.car_template_map}")
             geometry = enmap.read_map_geometry(args.car_template_map)
+            wcs = geometry[1]
+            res_arcmin = np.min(np.abs(wcs.wcs.cdelt))*60.
+        elif args.res_arcmin is not None:
+            print(f"Using res_arcmin = {args.res_arcmin}")
+            res_arcmin = args.res_arcmin
+            geometry = get_fullsky_geometry(res_arcmin)
         else:
-            geometry = get_fullsky_geometry(args.res_arcmin)
+            raise ValueError("Either car_template_map or res_arcmin must "
+                             "be given.")
         shape, wcs = geometry
         new_shape = (3,) + shape[-2:]
         template = enmap.zeros(new_shape, wcs)
@@ -166,15 +176,16 @@ def main(args):
                     template
                 )
                 enmap.write_map(
-                    f"{out_dir}/{tag}_{args.res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
+                    f"{out_dir}/{tag}_{res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
                     map
                 )
                 for i, fp in enumerate("TQU"):
                     plot = enplot.plot(
-                        map.downgrade(8)[i], color="planck", ticks=10, range=1.7, colorbar=True
+                        map.downgrade(8)[i], color="planck", ticks=10,
+                        range=1.7, colorbar=True
                     )
                     enplot.write(
-                        f"{out_dir}/{tag}_{args.res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits_{fp}",
+                        f"{out_dir}/{tag}_{res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits_{fp}",  # noqa
                         plot
                     )
 
@@ -213,7 +224,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--res_arcmin",
         type=float,
-        help="Resolution in arcmin"
+        help="Resolution in arcmin. "
+             "Will be ignored if car_template_map is given."
     )
     args = parser.parse_args()
 
