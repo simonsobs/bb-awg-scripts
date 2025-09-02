@@ -278,8 +278,12 @@ if __name__ == "__main__":
                         temp = template.format(coadd_bundles_splitname, "{}", "{}")
                         sum_vals = list(range(config1.n_bundles))
                         savename = temp.format("!", "{}").replace("_bundle!", "")
-                        bundling_utils.coadd_bundles(temp,
-                                                     sum_vals,
-                                                     config1.pix_type,
-                                                     do_hits=True,
-                                                     savename=savename)
+                        coadd_map, _, _ = bundling_utils.coadd_bundles(temp,
+                                                                       sum_vals,
+                                                                       config1.pix_type,
+                                                                       do_hits=True,
+                                                                       savename=savename)
+
+                        plot = enplot.plot(coadd_map*1e6, colorbar=True, color='gray', range="100:20:20", ticks=10, downgrade=2, autocrop=True)
+                        enplot.write(savename.replace("{}.fits", "mapQ.png"), plot[1])
+                        enplot.write(savename.replace("{}.fits", "mapU.png"), plot[2])
