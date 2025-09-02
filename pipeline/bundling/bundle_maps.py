@@ -193,9 +193,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
     )
+    parser.add_argument(
+        "--atomic_list", type=str, help="atomic list"
+    )
 
     args = parser.parse_args()
     config = bundling_utils.Cfg.from_yaml(args.config_file)
+    if args.atomic_list is not None:
+        config.atomic_list = args.atomic_list
+        config.map_string_format = config.map_string_format.replace("map.fits", f"{args.atomic_list[:-4]}_map.fits")
+        print(f"Set atomic_list to {config.atomic_list}")
+
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
 
