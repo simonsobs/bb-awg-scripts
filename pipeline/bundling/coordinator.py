@@ -46,7 +46,7 @@ class BundleCoordinator:
                              "timestamp": "INTEGER"}
 
             self.bundle_id = bundle_id
-            self.null_props = null_props.copy()
+            self.null_props = null_props.copy() if null_props is not None else {}
             if query_restrict != "":
                 query_restrict = f" WHERE split_label='science' AND ({query_restrict})"  # noqa
             else:
