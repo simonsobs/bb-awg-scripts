@@ -39,7 +39,7 @@ def main(args):
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=3)
+    logger = pp_util.init_logger("benchmark", verbosity=1)
 
     # Path to databases
     bundle_dbs = {patch: args.bundle_db.format(patch=patch)

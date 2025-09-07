@@ -153,7 +153,7 @@ def get_query_atomics(freq_channel, ctimes, split_label="science",
             SELECT obs_id, wafer
             FROM atomic
             WHERE freq_channel == '{freq_channel}'
-            AND ctime IN {tuple(ctimes)}
+            AND ctime IN {tuple(np.asarray(ctimes).tolist())}
             AND split_label == '{split_label}'
             """
     if split_label != "science":
