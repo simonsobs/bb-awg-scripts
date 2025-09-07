@@ -4,6 +4,7 @@ import os
 from bundling_utils import read_map, coadd_maps
 from coordinator import BundleCoordinator
 import re
+from pixell import enmap
 
 
 class _Coadder:
@@ -169,7 +170,7 @@ class _Coadder:
                 )
                 for ctime, _, _, prefix_path, _ in result
             ]
-            weights = [weight for _, _, weight in result]
+            weights = [weight for _, _, _, _, weight in result]
             return fnames, weights
         else:
             fnames = [
@@ -261,7 +262,8 @@ class _Coadder:
                             fnames.append(fname)
         if return_weights:
             return fnames, weights
-        return fnames
+        else:
+            return fnames
 
 
 class Bundler(_Coadder):
@@ -376,7 +378,8 @@ class SignFlipper(_Coadder):
     Child class of _Coadder, with the purpose of sign-flipping and coadding
     atomic maps for the purpose of generating per-bundle noise maps.
     """
-    def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
+    def __init__(self, atomic_db, bundle_db, freq_channel, car_map_template, 
+                 split_label=None, wafer=None, abscal=False, #nproc=1
                  bundle_id=None, null_prop_val=None, pix_type="hp", map_dir=None):
         """
         Constructor for the SignFlipper class. Creates a SignFlipper object,
@@ -405,20 +408,35 @@ class SignFlipper(_Coadder):
             Pixelization type. Admissible values are "hp", "car.
         """
         super().__init__(atomic_db, bundle_db, freq_channel, wafer,
-                         pix_type=pix_type)
+                         pix_type=pix_type, car_map_template=car_map_template)
 
-        self.fnames, self.ws = self._get_fnames(
-             bundle_id, null_prop_val, return_weights=True, map_dir=map_dir
-         )
+        self.fnames, self.ws = self._get_fnames(bundle_id, null_prop_val, split_label, return_weights=True, map_dir=map_dir)
+        # TODO: temporary workaround to remove maps with unphysically low weights (flat maps)
+        self.fnames, self.ws = zip(*[(fname, w) for fname, w in zip(self.fnames, self.ws) if w < 2e+10])
+        #print("!!!!!!!!", len(self.fnames))
+        
+        # DEBUG
+        if len(set(self.fnames)) < len(self.fnames):
+            raise ValueError("fnames contains duplicates")
+        print(
+            f"{len(self.fnames)} atomic file names (bundle {bundle_id})"
+        )
+
+        abfac = np.array([self.get_abfac(fname, abscal) for fname in self.fnames]) if abscal == True else 1  # noqa
 
         self.wmaps = [read_map(fname, pix_type=self.pix_type,
                                fields_hp=self.fields_hp)
                       for fname in self.fnames]
+        
+        print("wmaps: ", len(self.wmaps))
+        
         self.weights = [read_map(fname.replace("wmap", "weights"),
                                  pix_type=self.pix_type,
                                  fields_hp=self.fields_hp,
                                  is_weights=True)
                         for fname in self.fnames]
+        print("weights: ", len(self.wmaps))
+        
 
     def signflip(self, seed=None):
         """
@@ -440,15 +458,17 @@ class SignFlipper(_Coadder):
         perm_idx = np.random.permutation(len(self.wmaps))
         maps_list, weights_list = ([self.wmaps[i] for i in perm_idx],
                                    [self.weights[i] for i in perm_idx])
+        
         mean_wQU_list = [self.ws[i] for i in perm_idx]
 
         weight_cumsum = np.cumsum(mean_wQU_list) / np.sum(mean_wQU_list)
         pm_one = np.random.choice([-1, 1])
         sign_list = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
 
-        signflip_noise = coadd_maps(
+        signflip_noise, weights_noise = coadd_maps(
             maps_list, weights_list, pix_type=self.pix_type,
-            sign_list=sign_list, car_map_template=self.car_map_template
+            sign_list=sign_list, car_template_map=self.car_map_template, 
+            #nproc=nproc
         )
 
-        return signflip_noise
+        return signflip_noise, weights_noise
