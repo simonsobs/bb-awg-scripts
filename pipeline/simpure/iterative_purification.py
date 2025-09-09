@@ -260,7 +260,6 @@ def load_transfer_sim(sim_id, filtered=False, type=None):
         car_template=car_template,
         convert_K_to_muK=True
     )
-    # CHANGED
     return get_masked_map(mask_bin, map, pix_type=pix_type)
 
 
@@ -579,7 +578,7 @@ if not ignore_filtering:
                 f1, f2 = compute_pspec(
                     mp_masked_dep, mask, nmt_bins, wcs=wcs,
                     return_just_fields=True,
-                    masked_on_input=True  # CHANGED
+                    masked_on_input=True
                 )
                 fields[typ] = f1
                 fields2[typ] = f2
@@ -947,7 +946,7 @@ if not ignore_filtering:
                 mp_masked_dep, mask, nmt_bins,
                 transfer=transfer_pure_dep["full_tf"],
                 nmt_purify=False, nmt_purify_mcm=True,
-                wcs=wcs, masked_on_input=True  # CHANGED
+                wcs=wcs, masked_on_input=True
             )
             cls_filtered_pure_dep_tfed.append(cl)
 
