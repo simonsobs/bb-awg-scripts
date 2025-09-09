@@ -56,7 +56,7 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
     """
     wmap_list, w_list = ([], [])
     if not atomic_metadata:
-        print("WARNING: atomic_metadata is empty.")
+        logger.warning("atomic_metadata is empty.")
 
     for id, (obs_id, wafer) in enumerate(atomic_metadata):
         if sim_id is None:
@@ -81,6 +81,7 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
         # case, it is acceptable to just ignore those when coadding.
         # print("expected file:", fname_wmap)
         if not (os.path.isfile(fname_wmap) and os.path.isfile(fname_w)):
+            logger.warning("Atomic map MISSING:", fname_wmap)
             continue
 
         if pix_type == "car":

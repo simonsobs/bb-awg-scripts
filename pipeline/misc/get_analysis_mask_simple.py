@@ -5,8 +5,8 @@ sys.path.append(
     "/home/kw6905/bbdev/SOOPERCOOL"
 )
 from soopercool import map_utils as mu
-from soopercool import utils as su
 import numpy as np
+import healpy as hp
 
 
 def main(args):
@@ -14,8 +14,11 @@ def main(args):
     """
     do_plots = not args.no_plots
     verbose = args.verbose
+    nside = args.nside
 
     out_dir = args.out_dir
+    pix_type = args.pix_type
+    pix_lab = "car" if pix_type == "car" else f"nside{nside}"
 
     masks_dir = f"{out_dir}/masks"
     plot_dir = f"{out_dir}/plots/masks"
@@ -28,13 +31,32 @@ def main(args):
         print("global hits")
         sum_hits = mu.read_map(
             args.global_hits,
-            pix_type=args.pix_type,
-            car_map_template=args.car_template
+            pix_type=pix_type,
+            car_template=args.car_template
         )
+        # If using healpix, up/downgrade in case the map's nside != args.nside
+        if pix_type == "hp":
+            if hp.npix2nside(len(sum_hits)) != args.nside:
+                print(" Up/downgrading external hits "
+                      f"({hp.npix2nside(len(sum_hits))} -> {args.nside})")
+                sum_hits = hp.ud_grade(sum_hits, args.nside, power=-2)
         # Create binary
         binary = sum_hits.copy()
         binary[:] = 1
         binary[sum_hits == 0] = 0
+    elif args.flat_mask:
+        if pix_type == "car":
+            assert args.car_template is not None
+            from pixell import enmap
+            print("flat mask")
+            shape, wcs = enmap.read_map_geometry(args.car_template)
+            sum_hits = enmap.ndmap(np.ones(shape), wcs=wcs)
+        else:
+            assert nside is not None
+            shape = hp.nside2npix(nside)
+            wcs = None
+            sum_hits = np.ones(shape)
+        binary = sum_hits
     else:
         # Loop over the (map_set, id_bundles)
         # pairs to define a common binary mask
@@ -52,37 +74,38 @@ def main(args):
 
             map = mu.read_map(
                 f"{map_dir}/{map_file}",
-                pix_type=args.pix_type,
+                pix_type=pix_type,
                 car_template=args.car_template
             )
             maps.append(map)
 
         # Create binary and normalized hitmap
         binary = maps[0][1].copy()
-        sum_maps = maps[0][1].copy()
+        sum_hits = maps[0][1].copy()
         binary[:] = 1
-        sum_maps[:] = 0
+        sum_hits[:] = 0
         for map in maps:
             binary[map[1] == 0] = 0
-            sum_maps += map[1]
-        sum_maps[binary == 0] = 0
+            sum_hits += map[1]
+        sum_hits[binary == 0] = 0
 
     # Normalize and smooth hitmaps
-    sum_maps = mu.smooth_map(sum_maps, fwhm_deg=1, pix_type=args.pix_type)
-    sum_maps /= np.amax(sum_maps)
+    sum_hits = mu.smooth_map(sum_hits, fwhm_deg=args.smooth_radius,
+                             pix_type=pix_type)
+    sum_hits /= np.amax(sum_hits)
 
     # Save products
     mu.write_map(
         f"{masks_dir}/binary_mask.fits",
         binary,
         dtype=np.int32,
-        pix_type=args.pix_type
+        pix_type=pix_type
     )
     mu.write_map(
         f"{masks_dir}/normalized_hits.fits",
-        sum_maps,
+        sum_hits,
         dtype=np.float32,
-        pix_type=args.pix_type
+        pix_type=pix_type
     )
 
     if do_plots:
@@ -90,15 +113,15 @@ def main(args):
             binary,
             title="Binary mask",
             file_name=f"{plot_dir}/binary_mask",
-            pix_type=args.pix_type,
+            pix_type=pix_type,
             lims=[-1, 1]
         )
 
         mu.plot_map(
-            sum_maps,
+            sum_hits,
             title="Normalized hits",
             file_name=f"{plot_dir}/normalized_footprint",
-            pix_type=args.pix_type,
+            pix_type=pix_type,
             lims=[-1, 1]
         )
 
@@ -109,14 +132,14 @@ def main(args):
         if verbose:
             print(f"    file_name: {args.galactic_mask}")
         gal_mask = mu.read_map(args.galactic_mask,
-                               pix_type=args.pix_type,
+                               pix_type=pix_type,
                                geometry=analysis_mask.geometry)
         if do_plots:
             mu.plot_map(
                 gal_mask,
                 title="Galactic mask",
                 file_name=f"{plot_dir}/galactic_mask",
-                pix_type=args.pix_type,
+                pix_type=pix_type,
                 lims=[-1, 1]
             )
         analysis_mask *= gal_mask
@@ -126,53 +149,60 @@ def main(args):
         if verbose:
             print(f"    file_name: {args.external_mask}")
         ext_mask = mu.read_map(args.external_mask,
-                               pix_type=args.pix_type,
+                               pix_type=pix_type,
                                geometry=analysis_mask.geometry)
         # smooth external mask to avoid sharp edges for apodization
-        ext_mask = mu.smooth_map(ext_mask, fwhm_deg=1, pix_type=args.pix_type)
+        ext_mask = mu.smooth_map(ext_mask, fwhm_deg=args.smooth_radius,
+                                 pix_type=pix_type)
         if do_plots:
             mu.plot_map(
                 ext_mask,
                 title="External mask",
                 file_name=f"{plot_dir}/external_mask",
-                pix_type=args.pix_type,
+                pix_type=pix_type,
                 lims=[-1, 1]
             )
         analysis_mask *= ext_mask
     if args.decra_minmax is not None:
-        if args.pix_type != "car":
-            raise NotImplementedError(
-                "decra_minmax: only CAR supported for now."
-            )
         from pixell import enmap, utils
         dec_min, dec_max, ra_min, ra_max = args.decra_minmax
-        print("DECRA minmax", dec_min, dec_max, ra_min, ra_max)
         box_str = f"_{dec_min}_{dec_max}_{ra_min}_{ra_max}"
         box = np.array([[dec_min, ra_min], [dec_max, ra_max]]) * utils.degree
-        shape, wcs = analysis_mask.geometry
-        decs, ras = enmap.posmap(shape, wcs)
-        mask_box = enmap.zeros(shape=shape, wcs=wcs, dtype=float)
-        mask_box[(box[0][0] < decs)
-                 & (decs < box[1][0])
-                 & (box[0][1] < ras)
-                 & (ras < box[1][1])] = 1.
-        # This pixell function creates suprious features when sigma <=1 degree.
-        mask_box = enmap.smooth_gauss(mask_box, 2.*utils.degree)
+        if pix_type == "car":
+            shape, wcs = analysis_mask.geometry
+            decs, ras = enmap.posmap(shape, wcs)
+            mask_box = enmap.zeros(shape=shape, wcs=wcs, dtype=float)
+            mask_box[(box[0][0] < decs)
+                    & (decs < box[1][0])
+                    & (box[0][1] < ras)
+                    & (ras < box[1][1])] = 1.
+        else:
+            mask_box = np.zeros(hp.nside2npix(nside))
+            def IndexToDeclRa(index):
+                theta, phi = hp.pixelfunc.pix2ang(nside, index)
+                return -theta + np.pi/2., 2*np.pi-phi
+            decs, ras = IndexToDeclRa(np.arange(len(mask_box)))
+            mask_box[(box[0][0] < decs)
+                    & (decs < box[1][0])
+                    & (box[0][1] < ras)
+                    & (ras < box[1][1])] = 1.
+        # WARNING: This function creates spurious features (CAR)
+        # when using large boxes.
+        mask_box = mu.smooth_map(mask_box, fwhm_deg=args.smooth_radius,
+                                 pix_type=pix_type)
+
         #binary *= mask_box
         #sum_hits *= mask_box
         analysis_mask *= mask_box
+
     else:
         box_str = ""
 
-    # analysis_mask = mu.apodize_mask(
-    #     analysis_mask,
-    #     apod_radius_deg=args.apod_radius,
-    #     apod_type=args.apod_type,
-    #     pix_type=args.pix_type
-    # )
-    from pixell import utils as pixut
-    analysis_mask = enmap.apod_mask(
-        analysis_mask, width=args.apod_radius*pixut.degree
+    analysis_mask = mu.apodize_mask(
+        analysis_mask,
+        apod_radius_deg=args.apod_radius,
+        apod_type=args.apod_type,
+        pix_type=pix_type
     )
 
     if args.point_source_mask is not None:
@@ -180,72 +210,75 @@ def main(args):
         if verbose:
             print(f"    file_name: {args.point_source_mask}")
         ps_mask = mu.read_map(args.point_source_mask,
-                              pix_type=args.pix_type,
+                              pix_type=pix_type,
                               geometry=analysis_mask.geometry)
         ps_mask = mu.apodize_mask(
             ps_mask,
             apod_radius_deg=args.apod_radius_point_source,
             apod_type=args.apod_type,
-            pix_type=args.pix_type
+            pix_type=pix_type
         )
         if do_plots:
             mu.plot_map(
                 ps_mask,
                 title="Point source mask",
                 file_name=f"{plot_dir}/point_source_mask",
-                pix_type=args.pix_type,
+                pix_type=pix_type,
                 lims=[-1, 1]
             )
 
         analysis_mask *= ps_mask
 
     # Weight with hitmap
-    analysis_mask *= sum_maps
+    analysis_mask *= sum_hits
+    flat_str = "_flat" if args.flat_mask else ""
+    mask_file = f"analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}{flat_str}_{pix_lab}.fits"
     mu.write_map(
-        f"{masks_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}.fits",
+        f"{masks_dir}/{mask_file}",
         analysis_mask,
-        pix_type=args.pix_type
+        pix_type=pix_type
     )
 
     if do_plots:
         mu.plot_map(
             analysis_mask,
             title="Analysis mask",
-            file_name=f"{plot_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}",
-            pix_type=args.pix_type,
+            file_name=f'{plot_dir}/{mask_file.replace(".fits", "")}',
+            pix_type=pix_type,
             lims=[-1, 1]
         )
 
     # Compute and plot spin derivatives
-    if args.pix_type == "car":
-        print("WARNING: Spin derivatives are not implemented yet. SKIPPING.")
-    else:
-        first, second = su.get_spin_derivatives(analysis_mask)
+    # DEBUG
+    print("mask file", f"{masks_dir}/{mask_file}")
+    first, second = mu.get_spin_derivatives(f"{masks_dir}/{mask_file}")
 
-        if do_plots:
-            mu.plot_map(
-                first,
-                title="First spin derivative",
-                file_name=f"{plot_dir}/first_spin_derivative"
-            )
-            mu.plot_map(
-                second,
-                title="Second spin derivative",
-                file_name=f"{plot_dir}/second_spin_derivative"
-            )
+    if do_plots:
+        mu.plot_map(
+            first,
+            pix_type=pix_type,
+            title="First spin derivative",
+            file_name=f"{plot_dir}/first_spin_derivative_apo{args.apod_radius}_{args.apod_type}{box_str}{flat_str}_{pix_lab}"
+        )
+        mu.plot_map(
+            second,
+            pix_type=pix_type,
+            title="Second spin derivative",
+            file_name=f"{plot_dir}/second_spin_derivative_apo{args.apod_radius}_{args.apod_type}{box_str}{flat_str}_{pix_lab}"
+        )
 
-        if args.verbose:
-            print("---------------------------------------------------------")
-            print("Using custom mask. "
-                  "Its spin derivatives have global min and max of:")
-            print("first:     ", np.amin(first), np.amax(first),
-                  "\nsecond:    ", np.amin(second), np.amax(second))
-            print("---------------------------------------------------------")
+    if args.verbose:
+        print("---------------------------------------------------------")
+        print("Using custom mask. "
+                "Its spin derivatives have global min and max of:")
+        print("first:     ", np.amin(first), np.amax(first),
+                "\nsecond:    ", np.amin(second), np.amax(second))
+        print("---------------------------------------------------------")
 
     print("\nSUMMARY")
     print("-------")
-    print(f"Wrote analysis mask to {masks_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}.fits")
-    print(f"Plot: {plot_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}.png")  # noqa
+    print(f"Wrote analysis mask to {masks_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}{flat_str}_{pix_lab}.fits")  # noqa
+    print(f"Plot: {plot_dir}/analysis_mask_apo{args.apod_radius}_{args.apod_type}{box_str}{flat_str}_{pix_lab}.png")  # noqa
     print("Parameters")
     print(f"    Galactic mask: {args.galactic_mask}")
     print(f"    External mask: {args.external_mask}")
@@ -260,7 +293,8 @@ if __name__ == "__main__":
     parser.add_argument("--out_dir", help="Output directory")
     parser.add_argument("--global_hits", help="Global hits map", default=None)
     parser.add_argument("--pix_type", help="Pixel type: car or hp")
-    parser.add_argument("--car_template", help="Car geometry template")
+    parser.add_argument("--car_template", help="Car geometry template", default=None)
+    parser.add_argument("--nside", help="HEALPix nside parameter", type=int, default=None)
     parser.add_argument("--n_bundles", help="Number of bundles", type=int)
     parser.add_argument("--map_set", help="Name of the map set")
     parser.add_argument("--map_dir", help="Map directory")
@@ -272,6 +306,9 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument("--point_source_mask",
                         help="Point source mask", default=None)
+    parser.add_argument("--smooth_radius", type=int,
+                        help="Gaussian smoothing radius in degrees",
+                        default=10)
     parser.add_argument("--apod_radius", type=int,
                         help="Apodization radius in degrees",
                         default=10)
@@ -283,6 +320,8 @@ if __name__ == "__main__":
     parser.add_argument("--decra_minmax", nargs=4, type=int,
                         help="DEC min, DEC max, RA min, RA max for box mask",
                         default=None)
+    parser.add_argument("--flat_mask", action="store_true",
+                        help="Assume hits are homogeneous across field.")
 
     parser.add_argument("--verbose", help="Verbose mode",
                         action="store_true")

@@ -35,11 +35,12 @@ def main(args):
             raise ValueError(f"sim_string_format does not have \
                              required placeholder {required_tag}")
 
-    # MPI related initialization
-    rank, size, comm = mpi.init(True)
+    # Initialize the loggers
+    logger = pp_util.init_logger("summary", verbosity=1)
+    logger_mute = pp_util.init_logger("mute", verbosity=0)
 
-    # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=3)
+    # MPI related initialization
+    rank, size, comm = mpi.init(True, logger=logger)
 
     # Where to store outputs
     out_dir = args.output_dir
@@ -59,6 +60,7 @@ def main(args):
     sim_dir = args.sim_dir
     sim_string_format = args.sim_string_format
     sim_ids = args.sim_ids
+    pure_types = args.pure_types
 
     # Creating the simulation indices range to filter
     if isinstance(sim_ids, list):
@@ -160,7 +162,6 @@ def main(args):
         # Process data here to have t2p leakage template
         # Only need to run it once for all simulations
         # and only the pre-demodulation part.
-        print(obs_id, wafer)
         # UPDATE: We don't worry about T-P leakage for purification (for now)
         # data_aman = pp_util.multilayer_load_and_preprocess(
         #     obs_id,
@@ -174,7 +175,8 @@ def main(args):
         start = time.time()
         logger.info(f"Processing {obs_id} {wafer}")
 
-        for sim_id, pure_type in product(sim_ids, [f"pure{i}" for i in "TEB"]):
+        for sim_id, pure_type in product(sim_ids,
+                                         [f"pure{i}" for i in pure_types]):
             logger.info(f"Processing {pure_type} for sim_id {sim_id:04d}")
             # Initialize a timer
             start0 = time.time()
@@ -203,13 +205,13 @@ def main(args):
                     configs_proc=configs_proc,
                     sim_map=sim,
                     meta=meta,
-                    logger=logger,
+                    logger=logger_mute,
                     t2ptemplate_aman=None  # data_aman
                 )
 
             except loader.LoaderError:
                 logger.info(
-                    f"ERROR: {obs_id} {wafer} {freq_channel} metadata is not "
+                    f"{obs_id} {wafer} {freq_channel} metadata is not "
                     "there. SKIPPING."
                 )
                 continue
@@ -224,7 +226,7 @@ def main(args):
                 aman, intra_obs_pair, pix_type, shape=None, wcs=wcs,
                 nside=nside, logger=logger
             )
-            print("len(wmap_dict)", len(wmap_dict))
+            logger.info(f"len(wmap_dict): {len(wmap_dict)}")
             for split_label in intra_obs_pair:
                 if (obs_id, wafer) in atomic_metadata[split_label]:
                     wmap = wmap_dict[split_label]
@@ -258,7 +260,7 @@ def main(args):
                 f"Filtered {pure_type} sim {sim_id:04d} in "
                 f"{end0 - start0:.1f} seconds."
             )
-        logger.info(f"Processed 3 x {len(sim_ids)} simulations for "
+        logger.info(f"Processed {len(pure_types)} x {len(sim_ids)} sims for "
                     f"{obs_id} {wafer} in {time.time() - start:.1f} seconds.")
     comm.Barrier()
 

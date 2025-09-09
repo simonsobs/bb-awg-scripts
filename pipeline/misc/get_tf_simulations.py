@@ -117,6 +117,7 @@ def main(args):
     """
     pix_type = args.pix_type
     n_sims = args.n_sims
+    id_sims_start = args.id_sims_start
     smooth_fwhm = args.smooth_fwhm
     nside = args.nside
     do_plot = not args.no_plots
@@ -151,10 +152,10 @@ def main(args):
     ps = 1 / (ells + 10) ** 2
     fl = bandlim_sine2(ells, 650, 50)
 
-    for id_sim in range(n_sims):
+    for id_sim in range(id_sims_start, id_sims_start+n_sims):
 
         np.random.seed(id_sim)
-        alms = hp.synalm(ps, lmax=1000)
+        alms = hp.synalm(ps, lmax=lmax_sim)
         alms = hp.almxfl(alms, fl)
 
         for i, tag in enumerate(["pureT", "pureE", "pureB"]):
@@ -167,7 +168,7 @@ def main(args):
                     fwhm=np.deg2rad(smooth_fwhm/60)
                 )
                 hp.write_map(
-                    f"{out_dir}/{tag}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}.fits",  # noqa
+                    f"{out_dir}/{tag}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
                     map,
                     overwrite=True
                 )
@@ -219,6 +220,11 @@ if __name__ == "__main__":
         "--n_sims",
         type=int,
         help="Number of simulations"
+    )
+    parser.add_argument(
+        "--id_sims_start",
+        type=int,
+        help="Simulation ID to start with"
     )
     parser.add_argument(
         "--out_dir",

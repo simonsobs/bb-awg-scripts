@@ -8,7 +8,7 @@ freq_channel: &freq_channel f090
 output_dir: &output_dir /cephfs/soukdata/user_data/kwolz/simpure/filtered_cmb_sims/satp3/f090/butter4_cutoff_1e-2
 
 sim_dir: /cephfs/soukdata/user_data/kwolz/simpure/cmb_sims
-sim_string_format: "cmbEB_19arcmin_fwhm30.0_sim{sim_id:04d}_CAR.fits"
+sim_string_format: "cmbEB_20arcmin_fwhm30.0_sim{sim_id:04d}_CAR.fits"
 sim_ids: 0,99  # [0,1,2,3,4]
 
 # (Optional for coadd_filtered_sims)

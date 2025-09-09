@@ -150,7 +150,7 @@ def main(args):
         if args.pix_type == "hp":
             map = hp.alm2map(alms, nside=nside)
             hp.write_map(
-                f"{out_dir}/cmb{pols_keep}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}.fits",  # noqa
+                f"{out_dir}/cmb{pols_keep}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
                 map,
                 overwrite=True
             )

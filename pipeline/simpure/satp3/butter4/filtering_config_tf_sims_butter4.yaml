@@ -9,7 +9,8 @@ output_dir: &output_dir /cephfs/soukdata/user_data/kwolz/simpure/filtered_pure_s
 
 sim_dir: /cephfs/soukdata/user_data/kwolz/simpure/input_sims
 sim_string_format: "{pure_type}_20.0arcmin_fwhm30.0_sim{sim_id:04d}_CAR.fits"
-sim_ids: 0,199  # [0,1,2,3,4]
+pure_types: E
+sim_ids: 700,999  # [0,1,2,3,4]
 
 # (Optional for coadd_filtered_sims)
 intra_obs_splits: [scan_left, scan_right]
