@@ -30,12 +30,12 @@ def main(args):
         raise ValueError(
             "Unknown pixel type, must be 'car' or 'hp'."
         )
-    for required_tag in ["{sim_id"]:  # , "{pure_type}"]:
+    for required_tag in ["{sim_id"]:
         if required_tag not in args.sim_string_format:
             raise ValueError(f"sim_string_format does not have \
                              required placeholder {required_tag}")
 
-        # MPI related initialization
+    # MPI related initialization
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
@@ -143,9 +143,6 @@ def main(args):
     # * read simulated map
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
-
-    # UPDATE: bring back parallel loop over sims
-    # for obs_id, wafer, sim_id in local_mpi_list:
     for obs_id, wafer in local_mpi_list:
         # Get axis manager metadata for the given obs
         dets = {"wafer_slot": wafer, "wafer.bandpass": freq_channel}
