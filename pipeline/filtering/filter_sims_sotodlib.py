@@ -59,6 +59,14 @@ def main(args):
     sim_ids = args.sim_ids
     pure_types = [f"pure{i}" for i in "TEB"] if "{pure_type}" in sim_string_format else ["signal map"]  # noqa
 
+    # Ensure that freq_channels for the metadata follow the "f090" convention.
+    # We keep the original labels in a dict called freq_labels.
+    freq_labels = {}
+    for f in args.freq_channels:  # If these don't contain the "f", add
+        freq_channel = f"f{f}" if "f" not in f else f
+        freq_labels[freq_channel] = f  # dict values are the original labels
+    freq_channels = list(freq_labels.keys())
+
     # Creating the simulation indices range to filter
     if isinstance(sim_ids, list):
         sim_ids = np.array(sim_ids, dtype=int)
@@ -73,10 +81,11 @@ def main(args):
 
     # Create output directories
     atomics_dir = {}
-    for freq_channel, patch in product(args.freq_channels, args.patches):
+    for freq_channel, patch in product(freq_channels, args.patches):
         atomics_dir[(patch, freq_channel)] = {}
-        out_dir = args.output_dir.format(patch=patch,
-                                         freq_channel=freq_channel)
+        out_dir = args.output_dir.format(
+            patch=patch, freq_channel=freq_labels[freq_channel]
+        )
         for sim_id in sim_ids:
             atomics_dir[patch, freq_channel][sim_id] = f"{out_dir}/atomic_sims/{sim_id:04d}"  # noqa
             os.makedirs(atomics_dir[patch, freq_channel][sim_id],
@@ -122,7 +131,6 @@ def main(args):
         ctimes[patch] = bundle_coordinator.get_ctimes(bundle_id=bundle_id)
 
     # Connect the the atomic map DB
-    atomic_metadata = []
     db_con = sqlite3.connect(atom_db)
     db_cur = db_con.cursor()
 
@@ -132,7 +140,7 @@ def main(args):
         (patch, freq_channel): fu.get_query_atomics(
             freq_channel, ctimes[patch], query_restrict=query_restrict
         )
-        for patch, freq_channel in product(args.patches, args.freq_channels)
+        for patch, freq_channel in product(args.patches, freq_channels)
     }
 
     atomic_metadata = {split_label: [] for split_label in intra_obs_splits}
@@ -140,6 +148,7 @@ def main(args):
     for (patch, freq_channel), query in queries.items():
         res_science = db_cur.execute(query)
         res_science = res_science.fetchall()
+
         for obs_id, wafer in res_science:
             atomic_metadata["science"] += [(patch, freq_channel,
                                             obs_id, wafer)]
@@ -184,6 +193,8 @@ def main(args):
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
     for patch, freq_channel, obs_id, wafer in local_mpi_list:
+        # if (obs_id, wafer) != ("obs_1716645605_satp1_1101100", "ws1"):
+        #     continue
         start = time.time()
 
         # Get axis manager metadata for the given obs
@@ -224,8 +235,11 @@ def main(args):
             start0 = time.time()
 
             # Path to simulation
-            map_fname = sim_string_format.format(sim_id=sim_id,
-                                                 sim_type=sim_type)
+            map_fname = sim_string_format.format(
+                sim_id=sim_id,
+                sim_type=sim_type,
+                freq_channel=freq_labels[freq_channel]
+            )
             map_file = f"{sim_dir}/{map_fname}"
 
             # Handling pixellization
@@ -273,14 +287,14 @@ def main(args):
                     w = weights_dict[split_label]
 
                     # Saving filtered atomics to disk
-                    atomic_fname = map_fname.replace(
+                    atomic_fname = map_fname.split("/")[-1].replace(
                         mfmt,
                         f"_{obs_id}_{wafer}_{split_label}{mfmt}"
                     )
 
                     f_wmap = atomics_dir[patch, freq_channel][sim_id]
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
-                    f_w = f_wmap.replace(mfmt, '_weights' + mfmt)
+                    f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
 
                     if pix_type == "car":
                         enmap.write_map(f_wmap, wmap)
