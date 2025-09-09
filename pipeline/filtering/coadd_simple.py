@@ -16,10 +16,13 @@ sys.path.append(
 import mpi_utils as mpi # noqa
 import bundling_utils as bu  # noqa
 import filtering_utils as fu  # noqa
-import coordinator as coord  # noqa
 
 
 def main(args):
+    """
+    "Simple" version of coadder that doesn't depend on bundle_db, but just
+    coadds all atomics in an atomic db.
+    """
     if args.pix_type not in ["hp", "car"]:
         raise ValueError(
             "Unknown pixel type, must be 'car' or 'hp'."
@@ -93,7 +96,6 @@ def main(args):
         res = res.fetchall()
         atomic_metadata[split_label] = [(obs_id, wafer)
                                         for obs_id, wafer in res]
-    #atomic_metadata = [(obs_id, wafer) for obs_id, wafer in res]
     db_con.close()
 
     mpi_shared_list = [(sim_id, pure_type)
@@ -128,7 +130,7 @@ def main(args):
                 sim_id, pure_type, atomic_metadata[split_label],
                 freq_channel, map_dir, split_label,
                 sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                remove_atomics=True,  # CHANGED: Remove all atomics
+                remove_atomics=True,
                 logger=logger
             )
             wmap_list += wmap_l

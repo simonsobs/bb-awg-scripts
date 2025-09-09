@@ -18,13 +18,14 @@ sys.path.append(
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
 )
-import coordinator as coord  # noqa
 import filtering_utils as fu  # noqa
 import mpi_utils as mpi  # noqa
 
 
 def main(args):
     """
+    "Simple" version of filter_sims_sotodlib.py that doesn't depend on
+    the bundling DB and simply filters all atomic maps in the atomics DB.
     """
     if args.pix_type not in ["hp", "car"]:
         raise ValueError(
@@ -78,7 +79,6 @@ def main(args):
     atomics_dir = {}
     for sim_id in sim_ids:
         atomics_dir[sim_id] = atomic_sim_dir.format(sim_id=sim_id)
-        # atomics_dir[sim_id] = f"{out_dir}/{sim_id:04d}/{args.freq_channel}"  # noqa
         os.makedirs(atomics_dir[sim_id], exist_ok=True)
 
     # Arguments related to pixellization
