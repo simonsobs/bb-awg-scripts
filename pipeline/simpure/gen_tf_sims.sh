@@ -13,6 +13,10 @@ mkdir -p $out_dir
 bb_awg_scripts_dir=/shared_home/kwolz/bbdev/bb-awg-scripts
 pwg_scripts_dir=/shared_home/kwolz/bbdev/pwg-scripts
 
+
+## Generate a set of pure-T/E/B simulations needed for 
+## a) E-to-B leakage deprojection
+## b) transfer function estimation
 python ${bb_awg_scripts_dir}/pipeline/misc/get_tf_simulations.py \
     --pix_type=$pix_type \
     --nside=$nside \
