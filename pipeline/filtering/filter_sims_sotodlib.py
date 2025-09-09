@@ -38,6 +38,10 @@ def main(args):
     # MPI related initialization
     rank, size, comm = mpi.init(True)
 
+    print("Rank, size", rank, size)
+    print("is MPI on?", mpi.is_mpion())
+    sys.exit()
+
     # Initialize the logger
     logger = pp_util.init_logger("benchmark", verbosity=3)
 
