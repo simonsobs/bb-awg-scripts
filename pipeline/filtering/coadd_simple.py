@@ -114,10 +114,6 @@ def main(args):
         for split_label in intra_obs_pair:
             print(split_label, "len(atomic_metadata):",
                   len(atomic_metadata[split_label]))
-<<<<<<< HEAD
-=======
-                  #len(atomic_metadata[split_label]))
->>>>>>> b421020 (merging main into simpure (2))
             wmap_l, w_l = fu.get_atomics_maps_list(
                 sim_id, pure_type, atomic_metadata[split_label],
                 freq_channel, map_dir, split_label,
