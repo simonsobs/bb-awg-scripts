@@ -11,7 +11,7 @@ from coadder import SignFlipper
 from coordinator import BundleCoordinator
 import bundling_utils
 
-sys.path.append("/home/ccaimapo/SimonsObs/bb-awg-scripts/pipeline/misc")
+sys.path.append("/home/sa5705/software/bb-awg-scripts/pipeline/misc")
 import mpi_utils as mpi  # noqa
 
 def main(args, size, rank, comm):
