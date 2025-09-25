@@ -24,8 +24,8 @@ def yaml_loader(config):
 
 def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
                           atomic_sim_dir, split_label, sim_string_format,
-                          mfmt=".fits", pix_type="car", remove_atomics=False,
-                          logger=None):
+                          mfmt=".fits", pix_type="car",
+                          logger=None, ignore_if_nan=True):
     """
     Returns a list of filtered atomic maps that correpsond to a given
     simulation ID, given a list of atomic metadata.
@@ -44,10 +44,10 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
             Atomic file name ending.
         pix_type: str
             Pixelization type; either 'car' or 'hp'.
-        remove_atomics: bool
-            Whether to remove atomic map files after loading into list.
         logger: sotodlib.preprocess.preprocess_util.logger
             Logger instance to print output.
+        ignore_if_nan: bool
+            Whether to skip the atomics that contain at least one NAN value.
     Returns:
         wmap_list: list
             List of weighted maps (numpy.ndmap or numpy.ndarray)
@@ -87,12 +87,12 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
             wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
             w = hp.read_map(fname_w, field=range(3), nest=True)
 
-        wmap_list.append(wmap)
-        w_list.append(w)
+        if np.isnan(wmap).any() or np.isnan(w).any():
+            logger.debug(f"Atomic has NANs. Skipping {fname_wmap}")
+        else:
+            wmap_list.append(wmap)
+            w_list.append(w)
 
-        if remove_atomics:
-            os.remove(fname_wmap)
-            os.remove(fname_w)
     num_ideal = id+1
     num_real = len(wmap_list)
     completeness = float(num_real / num_ideal)
@@ -149,6 +149,7 @@ def get_query_atomics(freq_channel, ctimes, split_label="science",
                       query_restrict="median_weight_qu < 2e10"):
     """
     """
+    ctimes = list(map(int, ctimes))
     query = f"""
             SELECT obs_id, wafer
             FROM atomic
@@ -297,10 +298,12 @@ class Cfg:
     fp_thin: Optional[int] = 8
     nbatch_atomics: Optional[int] = None
     remove_atomics: Optional[bool] = False
+    base_dir: Optional[str] = None
 
-    def __post_init__(self):
-        # Add extra defaults for private args not expected in config file
-        pass
+    def update(self, dict):
+        # Add extra private args not expected in config file
+        for k, v in dict.items():
+            setattr(self, k, v)
 
     @classmethod
     def from_yaml(cls, path) -> "Cfg":
