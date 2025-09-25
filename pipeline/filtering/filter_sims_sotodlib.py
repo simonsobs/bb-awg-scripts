@@ -56,6 +56,25 @@ def main(args):
     sim_dir = args.sim_dir
     sim_string_format = args.sim_string_format
     sim_ids = args.sim_ids
+    if isinstance(sim_ids, str):
+        if "," in sim_ids:
+            id_min, id_max = sim_ids.split(",")
+            sim_ids = np.arange(int(id_min), int(id_max)+1)
+        else:
+            sim_ids = np.array([int(sim_ids)])
+
+    num_sims = args.num_sims if args.num_sims is not None else len(sim_ids)
+    if len(sim_ids) != num_sims:
+        raise ValueError("Incompatible number of sims "
+                         "between config and parser")
+    id_sim_batch = args.id_sim_batch
+    num_sim_batch = args.num_sim_batch if args.num_sim_batch is not None else len(sim_ids)  # noqa
+    sim_ids = [
+        sim_ids[sim_id]
+        for sim_id in range(id_sim_batch*num_sim_batch,
+                            min(num_sims, (id_sim_batch+1)*num_sim_batch))
+    ]
+    logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Ensure that freq_channels for the metadata follow the "f090" convention.
     # We keep the original labels in a dict called freq_labels.
@@ -267,6 +286,13 @@ def main(args):
                     "SKIPPING."
                 )
                 continue
+            except (OSError, KeyError) as err:
+                logger.warning(
+                    f"{err} "
+                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
+                    "SKIPPING."
+                )
+                continue
 
             if aman.dets.count <= 1:
                 continue
@@ -311,7 +337,7 @@ def main(args):
                         f"{sim_type}, sim {sim_id} with setup "
                         f"({patch}, {freq_channel}, {obs_id}, {wafer})")
 
-        logger.info(f"Processed 3 x {len(sim_ids)} simulations for "
+        logger.info(f"Processed {len(sim_ids)} simulations for "
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
                     f"{time.time() - start:.1f} seconds.")
     comm.Barrier()
@@ -322,7 +348,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
     )
-
+    parser.add_argument(
+        "--id_sim_batch", type=int, default=0,
+        help="ID of the  to be processed in parallel."
+    )
+    parser.add_argument(
+        "--num_sim_batch", type=int, default=None,
+        help="Number of simulations to be processed in a batch in parallel."
+    )
+    parser.add_argument(
+        "--num_sims", type=int, default=None,
+        help="Total number of simulations to be processed."
+    )
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
+    config.update(vars(args))
+
     main(config)

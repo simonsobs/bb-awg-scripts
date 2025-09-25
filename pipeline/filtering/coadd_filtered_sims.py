@@ -89,6 +89,18 @@ def main(args):
             sim_ids = np.arange(int(id_min), int(id_max)+1)
         else:
             sim_ids = np.array([int(sim_ids)])
+    num_sims = args.num_sims if args.num_sims is not None else len(sim_ids)
+    if len(sim_ids) != num_sims:
+        raise ValueError("Incompatible number of sims "
+                         "between config and parser")
+    id_sim_batch = args.id_sim_batch
+    num_sim_batch = args.num_sim_batch if args.num_sim_batch is not None else len(sim_ids)  # noqa
+    sim_ids = [
+        sim_ids[sim_id]
+        for sim_id in range(id_sim_batch*num_sim_batch,
+                            min(num_sims, (id_sim_batch+1)*num_sim_batch))
+    ]
+    logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Pixelization arguments
     pix_type = args.pix_type
@@ -301,8 +313,9 @@ def main(args):
         assert os.path.isdir(map_dir), map_dir
 
         if not ib:
-            logger.info(f"Loading atomics for ({patch}, {freq_channel})"
-                        f" to filter {sim_type}, sim {sim_id}")
+            logger.info(f"Loading atomics for ({patch}, {freq_channel}, "
+                        f"{split_label})"
+                        f" to filter {sim_type}, {split_label}, sim {sim_id}")
 
         w_list, wmap_list = ([], [])
 
@@ -314,14 +327,14 @@ def main(args):
                     atomic_metadata[patch, freq_channel, coadd, ib],
                     freq_labels[freq_channel], map_dir, coadd,
                     sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                    logger=logger, remove_atomics=args.remove_atomics
+                    logger=logger
                 )
                 wmap_list += wmap_l
                 w_list += w_l
             current_gb, peak_gb = [1024**(-3) * c
                                    for c in tracemalloc.get_traced_memory()]
             logger.info("Traced Memory for 'science' (Current, Peak): "
-                        f"({current_gb:.2f} GB, {peak_gb:.2f} GB")
+                        f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
             tracemalloc.stop()
         elif split_label in inter_obs_splits:
             for coadd in intra_obs_pair:
@@ -330,7 +343,7 @@ def main(args):
                     atomic_metadata[patch, freq_channel, split_label, coadd, ib],  # noqa
                     freq_channel, map_dir, coadd,
                     sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                    logger=logger, remove_atomics=args.remove_atomics
+                    logger=logger
                 )
                 wmap_list += wmap_l
                 w_list += w_l
@@ -340,11 +353,12 @@ def main(args):
                 atomic_metadata[patch, freq_channel, split_label, ib],
                 freq_channel, map_dir, split_label,
                 sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                logger=logger, remove_atomics=args.remove_atomics
+                logger=logger
             )
 
         if not ib:
-            logger.info(f"Coadding atomics for ({patch}, {freq_channel})"
+            logger.info(f"Coadding atomics for ({patch}, {freq_channel}, "
+                        f"{split_label})"
                         f" to filter {sim_type}, sim {sim_id}")
 
         map_filtered, weights = bu.coadd_maps(
@@ -381,7 +395,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
     )
+    parser.add_argument(
+        "--id_sim_batch", type=int, default=0,
+        help="Number of simulations to be processed in parallel."
+    )
+    parser.add_argument(
+        "--num_sim_batch", type=int, default=None,
+        help="Number of batches of simulations to be processed in parallel."
+    )
+    parser.add_argument(
+        "--num_sims", type=int, default=None,
+        help="Total number of simulations to be processed."
+    )
 
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
+    config.update(vars(args))
+
     main(config)
