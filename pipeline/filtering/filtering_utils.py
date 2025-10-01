@@ -274,6 +274,10 @@ class Cfg:
         splits
     remove_atomics: bool
         Removes atomic maps from disk upon coadding them
+    overwrite_atomics: bool
+        Overwrites atomic sim maps if they exist
+    base_dir: str
+        Optional directory path for compatibility reasons
     """
     bundle_db: str
     atomic_db: str
@@ -298,6 +302,7 @@ class Cfg:
     fp_thin: Optional[int] = 8
     nbatch_atomics: Optional[int] = None
     remove_atomics: Optional[bool] = False
+    overwrite_atomics: Optional[bool] = False
     base_dir: Optional[str] = None
 
     def update(self, dict):

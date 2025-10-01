@@ -39,7 +39,7 @@ def main(args):
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=3)
+    logger = pp_util.init_logger("benchmark", verbosity=2)
 
     # Path to databases
     bundle_dbs = {patch: args.bundle_db.format(patch=patch)
@@ -62,18 +62,8 @@ def main(args):
             sim_ids = np.arange(int(id_min), int(id_max)+1)
         else:
             sim_ids = np.array([int(sim_ids)])
-
-    num_sims = args.num_sims if args.num_sims is not None else len(sim_ids)
-    if len(sim_ids) != num_sims:
-        raise ValueError("Incompatible number of sims "
-                         "between config and parser")
-    id_sim_batch = args.id_sim_batch
-    num_sim_batch = args.num_sim_batch if args.num_sim_batch is not None else len(sim_ids)  # noqa
-    sim_ids = [
-        sim_ids[sim_id]
-        for sim_id in range(id_sim_batch*num_sim_batch,
-                            min(num_sims, (id_sim_batch+1)*num_sim_batch))
-    ]
+    else:
+        raise ValueError("Argument 'sim_ids' has the wrong format")
     logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Ensure that freq_channels for the metadata follow the "f090" convention.
@@ -83,18 +73,6 @@ def main(args):
         freq_channel = f"f{f}" if "f" not in f else f
         freq_labels[freq_channel] = f  # dict values are the original labels
     freq_channels = list(freq_labels.keys())
-
-    # Creating the simulation indices range to filter
-    if isinstance(sim_ids, list):
-        sim_ids = np.array(sim_ids, dtype=int)
-    elif isinstance(sim_ids, str):
-        if "," in sim_ids:
-            id_min, id_max = sim_ids.split(",")
-            sim_ids = np.arange(int(id_min), int(id_max)+1)
-        else:
-            sim_ids = np.array([int(sim_ids)])
-    else:
-        raise ValueError("Argument 'sim_ids' has the wrong format")
 
     # Create output directories
     atomics_dir = {}
@@ -223,6 +201,10 @@ def main(args):
             logger.warning(f"NO METADATA: "
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
+        except OSError as err:
+            logger.warning(f"{err}: "
+                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            continue
 
         # Focal plane thinning
         if args.fp_thin is not None:
@@ -247,17 +229,43 @@ def main(args):
 
         for sim_id, sim_type in product(sim_ids, args.sim_types):
 
-            logger.info(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                        f" to filter {sim_type}, sim {sim_id}")
-            start0 = time.time()
-
-            # Path to simulation
+            # Path to unfiltered simulation
             map_fname = sim_string_format.format(
                 sim_id=sim_id,
                 sim_type=sim_type,
                 freq_channel=freq_labels[freq_channel]
             )
             map_file = f"{sim_dir}/{map_fname}"
+
+            # First, check if all atomic maps for this simulation exist.
+            maps_exist = True
+            for split_label in intra_obs_splits:
+                if (patch, freq_channel, obs_id, wafer) in atomic_metadata[split_label]:  # noqa
+
+                    # Saving filtered atomics to disk
+                    atomic_fname = map_fname.split("/")[-1].replace(
+                        mfmt,
+                        f"_{obs_id}_{wafer}_{split_label}{mfmt}"
+                    )
+
+                    f_wmap = atomics_dir[patch, freq_channel][sim_id]
+                    f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
+                    f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
+
+                    if not (os.path.isfile(f_wmap) and os.path.isfile(f_w)):
+                        maps_exist = False
+
+            # If they exist and we don't overwrite, skip this simulation.
+            if maps_exist and not args.overwrite_atomics:
+                logger.info(
+                    f"Map exists: ({patch}, {freq_channel}, {obs_id}, {wafer})"
+                    f" to filter {sim_type}, sim {sim_id}"
+                )
+                continue
+
+            logger.info(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
+                        f" to filter {sim_type}, sim {sim_id}")
+            start0 = time.time()
 
             # Handling pixellization
             if args.pix_type == "car":
@@ -349,16 +357,9 @@ if __name__ == "__main__":
         "--config_file", type=str, help="yaml file with configuration."
     )
     parser.add_argument(
-        "--id_sim_batch", type=int, default=0,
-        help="ID of the  to be processed in parallel."
-    )
-    parser.add_argument(
-        "--num_sim_batch", type=int, default=None,
-        help="Number of simulations to be processed in a batch in parallel."
-    )
-    parser.add_argument(
-        "--num_sims", type=int, default=None,
-        help="Total number of simulations to be processed."
+        "--sim_ids", type=str, default=0,
+        help="Simulations to be processed, in format [first],[last]."
+             "Overwrites the yaml file configs."
     )
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)

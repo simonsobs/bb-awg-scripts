@@ -89,17 +89,8 @@ def main(args):
             sim_ids = np.arange(int(id_min), int(id_max)+1)
         else:
             sim_ids = np.array([int(sim_ids)])
-    num_sims = args.num_sims if args.num_sims is not None else len(sim_ids)
-    if len(sim_ids) != num_sims:
-        raise ValueError("Incompatible number of sims "
-                         "between config and parser")
-    id_sim_batch = args.id_sim_batch
-    num_sim_batch = args.num_sim_batch if args.num_sim_batch is not None else len(sim_ids)  # noqa
-    sim_ids = [
-        sim_ids[sim_id]
-        for sim_id in range(id_sim_batch*num_sim_batch,
-                            min(num_sims, (id_sim_batch+1)*num_sim_batch))
-    ]
+    else:
+        raise ValueError("Argument 'sim_ids' has the wrong format")
     logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Pixelization arguments
@@ -396,18 +387,10 @@ if __name__ == "__main__":
         "--config_file", type=str, help="yaml file with configuration."
     )
     parser.add_argument(
-        "--id_sim_batch", type=int, default=0,
-        help="Number of simulations to be processed in parallel."
+        "--sim_ids", type=str, default=0,
+        help="Simulations to be processed, in format [first],[last]."
+             "Overwrites the yaml file configs."
     )
-    parser.add_argument(
-        "--num_sim_batch", type=int, default=None,
-        help="Number of batches of simulations to be processed in parallel."
-    )
-    parser.add_argument(
-        "--num_sims", type=int, default=None,
-        help="Total number of simulations to be processed."
-    )
-
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
     config.update(vars(args))
