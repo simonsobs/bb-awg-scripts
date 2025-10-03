@@ -63,7 +63,7 @@ def main(args, parallelizor=None):
 
     atomic_list = None
     if args.atomic_list is not None:
-        atomic_list = np.load(args.atomic_list)["atomic_list"]
+        atomic_list = np.load(args.atomic_list)
 
     car_map_template = args.car_map_template
 
@@ -187,9 +187,15 @@ def main(args, parallelizor=None):
                 plt.savefig(out_fname.replace(".fits", f"{p}.png"))
                 plt.close()
 
-
-def _main(config_file, parallelizor):
+def _main(args, parallelizor):
+    config_file = args.config_file
     config = bundling_utils.Cfg.from_yaml(config_file)
+
+    if args.atomic_list is not None:
+        config.atomic_list = args.atomic_list
+        config.map_string_format = config.map_string_format.replace("map.fits", f"{args.atomic_list[:-4]}_map.fits")
+        print(f"Set atomic_list to {config.atomic_list}")
+
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
 
@@ -286,6 +292,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled maps")
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
+    )
+    parser.add_argument(
+        "--atomic_list", type=str, help="atomic list"
     )
     parser.add_argument(
         "--nproc", type=int, default=1, help="Number of parallel processes for concurrent futures."
