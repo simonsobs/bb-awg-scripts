@@ -287,10 +287,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
     )
+    parser.add_argument(
+        "--nproc", type=int, default=1, help="Number of parallel processes for concurrent futures."
+    )
 
     args = parser.parse_args()
-    config = bundling_utils.Cfg.from_yaml(args.config_file)
-    nproc = config.nproc
-    rank, executor, as_completed_callable = get_exec_env(nproc)
+    rank, executor, as_completed_callable = get_exec_env(args.nproc)
     if rank == 0:
+        try:
+            nproc = executor.num_workers
+        except AttributeError:
+            nproc = executor._max_workers
         _main(args.config_file, (executor, as_completed_callable, nproc))
