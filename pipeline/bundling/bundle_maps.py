@@ -187,7 +187,7 @@ def main(args, parallelizor=None):
                 plt.savefig(out_fname.replace(".fits", f"{p}.png"))
                 plt.close()
 
-                
+
 def _main(config_file, parallelizor):
     config = bundling_utils.Cfg.from_yaml(config_file)
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
@@ -294,5 +294,3 @@ if __name__ == "__main__":
     rank, executor, as_completed_callable = get_exec_env(nproc)
     if rank == 0:
         _main(args.config_file, (executor, as_completed_callable, nproc))
-                        
-
