@@ -202,8 +202,8 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     abscal: array
         Multiplicative factor for each map. Output maps will be multiplied
         by this number; the weights map will get abscal**-2
-    nproc: int
-        Number of parallel processes to use. 1 for serial.
+    parallelizor: tuple
+        (MPICommExecutor or ProcessPoolExecutor, as_completed_callable, num_workers)
 
     Returns
     -------
@@ -408,14 +408,14 @@ def _make_parallel_proc(fn, parallelizor):
     fn: function
         coaddition function with input params (list of filenames, template map)
         and return: coadded map
-    nproc_default: int
-        Default number of processes to use
+    parallelizor: tuple
+        (MPICommExecutor or ProcessPoolExecutor, as_completed_callable, num_workers)
 
     Returns
     -------
     fn: function
         Parallelized coaddition function with same input params, plus optional
-        nproc=nproc_default
+        nproc=num_workers from parallelizor
     """
     exe, as_completed, nproc = parallelizor
     def parallel_fn(filenames, template, *args, nproc=nproc, **kwargs):
@@ -588,8 +588,6 @@ class Cfg:
         Wafer label, e.g. 'ws0'. May be a list of strings.
     save_fnames: bool
         Save the atomic map filenames for each bundle
-    nproc: int
-        Number of parallel processes to use in coadd
     atomic_list: str
         Path to npy file of atomic map names to restrict the atomic db
     abscal: bool
@@ -624,7 +622,6 @@ class Cfg:
     car_map_template: Optional[str] = None
     wafer: Optional[str] = None
     save_fnames: bool = False
-    nproc: int = 1
     atomic_list: Optional[str] = None
     abscal: bool = False
     tel: Optional[str] = None

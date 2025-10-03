@@ -341,8 +341,8 @@ class Bundler(_Coadder):
             belong to.
         abscal: bool
             Apply saved abscal factors if True.
-        nproc: int
-            Number of parallel processes to use. 1 for serial.
+        parallelizor: tuple
+            (MPICommExecutor or ProcessPoolExecutor, as_completed_callable, num_workers)
 
         Returns
         -------
