@@ -1,0 +1,10 @@
+Use get_psd_info.py to make an archive containing the mean PSDs. This is adapted from Max's script (see Confluence:TOD Processing Infrastructure Introduction)
+You may need to modify the names of some fields to match the preprocess config. There is a _v1 version for ISO v1.
+Run as:
+python get_psd_info.py preprocess_archive.h5 preprocess_config.yaml --nproc nproc --savename my_info.npy
+or use srun for mpi. See provided slurm script.
+Note this may take several hours.
+
+compute_ratios.py takes that archive as input and produces a list of the atomic maps with "r" values, selection lists that can be passed to the bundler, and optionally plots of the PSDs and r distribution.
+You can just run as python compute_ratios.py after editing the paths and other params in the __main__ function. It's a few seconds on a login node.
+
