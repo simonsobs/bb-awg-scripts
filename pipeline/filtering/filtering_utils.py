@@ -25,7 +25,8 @@ def yaml_loader(config):
 def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
                           atomic_sim_dir, split_label, sim_string_format,
                           mfmt=".fits", pix_type="car",
-                          logger=None, ignore_if_nan=True):
+                          logger=None, ignore_if_nan=True,
+                          file_stats_only=False):
     """
     Returns a list of filtered atomic maps that correpsond to a given
     simulation ID, given a list of atomic metadata.
@@ -48,6 +49,8 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
             Logger instance to print output.
         ignore_if_nan: bool
             Whether to skip the atomics that contain at least one NAN value.
+        file_stats_only: bool
+            If True, only output natomics_total, natomics_existing
     Returns:
         wmap_list: list
             List of weighted maps (numpy.ndmap or numpy.ndarray)
@@ -56,6 +59,7 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
     """
     wmap_list, w_list = ([], [])
 
+    num_real = 0
     for id, (obs_id, wafer) in enumerate(atomic_metadata):
         if sim_id is None:
             atomic_fname = sim_string_format.format(sim_id="NULL",
@@ -79,30 +83,37 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
         # case, it is acceptable to just ignore those when coadding.
         if not (os.path.isfile(fname_wmap) and os.path.isfile(fname_w)):
             continue
-
-        if pix_type == "car":
-            wmap = enmap.read_map(fname_wmap)
-            w = enmap.read_map(fname_w)
-        elif pix_type == "hp":
-            wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
-            w = hp.read_map(fname_w, field=range(3), nest=True)
-
-        if np.isnan(wmap).any() or np.isnan(w).any():
-            logger.debug(f"Atomic has NANs. Skipping {fname_wmap}")
         else:
-            wmap_list.append(wmap)
-            w_list.append(w)
+            num_real += 1
+
+        if not file_stats_only:
+            if pix_type == "car":
+                wmap = enmap.read_map(fname_wmap)
+                w = enmap.read_map(fname_w)
+            elif pix_type == "hp":
+                wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
+                w = hp.read_map(fname_w, field=range(3), nest=True)
+
+            if np.isnan(wmap).any() or np.isnan(w).any():
+                logger.debug(f"Atomic has NANs. Skipping {fname_wmap}")
+            else:
+                wmap_list.append(wmap)
+                w_list.append(w)
 
     num_ideal = id+1
-    num_real = len(wmap_list)
+    if not file_stats_only:
+        num_real = len(wmap_list)
     completeness = float(num_real / num_ideal)
     logging = logger.info
-    if completeness < 0.98:
-        logging = logger.warning
-    if completeness < 0.90:
-        logging = logger.error
-    logging(f"{num_ideal} atomics expected, {num_real} atomics at disk.")
+    if not file_stats_only:
+        if completeness < 0.98:
+            logging = logger.warning
+        if completeness < 0.90:
+            logging = logger.error
+        logging(f"{num_ideal} atomics expected, {num_real} atomics at disk.")
 
+    if file_stats_only:
+        return num_ideal, num_real
     return wmap_list, w_list
 
 
@@ -302,7 +313,7 @@ class Cfg:
     fp_thin: Optional[int] = 8
     nbatch_atomics: Optional[int] = None
     remove_atomics: Optional[bool] = False
-    overwrite_atomics: Optional[bool] = False
+    overwrite_atomics: Optional[bool] = True
     base_dir: Optional[str] = None
 
     def update(self, dict):

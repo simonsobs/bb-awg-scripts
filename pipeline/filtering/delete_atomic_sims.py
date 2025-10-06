@@ -80,8 +80,9 @@ def main(args):
     split_labels_all = list(dict.fromkeys(split_labels_all))
     suffixes = [".fits", "_weights.fits"]
 
-    maps_absent = []
+    maps_absent_all = []
     for sim_id, patch, freq_channel in product(sim_ids, patches, freq_channels):  # noqa
+        maps_absent = []
         coadded_dir = out_dir.format(
             patch=patch,
             freq_channel=freq_labels[freq_channel]
@@ -98,7 +99,14 @@ def main(args):
             )
             if not os.path.isfile(f"{coadded_dir}/{out_fname}"):
                 maps_absent.append(out_fname)
-    if any(maps_absent):
+                maps_absent_all.append(out_fname)
+        if any(maps_absent):
+            logger.warning(f"(sim {sim_id}, {patch}, {freq_channel}): "
+                           f"{len(maps_absent)} files missing.")
+        else:
+            logger.debug(f"(sim {sim_id}, {patch}, {freq_channel})")
+
+    if any(maps_absent_all) and not args.force_delete:
         raise FileNotFoundError(f"{len(maps_absent)} files missing.")
     logger.info("All bundles are present.")
 
@@ -110,7 +118,8 @@ def main(args):
             freq_channel=freq_labels[freq_channel],
             sim_id=sim_id
         )
-        if os.path.isdir(map_dir) and args.remove_atomics:
+        if os.path.isdir(map_dir) and (args.remove_atomics
+                                       or args.force_delete):
             shutil.rmtree(map_dir)
             logger.info(f"Deleting {map_dir}")
 
@@ -125,6 +134,11 @@ if __name__ == "__main__":
         help="Simulations to be processed, in format [first],[last]."
              "Overwrites the yaml file configs."
     )
+    parser.add_argument(
+        "--force_delete", action="store_true",
+        help="Force delete atomics."
+    )
+
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
     config.update(vars(args))
