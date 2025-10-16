@@ -56,6 +56,15 @@ def main(args):
     sim_dir = args.sim_dir
     sim_string_format = args.sim_string_format
     sim_ids = args.sim_ids
+    if isinstance(sim_ids, str):
+        if "," in sim_ids:
+            id_min, id_max = sim_ids.split(",")
+            sim_ids = np.arange(int(id_min), int(id_max)+1)
+        else:
+            sim_ids = np.array([int(sim_ids)])
+    else:
+        raise ValueError("Argument 'sim_ids' has the wrong format")
+    logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Ensure that freq_channels for the metadata follow the "f090" convention.
     # We keep the original labels in a dict called freq_labels.
@@ -64,18 +73,6 @@ def main(args):
         freq_channel = f"f{f}" if "f" not in f else f
         freq_labels[freq_channel] = f  # dict values are the original labels
     freq_channels = list(freq_labels.keys())
-
-    # Creating the simulation indices range to filter
-    if isinstance(sim_ids, list):
-        sim_ids = np.array(sim_ids, dtype=int)
-    elif isinstance(sim_ids, str):
-        if "," in sim_ids:
-            id_min, id_max = sim_ids.split(",")
-            sim_ids = np.arange(int(id_min), int(id_max)+1)
-        else:
-            sim_ids = np.array([int(sim_ids)])
-    else:
-        raise ValueError("Argument 'sim_ids' has the wrong format")
 
     # Create output directories
     atomics_dir = {}
@@ -204,6 +201,10 @@ def main(args):
             logger.warning(f"NO METADATA: "
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
+        except OSError as err:
+            logger.warning(f"{err}: "
+                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            continue
 
         # Focal plane thinning
         if args.fp_thin is not None:
@@ -228,17 +229,43 @@ def main(args):
 
         for sim_id, sim_type in product(sim_ids, args.sim_types):
 
-            logger.info(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                        f" to filter {sim_type}, sim {sim_id}")
-            start0 = time.time()
-
-            # Path to simulation
+            # Path to unfiltered simulation
             map_fname = sim_string_format.format(
                 sim_id=sim_id,
                 sim_type=sim_type,
                 freq_channel=freq_labels[freq_channel]
             )
             map_file = f"{sim_dir}/{map_fname}"
+
+            # First, check if all atomic maps for this simulation exist.
+            maps_exist = True
+            for split_label in intra_obs_splits:
+                if (patch, freq_channel, obs_id, wafer) in atomic_metadata[split_label]:  # noqa
+
+                    # Saving filtered atomics to disk
+                    atomic_fname = map_fname.split("/")[-1].replace(
+                        mfmt,
+                        f"_{obs_id}_{wafer}_{split_label}{mfmt}"
+                    )
+
+                    f_wmap = atomics_dir[patch, freq_channel][sim_id]
+                    f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
+                    f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
+
+                    if not (os.path.isfile(f_wmap) and os.path.isfile(f_w)):
+                        maps_exist = False
+
+            # If they exist and we don't overwrite, skip this simulation.
+            if maps_exist and not args.overwrite_atomics:
+                logger.info(
+                    f"Map exists: ({patch}, {freq_channel}, {obs_id}, {wafer})"
+                    f" to filter {sim_type}, sim {sim_id}"
+                )
+                continue
+
+            logger.info(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
+                        f" to filter {sim_type}, sim {sim_id}")
+            start0 = time.time()
 
             # Handling pixellization
             if args.pix_type == "car":
@@ -263,6 +290,13 @@ def main(args):
             except loader.LoaderError:
                 logger.warning(
                     "METADATA MISSING: "
+                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
+                    "SKIPPING."
+                )
+                continue
+            except (OSError, KeyError) as err:
+                logger.warning(
+                    f"{err} "
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
                     "SKIPPING."
                 )
@@ -311,7 +345,7 @@ def main(args):
                         f"{sim_type}, sim {sim_id} with setup "
                         f"({patch}, {freq_channel}, {obs_id}, {wafer})")
 
-        logger.info(f"Processed 3 x {len(sim_ids)} simulations for "
+        logger.info(f"Processed {len(sim_ids)} simulations for "
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
                     f"{time.time() - start:.1f} seconds.")
     comm.Barrier()
@@ -322,7 +356,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
     )
-
+    parser.add_argument(
+        "--sim_ids", type=str, default=0,
+        help="Simulations to be processed, in format [first],[last]."
+             "Overwrites the yaml file configs."
+    )
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
+    config.update(vars(args))
+
     main(config)

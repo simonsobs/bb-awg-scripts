@@ -2,8 +2,8 @@ import numpy as np
 import argparse
 import sqlite3
 import os
+import shutil
 import sys
-import tracemalloc
 from itertools import product
 
 import sotodlib.preprocess.preprocess_util as pp_util
@@ -18,8 +18,7 @@ sys.path.append(
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
 )
-import mpi_utils as mpi # noqa
-import bundling_utils as bu  # noqa
+import mpi_utils as mpi  # noqa
 import filtering_utils as fu  # noqa
 import coordinator as coord  # noqa
 
@@ -97,10 +96,8 @@ def main(args):
     pix_type = args.pix_type
     if pix_type == "hp":
         mfmt = ".fits"  # TODO: test fits.gz for HEALPix
-        car_map_template = None
     elif pix_type == "car":
         mfmt = ".fits"
-        car_map_template = args.car_map_template
 
     # Databases
     atom_db = args.atomic_db
@@ -194,6 +191,9 @@ def main(args):
                     ctimes[patch, "science", None][i]
                     for i in idx_rand if (i+ib) % nbatch
                 ]
+        if batches[patch] != [None]:
+            logger.warning(f"{patch}: setting nbatch_atomics to 1.")
+            batches[patch] = [None]
 
     # Restrict the inter-obs null splits to the ctimes of the "science" split
     for patch in patches:
@@ -279,106 +279,66 @@ def main(args):
 
     split_labels_all = ["science"] + intra_obs_splits + inter_obs_splits
     split_labels_all = list(dict.fromkeys(split_labels_all))  # no duplicates
-    mpi_shared_list = [(patch, freq_channel, sim_id, split_label, sim_type)
-                       for patch in patches
-                       for freq_channel in freq_channels
-                       for sim_id in sim_ids
-                       for split_label in split_labels_all
-                       for sim_type in sim_types]
+    atomics_list = [(patch, freq_channel, split_label, sim_type)
+                    for patch in patches
+                    for freq_channel in freq_channels
+                    for split_label in split_labels_all
+                    for sim_type in sim_types]
 
-    # Every rank must have the same shared list
-    mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
-    task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list),
-                                    logger=logger)
-    local_mpi_list = [mpi_shared_list[i] for i in task_ids]
-    loop_over = [(patch, freq, sim, split, sim_type, ib)
+    loop_over = [(patch, freq, split, sim_type, ib)
                  for ib in batches[patch]
-                 for patch, freq, sim, split, sim_type in local_mpi_list]
+                 for patch, freq, split, sim_type in atomics_list]
 
-    for patch, freq_channel, sim_id, split_label, sim_type, ib in loop_over:
-        map_dir = atomic_sim_dir.format(
-            patch=patch,
-            freq_channel=freq_labels[freq_channel],
-            sim_id=sim_id
-        )
-        assert os.path.isdir(map_dir), map_dir
-
-        if not ib:
-            logger.info(f"Loading atomics for ({patch}, {freq_channel}, "
-                        f"{split_label})"
-                        f" to filter {sim_type}, {split_label}, sim {sim_id}")
-
-        w_list, wmap_list = ([], [])
-
-        if split_label == "science":
-            tracemalloc.start()
-            for coadd in intra_obs_pair:
-                wmap_l, w_l = fu.get_atomics_maps_list(
-                    sim_id, sim_type,
-                    atomic_metadata[patch, freq_channel, coadd, ib],
-                    freq_labels[freq_channel], map_dir, coadd,
-                    sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                    logger=logger
-                )
-                wmap_list += wmap_l
-                w_list += w_l
-            current_gb, peak_gb = [1024**(-3) * c
-                                   for c in tracemalloc.get_traced_memory()]
-            logger.info("Traced Memory for 'science' (Current, Peak): "
-                        f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
-            tracemalloc.stop()
-        elif split_label in inter_obs_splits:
-            for coadd in intra_obs_pair:
-                wmap_l, w_l = fu.get_atomics_maps_list(
-                    sim_id, sim_type,
-                    atomic_metadata[patch, freq_channel, split_label, coadd, ib],  # noqa
-                    freq_channel, map_dir, coadd,
-                    sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                    logger=logger
-                )
-                wmap_list += wmap_l
-                w_list += w_l
-        else:
-            wmap_list, w_list = fu.get_atomics_maps_list(
-                sim_id, sim_type,
-                atomic_metadata[patch, freq_channel, split_label, ib],
-                freq_channel, map_dir, split_label,
-                sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                logger=logger
+    for sim_id in sim_ids:
+        natomics_ideal = 0
+        natomics_real = 0
+        for patch, freq_channel, split_label, sim_type, ib in loop_over:
+            map_dir = atomic_sim_dir.format(
+                patch=patch,
+                freq_channel=freq_labels[freq_channel],
+                sim_id=sim_id
             )
+            if not os.path.isdir(map_dir):
+                logger.warning(f"Directory is missing: {map_dir}")
+            elif args.force_delete:
+                logger.info(f"Deleting {map_dir}")
+                shutil.rmtree(map_dir)
 
-        if not ib:
-            logger.info(f"Coadding atomics for ({patch}, {freq_channel}, "
-                        f"{split_label})"
-                        f" to filter {sim_type}, sim {sim_id}")
+            if split_label == "science":
+                for coadd in intra_obs_pair:
+                    num_ideal, num_real = fu.get_atomics_maps_list(
+                        sim_id, sim_type,
+                        atomic_metadata[patch, freq_channel, coadd, ib],
+                        freq_labels[freq_channel], map_dir, coadd,
+                        sim_string_format, mfmt=mfmt, pix_type=pix_type,
+                        logger=logger, file_stats_only=True
+                    )
+                    natomics_ideal += num_ideal
+                    natomics_real += num_real
+            elif split_label in inter_obs_splits:
+                for coadd in intra_obs_pair:
+                    num_ideal, num_real = fu.get_atomics_maps_list(
+                        sim_id, sim_type,
+                        atomic_metadata[patch, freq_channel, split_label, coadd, ib],  # noqa
+                        freq_channel, map_dir, coadd,
+                        sim_string_format, mfmt=mfmt, pix_type=pix_type,
+                        logger=logger, file_stats_only=True
+                    )
+                    natomics_ideal += num_ideal
+                    natomics_real += num_real
+            else:
+                num_ideal, num_real = fu.get_atomics_maps_list(
+                    sim_id, sim_type,
+                    atomic_metadata[patch, freq_channel, split_label, ib],
+                    freq_channel, map_dir, split_label,
+                    sim_string_format, mfmt=mfmt, pix_type=pix_type,
+                    logger=logger, file_stats_only=True
+                )
+                natomics_ideal += num_ideal
+                natomics_real += num_real
 
-        map_filtered, weights = bu.coadd_maps(
-            wmap_list, w_list, pix_type=pix_type,
-            car_template_map=car_map_template
-        )
-        out_fname = sim_string_format.format(
-            sim_id=sim_id,
-            sim_type=sim_type,
-            freq_channel=freq_labels[freq_channel]
-        ).split("/")[-1]
-        batch_label = "" if ib is None else f"_batch{ib}of{nbatches}"
-        out_fname = out_fname.replace(
-            ".fits",
-            f"_bundle{bundle_id}_{freq_channel}_{split_label}{batch_label}_filtered.fits"  # noqa
-        )
-        fu.save_and_plot_map(
-            map_filtered, out_fname,
-            coadded_dirs[patch, freq_channel],
-            plot_dirs[patch, freq_channel],
-            pix_type=pix_type
-        )
-        fu.save_and_plot_map(
-            weights, out_fname.replace(".fits", "_weights.fits"),
-            coadded_dirs[patch, freq_channel],
-            plot_dirs[patch, freq_channel],
-            pix_type=pix_type, do_plot=False
-        )
-    comm.Barrier()
+        logger.info(f"Sim ID {sim_id}: {natomics_real} of {natomics_ideal}"
+                    f" present ({natomics_real/natomics_ideal*100:.1f} %)")
 
 
 if __name__ == "__main__":
@@ -390,6 +350,10 @@ if __name__ == "__main__":
         "--sim_ids", type=str, default=0,
         help="Simulations to be processed, in format [first],[last]."
              "Overwrites the yaml file configs."
+    )
+    parser.add_argument(
+        "--force_delete", action="store_true",
+        help="Force deletion of all atomics found on disk."
     )
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)

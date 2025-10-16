@@ -24,8 +24,9 @@ def yaml_loader(config):
 
 def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
                           atomic_sim_dir, split_label, sim_string_format,
-                          mfmt=".fits", pix_type="car", remove_atomics=False,
-                          logger=None):
+                          mfmt=".fits", pix_type="car",
+                          logger=None, ignore_if_nan=True,
+                          file_stats_only=False):
     """
     Returns a list of filtered atomic maps that correpsond to a given
     simulation ID, given a list of atomic metadata.
@@ -33,8 +34,14 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
     Parameters:
         sim_id: int
             Simulation ID.
+        sim_type: str
+            Type of simulation as defined in the filtering yaml file.
         atomic_metadata: list
             List of tuples of strings (obs_id, wafer).
+        freq_label: str
+            Frequency label as defined in the filtering yaml file.
+        atomic_sim_dir: str
+            Directory of atomic sims.
         split_label: str
             Map string label corresponding to the split, e.g. 'det_left'
         sim_string_format: str
@@ -44,10 +51,12 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
             Atomic file name ending.
         pix_type: str
             Pixelization type; either 'car' or 'hp'.
-        remove_atomics: bool
-            Whether to remove atomic map files after loading into list.
         logger: sotodlib.preprocess.preprocess_util.logger
             Logger instance to print output.
+        ignore_if_nan: bool
+            Whether to skip the atomics that contain at least one NAN value.
+        file_stats_only: bool
+            If True, only output natomics_total, natomics_existing
     Returns:
         wmap_list: list
             List of weighted maps (numpy.ndmap or numpy.ndarray)
@@ -56,6 +65,7 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
     """
     wmap_list, w_list = ([], [])
 
+    num_real = 0
     for id, (obs_id, wafer) in enumerate(atomic_metadata):
         if sim_id is None:
             atomic_fname = sim_string_format.format(sim_id="NULL",
@@ -79,30 +89,36 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
         # case, it is acceptable to just ignore those when coadding.
         if not (os.path.isfile(fname_wmap) and os.path.isfile(fname_w)):
             continue
+        else:
+            num_real += 1
 
-        if pix_type == "car":
-            wmap = enmap.read_map(fname_wmap)
-            w = enmap.read_map(fname_w)
-        elif pix_type == "hp":
-            wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
-            w = hp.read_map(fname_w, field=range(3), nest=True)
+        if not file_stats_only:
+            if pix_type == "car":
+                wmap = enmap.read_map(fname_wmap)
+                w = enmap.read_map(fname_w)
+            elif pix_type == "hp":
+                wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
+                w = hp.read_map(fname_w, field=range(3), nest=True)
 
-        wmap_list.append(wmap)
-        w_list.append(w)
-
-        if remove_atomics:
-            os.remove(fname_wmap)
-            os.remove(fname_w)
+            if np.isnan(wmap).any() or np.isnan(w).any():
+                logger.debug(f"Atomic has NANs. Skipping {fname_wmap}")
+            else:
+                wmap_list.append(wmap)
+                w_list.append(w)
     num_ideal = id+1
-    num_real = len(wmap_list)
+    if not file_stats_only:
+        num_real = len(wmap_list)
     completeness = float(num_real / num_ideal)
     logging = logger.info
-    if completeness < 0.98:
-        logging = logger.warning
-    if completeness < 0.90:
-        logging = logger.error
-    logging(f"{num_ideal} atomics expected, {num_real} atomics at disk.")
+    if not file_stats_only:
+        if completeness < 0.98:
+            logging = logger.warning
+        if completeness < 0.90:
+            logging = logger.error
+        logging(f"{num_ideal} atomics expected, {num_real} atomics at disk.")
 
+    if file_stats_only:
+        return num_ideal, num_real
     return wmap_list, w_list
 
 
@@ -149,6 +165,7 @@ def get_query_atomics(freq_channel, ctimes, split_label="science",
                       query_restrict="median_weight_qu < 2e10"):
     """
     """
+    ctimes = list(map(int, ctimes))
     query = f"""
             SELECT obs_id, wafer
             FROM atomic
@@ -273,6 +290,10 @@ class Cfg:
         splits
     remove_atomics: bool
         Removes atomic maps from disk upon coadding them
+    overwrite_atomics: bool
+        Overwrites atomic sim maps if they exist
+    base_dir: str
+        Optional directory path for compatibility reasons
     """
     bundle_db: str
     atomic_db: str
@@ -297,10 +318,13 @@ class Cfg:
     fp_thin: Optional[int] = 8
     nbatch_atomics: Optional[int] = None
     remove_atomics: Optional[bool] = False
+    overwrite_atomics: Optional[bool] = True
+    base_dir: Optional[str] = None
 
-    def __post_init__(self):
-        # Add extra defaults for private args not expected in config file
-        pass
+    def update(self, dict):
+        # Add extra private args not expected in config file
+        for k, v in dict.items():
+            setattr(self, k, v)
 
     @classmethod
     def from_yaml(cls, path) -> "Cfg":
