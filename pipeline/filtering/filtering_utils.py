@@ -34,8 +34,14 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
     Parameters:
         sim_id: int
             Simulation ID.
+        sim_type: str
+            Type of simulation as defined in the filtering yaml file.
         atomic_metadata: list
             List of tuples of strings (obs_id, wafer).
+        freq_label: str
+            Frequency label as defined in the filtering yaml file.
+        atomic_sim_dir: str
+            Directory of atomic sims.
         split_label: str
             Map string label corresponding to the split, e.g. 'det_left'
         sim_string_format: str
@@ -99,7 +105,6 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
             else:
                 wmap_list.append(wmap)
                 w_list.append(w)
-
     num_ideal = id+1
     if not file_stats_only:
         num_real = len(wmap_list)
