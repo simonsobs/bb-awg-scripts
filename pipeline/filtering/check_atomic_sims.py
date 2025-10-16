@@ -2,6 +2,7 @@ import numpy as np
 import argparse
 import sqlite3
 import os
+import shutil
 import sys
 from itertools import product
 
@@ -299,6 +300,9 @@ def main(args):
             )
             if not os.path.isdir(map_dir):
                 logger.warning(f"Directory is missing: {map_dir}")
+            elif args.force_delete:
+                logger.info(f"Deleting {map_dir}")
+                shutil.rmtree(map_dir)
 
             if split_label == "science":
                 for coadd in intra_obs_pair:
@@ -346,6 +350,10 @@ if __name__ == "__main__":
         "--sim_ids", type=str, default=0,
         help="Simulations to be processed, in format [first],[last]."
              "Overwrites the yaml file configs."
+    )
+    parser.add_argument(
+        "--force_delete", action="store_true",
+        help="Force deletion of all atomics found on disk."
     )
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
