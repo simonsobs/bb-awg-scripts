@@ -214,7 +214,6 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     hits_coadd: np.array
         Optional; coadded hits map. Will only be returned if hits_list given.
     """
-
     assert len(maps_list) == len(weights_list)
     if sign_list is None:
         sign_list = 1
@@ -222,6 +221,7 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
         sign_list = np.array(sign_list)
     if isinstance(abscal, list):
         abscal = np.array(abscal)
+
     sum_fn = _make_parallel_proc(sum_maps, nproc) if nproc > 1 else sum_maps
 
     if pix_type == "car":
@@ -630,6 +630,7 @@ class Cfg:
     coadd_splits_name: str = "full"
     coadd_split_pair: Optional[list] = None
     coadd_bundles_splitname: Optional[str] = None
+    n_sims: Optional[int] = None
 
     def __post_init__(self):
         # Add extra defaults for private args not expected in config file

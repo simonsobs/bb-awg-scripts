@@ -64,7 +64,8 @@ def add_info(obs_info_db, atomic_db, site):
         uv = entries[idx]['uv']
         ambient_temperature = entries[idx]['ambient_temp']
         f_hwp = entries[idx]['hwp_direction'] * entries[idx]['hwp_rate']
-
+        wind_speed = entries[idx]['wind_spd']
+        wind_direction = entries[idx]['wind_dir']
 
         # we also need to calculate the sun distance
         idx_rows = np.where(rows[:,0] == obs_id)[0][0]
@@ -77,7 +78,6 @@ def add_info(obs_info_db, atomic_db, site):
         sun = ephem.Sun(site_)
         sun_distance = np.degrees(ephem.separation((sun.az, sun.alt), (np.radians(az), np.radians(el))))
 
-
         # we also need to calculate the moon distance
         idx_rows = np.where(rows[:,0] == obs_id)[0][0]
         ctime = rows[idx_rows,4]
@@ -87,6 +87,8 @@ def add_info(obs_info_db, atomic_db, site):
         site_.date = ephem.Date(dtime)
         moon = ephem.Moon(site_)
         moon_distance = np.degrees(ephem.separation((moon.az, moon.alt), (np.radians(az), np.radians(el))))
+
+        utc_hour = dtime.hour
 
         # now we update
 
@@ -100,15 +102,19 @@ def add_info(obs_info_db, atomic_db, site):
         cur.execute("UPDATE atomic SET ambient_temperature = %f WHERE obs_id = '%s' " % (ambient_temperature, obs_id))
 
         cur.execute("UPDATE atomic SET moon_distance = %f WHERE obs_id = '%s' " % (moon_distance, obs_id))
+        cur.execute("UPDATE atomic SET wind_speed = %f WHERE obs_id = '%s' " % (wind_speed, obs_id))
+        cur.execute("UPDATE atomic SET wind_direction = %f WHERE obs_id = '%s' " % (wind_direction, obs_id))
+        cur.execute("UPDATE atomic SET utc_hour = %d WHERE obs_id = '%s' " % (utc_hour, obs_id))
 
     con.commit()
     con.close()
 
 def main():
-    tel = "satp3"
-    new_columns = {"dpwv":"FLOAT", "scan_acc":"FLOAT", "ambient_temperature":"FLOAT", "uv":"FLOAT", "moon_distance":"FLOAT"}
-    atomic_db_name = f"/scratch/gpfs/SIMONSOBS/sat-iso/v2/mapmaking/{tel}_20250507_nr/atomic_db.sqlite.updated"
-    obs_info_db = f'/home/ms3067/shared_files/iso/obs_info/250123_obs_info/{tel}/db.sqlite'
+    tel = "satp1"
+    #new_columns = {"dpwv":"FLOAT", "scan_acc":"FLOAT", "ambient_temperature":"FLOAT", "uv":"FLOAT", "moon_distance":"FLOAT"}
+    new_columns = {"utc_hour": "INTEGER"}
+    atomic_db_name = f"/scratch/gpfs/SIMONSOBS/sat-iso/v3/bundling/{tel}_20250801/atomic_db.sqlite"
+    obs_info_db = f'/home/er5768/obs_info/{tel}_db_20250826.sqlite'
     site = 'so_sat3' if tel == 'satp3' else 'so_sat1'
 
     # First, let's add missing columns to atomic db

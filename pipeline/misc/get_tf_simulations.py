@@ -236,11 +236,6 @@ if __name__ == "__main__":
         help="Resolution in arcmin. "
              "Will be ignored if car_template_map is given."
     )
-    parser.add_argument(
-        "--no_plots",
-        action="store_true",
-        help="do not plot maps"
-    )
     args = parser.parse_args()
 
     main(args)
