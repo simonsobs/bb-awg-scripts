@@ -19,7 +19,7 @@ def get_parser(parser=None):
     parser.add_argument('arxiv', help="Preprocessing arxiv filepath")
 
     parser.add_argument('configs', help="Preprocessing Configuration File")
-    
+
     parser.add_argument(
         '--nproc',
         help="Number of parallel processes to run on.",
@@ -47,7 +47,7 @@ def get_dict_entry(base_dir, entry, config):
         # This part just helps collect the logger to output info to
         logger = preprocess_util.init_logger('subproc_logger')
         logger.info(f'Processing entry for {entry["dataset"]}')
-        
+
         # This part actually grabs the archive data as shown in the previous section.
         path = os.path.join( base_dir, entry['filename'])
         logger.info(f'Getting context for {entry["dataset"]}')
@@ -60,11 +60,11 @@ def get_dict_entry(base_dir, entry, config):
         x = mdata.preprocess
         keys = []
         vals = []
-        
+
         # The below part is general collecting key value pairs based on whatever
         # info/stats you want to gather out of the archive.
         # I've provided a good collection of useful stats here for reference
-        
+
         # det bias and fp cuts
         m = has_all_cut(x.det_bias_flags.valid)
         keys.append('det_bias_cuts_total')
@@ -127,14 +127,38 @@ def get_dict_entry(base_dir, entry, config):
         keys.append('Qalpha_var')
         vals.append(x.noiseQ.cov[m,2,2])
 
+
+        # Mean Q PSD over detectors
         m = has_all_cut(x.psdQ.valid)
         fmax = 2
         fselect = x.psdQ.freqs <= fmax
         meanpsd = np.mean(x.psdQ.Pxx[m][:,fselect], axis=0)
         keys.append('psdQ_mean')
         vals.append(meanpsd)
-        del meanpsd        
-        
+        del meanpsd
+
+        # PSD Frequencies
+        keys.append('psd_freqs')
+        vals.append(x.psdQ.freqs[fselect])
+
+        # Mean Q PSD over fsamps in signal band
+        fmin = 0.039
+        fmax = 0.141
+        fselect = np.logical_and(x.psdQ.freqs < fmax, x.psdQ.freqs > fmin)
+        meanpsd = np.mean(x.psdQ.Pxx[m][:,fselect], axis=1)
+        keys.append('psdQ_f0')
+        vals.append(meanpsd)
+        del meanpsd
+
+        # Mean Q PSD over fsamps in white noise region
+        fmin = 0.6
+        fmax = 1.0
+        fselect = np.logical_and(x.psdQ.freqs < fmax, x.psdQ.freqs > fmin)
+        meanpsd = np.mean(x.psdQ.Pxx[m][:,fselect], axis=1)
+        keys.append('psdQ_wn')
+        vals.append(meanpsd)
+        del meanpsd
+
         # m = has_all_cut(x.noiseQ_nofit.valid)
         # keys.append('Qwnl_nofit')
         # vals.append(x.noiseQ_nofit.white_noise[m])
@@ -149,18 +173,37 @@ def get_dict_entry(base_dir, entry, config):
         keys.append('Uwnl_var')
         vals.append(x.noiseU.cov[m,1,1])
         keys.append('Ualpha')
-        vals.append(x.noiseU.fit[m,2])        
+        vals.append(x.noiseU.fit[m,2])
         keys.append('Ualpha_var')
         vals.append(x.noiseU.cov[m,2,2])
         # m = has_all_cut(x.noiseU_nofit.valid)
         # keys.append('Uwnl_nofit')
         # vals.append(x.noiseU_nofit.white_noise[m])
 
+        # Mean U PSD over detectors
         m = has_all_cut(x.psdU.valid)
         fmax = 2
         fselect = x.psdU.freqs <= fmax
         meanpsd = np.mean(x.psdU.Pxx[m][:,fselect], axis=0)
         keys.append('psdU_mean')
+        vals.append(meanpsd)
+        del meanpsd
+
+        # Mean U PSD over fsamps in signal band
+        fmin = 0.039
+        fmax = 0.141
+        fselect = np.logical_and(x.psdU.freqs < fmax, x.psdU.freqs > fmin)
+        meanpsd = np.mean(x.psdU.Pxx[m][:,fselect], axis=1)
+        keys.append('psdU_f0')
+        vals.append(meanpsd)
+        del meanpsd
+
+        # Mean U PSD over fsamps in white noise region
+        fmin = 0.6
+        fmax = 1.0
+        fselect = np.logical_and(x.psdU.freqs < fmax, x.psdU.freqs > fmin)
+        meanpsd = np.mean(x.psdU.Pxx[m][:,fselect], axis=1)
+        keys.append('psdU_wn')
         vals.append(meanpsd)
         del meanpsd
 
@@ -198,7 +241,7 @@ def get_dict_entry(base_dir, entry, config):
         vals.append(x.tod_stats_U.kurtosis[m])
         keys.append("tod_stats_U_ptp")
         vals.append(x.tod_stats_U.ptp[m])
-        
+
         return entry['obs:obs_id'], entry['dets:wafer_slot'], entry['dets:wafer.bandpass'], keys, vals
     except Exception as e:
         # Collects errors if this fails.
@@ -214,7 +257,7 @@ def main(executor, as_completed_callable, arxiv, configs, nproc, errlog_ext, sav
     errlog = os.path.join(base_dir, errlog_ext)
     logger.info('connect to database')
     logger = preprocess_util.init_logger('main_proc')
-    
+
     # Connects to the archive database as described in the previous section
     proc = core.metadata.ManifestDb(os.path.join(base_dir, 'process_archive.sqlite'))
 
@@ -224,7 +267,7 @@ def main(executor, as_completed_callable, arxiv, configs, nproc, errlog_ext, sav
     fit_wn = []
     nofit_wn = []
     fit_knee = []
-    
+
     ###############################
     run_list = proc.inspect()
     logger.info('run list created')
@@ -249,7 +292,7 @@ def main(executor, as_completed_callable, arxiv, configs, nproc, errlog_ext, sav
             f.close()
             continue
         futures.remove(future)
-        
+
         if obsid is None:
             logger.info('Writing error to log.')
             f = open(errlog, 'a')
@@ -271,7 +314,7 @@ def main(executor, as_completed_callable, arxiv, configs, nproc, errlog_ext, sav
 
                 for k, v in zip(keys, vals):
                     outdict[obsid][ws][band][k] = v
-                
+
                 logger.info(f'{n}/{ntot}: Finished with {obsid} {ws} {band}.')
             except Exception as e:
                 logger.info('Packaging and saving error.')

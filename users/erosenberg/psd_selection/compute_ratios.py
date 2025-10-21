@@ -89,17 +89,23 @@ def _main(tel, archive_fn, atomic_db_fn, query, savename, f_sel, f_wn, bs=4, nob
     psdQ_mean, psdU_mean = psd_means
 
     # Get frequencies and binned freqs
-    ff = np.linspace(0, 2, psdQ_mean.shape[1])  # It's an approximation but probably good enough
+    ff = collect(archive, 'psd_freqs', freqs=freqs, skiplist=skiplist, flatten=False, asarray=True)[0]
+    # ff = np.linspace(0, 2, psdQ_mean.shape[1])  # It's an approximation but probably good enough
     sh = psdQ_mean.shape
-    binned = np.mean(np.reshape(psdQ_mean, (sh[0], sh[1]//bs, bs)), axis=-1)
-    binned_f = np.mean(np.reshape(ff, (sh[1]//bs, bs)), axis=-1)
 
+    # binned = np.mean(np.reshape(psdQ_mean, (sh[0], sh[1]//bs, bs)), axis=-1)
+    # binned_f = np.mean(np.reshape(ff, (sh[1]//bs, bs)), axis=-1)
+    binnedQ = psdQ_mean
+    binnedU = psdU_mean
+    binned_f = ff
 
     binsort = np.where(np.logical_and(f_sel[0] < binned_f, binned_f < f_sel[1]))[0]  # freq bins to sort on
     wn_bins = np.where(np.logical_and(f_wn[0] < binned_f, binned_f < f_wn[1]))[0]  # freq bins of white noise
 
-    wn = np.mean(binned[:,wn_bins], axis=1)
-    ratio = np.mean(binned[:,binsort], axis=1) / wn  # Mean of PSD in range f_sel divided by mean white nosie level
+    wnQ = np.mean(binnedQ[:,wn_bins], axis=1)
+    ratioQ = np.mean(binnedQ[:,binsort], axis=1) / wn  # Mean of PSD in range f_sel divided by mean white nosie level
+    wnU = np.mean(binnedU[:,wn_bins], axis=1)
+    ratioU = np.mean(binnedU[:,binsort], axis=1) / wn  # Mean of PSD in range f_sel divided by mean white nosie level
 
     combo = np.concatenate([ids.T, [ratio, wn]]).T
     np.savetxt(savename, combo, header="obs_id wafer_slot freq ratio wn2", fmt='%s')
@@ -172,20 +178,20 @@ def _main(tel, archive_fn, atomic_db_fn, query, savename, f_sel, f_wn, bs=4, nob
 def main():
     tel="satp3"
     freq='f150'
-    vtag="v1"
+    vtag="v3"
 
     f_sel = (0.04, 0.14)
     f_wn = (0.6, 1.0)
     bs = 4  # Size of frequency bins in units of frequency samples
 
-    archive_fn = f"/home/er5768/run_mapmaker/select_lists_{tel}_{vtag}_ratio/aux/psd_info_{vtag}_{tel}.npy"
-    atomic_db_fn = f"/scratch/gpfs/SIMONSOBS/sat-iso/{vtag}/mapmaking/{tel}_20250108/atomic_db.sqlite"
+    archive_fn = f"/scratch/gpfs/SIMONSOBS/users/erosenberg/psd_info_{vtag}_{tel}.npy"
+    atomic_db_fn = f"/scratch/gpfs/SIMONSOBS/sat-iso/{vtag}/mapmaking/{tel}_20250801/atomic_db.sqlite"
     query = "SELECT obs_id, wafer, freq_channel FROM atomic WHERE pwv < 2 AND split_label='science' AND median_weight_qu<2e10"
 
     savename = f"{tel}_{freq}_{vtag}_ratio.txt"  # Save name for the txt file containing the ratios
-    nobs = 500  # How many obs to group into each saved npy file
+    nobs = 1000  # How many obs to group into each saved npy file
 
-    save_plots = False
+    save_plots = True
     show_plots = False
 
     _main(tel=tel, archive_fn=archive_fn, atomic_db_fn=atomic_db_fn, query=query, savename=savename,
