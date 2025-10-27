@@ -250,7 +250,7 @@ def main(args):
             query += f"ctime = {int(ctime)} AND "
             query += f"wafer='{wafer}' AND "
             query += f"freq_channel='{args.freq_channel}' AND "
-            query += "(split_label='scan_left' OR split_label='scan_right')"
+            query += "split_label in ('scan_left', 'scan_right')"
 
             query = cursor.execute(query)
 
@@ -284,12 +284,12 @@ if __name__ == "__main__":
     parser.add_argument("--freq_channel", help="Frequency channel")
     parser.add_argument("--wafer", help="Wafer slot", default=None)
     parser.add_argument(
-        "--delta_dec", type=int,
+        "--delta_dec", type=float,
         help="Scales the average distance in DEC between neighboring "
              "atomic maps in the patch."
     )
     parser.add_argument(
-        "--delta_ra", type=int,
+        "--delta_ra", type=float,
         help="Scales the average distance in RA between neighboring "
              "atomic maps in the patch."
     )

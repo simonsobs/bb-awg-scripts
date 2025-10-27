@@ -6,7 +6,7 @@ res_arcmin=20
 smooth_fwhm=30
 n_sims=400
 id_sims_start=600
-out_dir=/cephfs/soukdata/user_data/kwolz/simpure/input_sims  # /scratch/gpfs/SIMONSOBS/sat-iso/
+out_dir=/cephfs/soukdata/user_data/kwolz/simpure/input_sims  #  YOUR OUTPUT DIR
 
 mkdir -p $out_dir
 
