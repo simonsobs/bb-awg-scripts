@@ -1,15 +1,15 @@
 context_file: /shared_home/kwolz/bbdev/pwg-scripts/iso-sat-review/contexts/satp3/use_this_local_20241124.yaml
-plot_dir: '/cephfs/soukdata/sat_analysis/iso_data/preprocessing/satp3_20250108_proc/preprocess_plots'
+plot_dir: '/cephfs/soukdata/sat_analysis/iso_data/v1/preprocessing/satp3_20250108_proc/preprocess_plots'
 
 subobs:
   use: ['wafer_slot', 'wafer.bandpass']
   label: wafer_slot
   
 archive:
-  index: '/cephfs/soukdata/sat_analysis/iso_data/preprocessing/satp3_20250108_proc/process_archive.sqlite'
+  index: '/cephfs/soukdata/sat_analysis/iso_data/v1/preprocessing/satp3_20250108_proc/process_archive.sqlite'
   policy:
     type: 'simple'
-    filename: '/cephfs/soukdata/sat_analysis/iso_data/preprocessing/satp3_20250108_proc/preprocess_archive.h5'
+    filename: '/cephfs/soukdata/sat_analysis/iso_data/v1/preprocessing/satp3_20250108_proc/preprocess_archive.h5'
 
 process_pipe:
     ### updated
