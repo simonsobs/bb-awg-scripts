@@ -5,6 +5,7 @@ sys.path.append(
     "/home/kw6905/bbdev/SOOPERCOOL"
 )
 from soopercool import map_utils as mu
+from soopercool import utils as ut
 import numpy as np
 import healpy as hp
 
@@ -89,10 +90,12 @@ def main(args):
             sum_hits += map[1]
         sum_hits[binary == 0] = 0
 
-    # Normalize and smooth hitmaps
+    # Normalize, threshold, and smooth hitmaps
+    sum_hits /= np.amax(sum_hits)
+    if args.thresh is not None:
+        sum_hits[sum_hits < float(args.thresh)] = 0
     sum_hits = mu.smooth_map(sum_hits, fwhm_deg=args.smooth_radius,
                              pix_type=pix_type)
-    sum_hits /= np.amax(sum_hits)
 
     # Save products
     mu.write_map(
@@ -249,9 +252,8 @@ def main(args):
         )
 
     # Compute and plot spin derivatives
-    # DEBUG
-    print("mask file", f"{masks_dir}/{mask_file}")
-    first, second = mu.get_spin_derivatives(f"{masks_dir}/{mask_file}")
+    print(analysis_mask.wcs)
+    first, second = ut.get_spin_derivatives(analysis_mask)
 
     if do_plots:
         mu.plot_map(
@@ -322,6 +324,9 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument("--flat_mask", action="store_true",
                         help="Assume hits are homogeneous across field.")
+    parser.add_argument("--thresh", help="Number between 0 and 1, defining the"
+                        "threshold below which the normalized hits map is cut",
+                        type=float, default=None)
 
     parser.add_argument("--verbose", help="Verbose mode",
                         action="store_true")
