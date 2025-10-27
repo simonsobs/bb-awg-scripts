@@ -109,12 +109,15 @@ def get_inv_coupling(mask, nmt_bins, transfer=None, nmt_purify=False,
 print("  Reading inputs")
 
 # pixelization related
-nside = None
-pix_type = "car"
+nside = 128
+pix_type = "hp"
 pix_lab = "car" if pix_type == "car" else f"nside{nside}"
 res_arcmin = 20
 car_template = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/band_car_fejer1_20arcmin.fits"  # "/home/kw6905/bbdev/bb-awg-scripts/pipeline/simpure/band_car_fejer1_20arcmin.fits"  # noqa
-beam_fwhm = 30
+beam_fwhm = 60  # Note that for NSIDE 128 and 64, it is recommended to use a
+                # larger beam of 60 or 90 arcmin, respectively, to avoid
+                # aliasing.
+        
 
 if pix_type == "car":
     if car_template is not None:
@@ -135,6 +138,10 @@ else:
     lmax = 3 * nside - 1
     wcs = None
 lmax_sim = lmax + 500
+
+if 180.*60/lmax > beam_fwhm:
+    print("WARNING: beam resolution is lower than pixel scale. Consider "
+          "increasing the beam FWHM.")
 
 
 # binning
@@ -159,20 +166,20 @@ cosmo = {
     "r": 0.0,
 }
 _, clth = get_theory_cls(cosmo, lmax=lmax_sim, beam_fwhm=beam_fwhm)
-clbb_in = clth["BB"][:lmax+1]
 
 # general
 nsims_cmb = 20  # number of validation sims
 
-out_dir = "."  ## YOUR OUTPUT DIR
+out_dir = f"/cephfs/soukdata/user_data/kwolz/simpure/filtered_pure_sims/satp3/f090/butter4_20251007/mask_thresh20percent/validation_hp_nside{nside}"  ## YOUR OUTPUT DIR
 plot_dir = f"{out_dir}/plots"
 os.makedirs(plot_dir, exist_ok=True)
-lmax_plot = 300
+lmax_plot = min(300, 2*nside)
 overwrite = False  # If True, always recompute products.
 
 
 # apodized mask
-mask_file = "."  ## YOUR INPUT MASK
+mask_file = f"/cephfs/soukdata/user_data/kwolz/simpure/filtered_pure_sims/satp3/f090/butter4_20251007/mask_thresh20percent/masks/analysis_mask_apo10_C1_hp_nside{nside}.fits"
+# mask_file = "/cephfs/soukdata/user_data/kwolz/simpure/filtered_pure_sims/satp3/f090/butter4_20251007/mask_thresh20percent/masks/analysis_mask_apo10_C1_car.fits"  ## YOUR INPUT MASK
 mask = mu.read_map(mask_file,
                    pix_type=pix_type,
                    car_template=car_template)
@@ -221,7 +228,7 @@ def load_cmb_sim(sim_id, filtered=False, pols_keep="EB"):
     if not filtered:
         sim_dir = "cmb_sims"
     res_str = "20arcmin" if pix_type == "car" else f"nside{nside}"  # add by hand. TODO: generalize  # noqa
-    sim_fname = f"cmb{pols_keep}_{res_str}_fwhm30.0_sim{sim_id:04d}_{pix_type.upper()}{suffix}.fits"  # noqa
+    sim_fname = f"cmb{pols_keep}_{res_str}_fwhm{beam_fwhm}.0_sim{sim_id:04d}_{pix_type.upper()}{suffix}.fits"  # noqa
 
     map =  mu.read_map(
         f"{base_dir}/{sim_dir}/{sim_fname}",
@@ -283,7 +290,8 @@ plt.figure()
 fname = f"{plot_dir}/clth_comparison.pdf"
 plt.plot(leff-3, clth_msk_nopure["BB"], "k.", alpha=0.4, label="msk nopure")
 plt.plot(leff-1.5, clth_msk_pure["BB"], "b.", alpha=0.4, label="msk pure")
-plt.plot(leff+3, nmt_bins.bin_cell(clbb_in), "r--", alpha=0.2, label="Theory")
+plt.plot(leff+3, nmt_bins.bin_cell(clth["BB"][:lmax+1]), "r--", alpha=0.2,
+         label="Theory")
 plt.xlabel(r"$\ell$")
 plt.ylabel(r"$C_\ell^{BB}$")
 plt.ylim((0, 3e-6))
@@ -363,84 +371,86 @@ else:
 print("  Plotting")
 os.makedirs(f"{out_dir}/plots", exist_ok=True)
 
-plt.figure()
-plt.title('Cl, no filtering')
 
-y = np.mean(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)
-yerr = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)
-plt.plot(leff, y, color='b', ls="-", label="Masked CMB, B only")
-plt.fill_between(leff, y-yerr, y+yerr, color='b', alpha=0.2)
+for pols in ["EE", "EB", "BB"]:
+    plt.figure()
+    plt.title('Cl, no filtering')
+    y = np.mean(np.array([cl[pols] for cl in cls_noe_masked]), axis=0)
+    yerr = np.std(np.array([cl[pols] for cl in cls_noe_masked]), axis=0)
+    plt.plot(leff, y, color='b', ls="-", label="Masked CMB, B only")
+    plt.fill_between(leff, y-yerr, y+yerr, color='b', alpha=0.2)
 
-y = np.mean(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)
-yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)
-plt.plot(leff, y, color='k', ls="-", label="Masked CMB, no purification")
-plt.fill_between(leff, y-yerr, y+yerr, color='k', alpha=0.2)
+    y = np.mean(np.array([cl[pols] for cl in cls_masked_nopure]), axis=0)
+    yerr = np.std(np.array([cl[pols] for cl in cls_masked_nopure]), axis=0)
+    plt.plot(leff, y, color='k', ls="-", label="Masked CMB, no purification")
+    plt.fill_between(leff, y-yerr, y+yerr, color='k', alpha=0.2)
 
-y = np.mean(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)
-yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)
-plt.plot(leff, y, color='y', ls="-", label="Masked CMB, purified")
-plt.fill_between(leff, y-yerr, y+yerr, color='y', alpha=0.2)
-plt.plot(clbb_in, 'r--', alpha=0.5, label="Theory")
+    y = np.mean(np.array([cl[pols] for cl in cls_masked_pure]), axis=0)
+    yerr = np.std(np.array([cl[pols] for cl in cls_masked_pure]), axis=0)
+    plt.plot(leff, y, color='y', ls="-", label="Masked CMB, purified")
+    plt.fill_between(leff, y-yerr, y+yerr, color='y', alpha=0.2)
+    plt.plot(clth[pols][:lmax+1], 'r--', alpha=0.5, label="Theory")
 
-plt.xlim([2, lmax_plot])
-plt.ylim((1e-8, 1e-2))
-plt.xlabel(r"$\ell$", fontsize=14)
-plt.ylabel(r"$C_\ell^{BB}$", fontsize=14)
-plt.yscale('log')
-plt.legend()
-print(f"  PLOT SAVED {plot_dir}/cl_masked.pdf")
-plt.savefig(f"{plot_dir}/cl_masked.pdf")
-plt.close()
+    plt.xlim([2, lmax_plot])
+    plt.ylim((1e-8, 1e-2))
+    plt.xlabel(r"$\ell$", fontsize=14)
+    plt.ylabel(fr"$C_\ell^{{{pols}}}$", fontsize=14)
+    plt.yscale('log')
+    plt.legend()
+    print(f"  PLOT SAVED {plot_dir}/cl_{pols}_masked.pdf")
+    plt.savefig(f"{plot_dir}/cl_{pols}_masked.pdf")
+    plt.close()
+
+for pols in ["EE", "EB", "BB"]:
+    thbb = nmt_bins.bin_cell(clth[pols][:lmax+1])
+    y = np.mean(np.array([cl[pols] for cl in cls_noe_masked]), axis=0)
+    yerr = np.std(np.array([cl[pols] for cl in cls_noe_masked]), axis=0)
+    plt.plot(leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)),
+            'b-', alpha=0.5, label="Masked CMB, B only")
+
+    thbb = clth_msk_nopure[pols]
+    y = np.mean(np.array([cl[pols] for cl in cls_masked_nopure]), axis=0)
+    yerr = np.std(np.array([cl[pols] for cl in cls_masked_nopure]), axis=0)
+    plt.plot(leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)),
+            'k-', alpha=0.5, label="Masked CMB, no purification")
+
+    thbb = clth_msk_pure[pols]
+    y = np.mean(np.array([cl[pols] for cl in cls_masked_pure]), axis=0)
+    yerr = np.std(np.array([cl[pols] for cl in cls_masked_pure]), axis=0)
+    plt.plot(leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)),
+            'y-', alpha=0.5, label="Masked CMB, purified")
+    plt.axhline(0, color="r", ls="--")
+
+    plt.xlim([2, lmax_plot])
+    plt.ylim((-20, 20))
+    plt.xlabel(r"$\ell$", fontsize=14)
+    plt.ylabel(fr"$(\hat{{C}}_\ell^{{{pols}}} - C_\ell^{{{pols},\, th}})/(\sigma(C_\ell^{{{pols}}})/\sqrt{{N_{{\rm sims}}}})$",  # noqa
+               fontsize=14)
+    plt.legend()
+    print(f"    PLOT SAVED {plot_dir}/cl_{pols}_bias_masked.pdf")
+    plt.savefig(f"{plot_dir}/cl_{pols}_bias_masked.pdf")
+    plt.close()
 
 
-thbb = nmt_bins.bin_cell(clbb_in)
-y = np.mean(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)
-yerr = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)
-plt.plot(leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)),
-         'b-', alpha=0.5, label="Masked CMB, B only")
+for pols in ["EE", "EB", "BB"]:
+    yerr_ref = np.std(np.array([cl[pols] for cl in cls_noe_masked]), axis=0)
+    yerr = np.std(np.array([cl[pols] for cl in cls_masked_pure]), axis=0)
+    plt.plot(leff, yerr/yerr_ref, 'b-', alpha=0.5, label="Masked CMB, purified")
+    sigma_masked = yerr/yerr_ref
 
-thbb = clth_msk_nopure["BB"]
-y = np.mean(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)
-yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)
-plt.plot(leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)),
-         'k-', alpha=0.5, label="Masked CMB, no purification")
+    yerr = np.std(np.array([cl[pols] for cl in cls_masked_nopure]), axis=0)
+    plt.plot(leff, yerr/yerr_ref, 'k-', alpha=0.5,
+            label="Masked CMB, no purification")
 
-thbb = clth_msk_pure["BB"]
-y = np.mean(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)
-yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)
-plt.plot(leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)),
-         'y-', alpha=0.5, label="Masked CMB, purified")
-plt.axhline(0, color="r", ls="--")
+    plt.axhline(1, color="k")
 
-plt.xlim([2, lmax_plot])
-plt.ylim((-20, 20))
-plt.xlabel(r"$\ell$", fontsize=14)
-plt.ylabel(r"$(\hat{C}_\ell^{BB} - C_\ell^{BB,\, th})/(\sigma(C_\ell^{BB})/\sqrt{N_{\rm sims}})$",  # noqa
-           fontsize=14)
-plt.legend()
-print(f"    PLOT SAVED {plot_dir}/cl_bias_masked.pdf")
-plt.savefig(f"{plot_dir}/cl_bias_masked.pdf")
-plt.close()
-
-
-yerr_ref = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)
-yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)
-plt.plot(leff, yerr/yerr_ref, 'b-', alpha=0.5, label="Masked CMB, purified")
-sigma_masked = yerr/yerr_ref
-
-yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)
-plt.plot(leff, yerr/yerr_ref, 'k-', alpha=0.5,
-         label="Masked CMB, no purification")
-
-plt.axhline(1, color="k")
-
-plt.xlim([2, lmax_plot])
-plt.ylim((0.5, 1000))
-plt.xlabel(r"$\ell$", fontsize=14)
-plt.ylabel(r"$\sigma(C_\ell^{BB, X})/\sigma(C_\ell^{BB,\,\rm{B only}})$",
-           fontsize=14)
-plt.yscale('log')
-plt.legend()
-print(f"    PLOT SAVED {plot_dir}/cl_error_masked.pdf")
-plt.savefig(f"{plot_dir}/cl_error_masked.pdf")
-plt.close()
+    plt.xlim([2, lmax_plot])
+    plt.ylim((0.5, 1000))
+    plt.xlabel(r"$\ell$", fontsize=14)
+    plt.ylabel(fr"$\sigma(C_\ell^{{{pols}, X}})/\sigma(C_\ell^{{{pols}}},\,\rm{{B only}})$",
+               fontsize=14)
+    plt.yscale('log')
+    plt.legend()
+    print(f"    PLOT SAVED {plot_dir}/cl_{pols}_error_masked.pdf")
+    plt.savefig(f"{plot_dir}/cl_{pols}_error_masked.pdf")
+    plt.close()
