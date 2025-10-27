@@ -3,6 +3,7 @@ import argparse
 import sqlite3
 import os
 import sys
+from itertools import product
 
 import sotodlib.preprocess.preprocess_util as pp_util
 
@@ -55,7 +56,7 @@ def main(args):
     # Sim related arguments
     sim_string_format = args.sim_string_format
     sim_ids = args.sim_ids
-    pure_types = args.pure_types
+    sim_types = args.sim_types
 
     if isinstance(sim_ids, str):
         if "," in sim_ids:
@@ -80,27 +81,33 @@ def main(args):
 
     # Query all atomics used for null splits in intra_obs_pair
     intra_obs_pair = args.intra_obs_pair
-    #intra_obs_pair = ["science"]
-    freq_channel = args.freq_channel  # we might wanna allow for general input
+    freq_channels = args.freq_channels
 
     atomic_metadata = {}
-    for split_label in intra_obs_pair:
+    for (split_label, freq_channel) in product(intra_obs_pair, freq_channels):
         query = f"""
                 SELECT obs_id, wafer
                 FROM atomic
                 WHERE freq_channel == '{freq_channel}'
-                AND (split_label == '{split_label}')
+                AND split_label == '{split_label}'
                 AND {query_restrict}
                 """
         res = db_cur.execute(query)
         res = res.fetchall()
-        atomic_metadata[split_label] = [(obs_id, wafer)
-                                        for obs_id, wafer in res]
+        atomic_metadata[(split_label, freq_channel)] = [
+            (obs_id, wafer) for obs_id, wafer in res
+        ]
+        logger.info(
+            f"{split_label}: "
+            f"{len(atomic_metadata[split_label, freq_channel])} "
+            "atomic maps to filter."
+        )
     db_con.close()
 
-    mpi_shared_list = [(sim_id, pure_type)
+    mpi_shared_list = [(sim_id, sim_type, freq_channel)
                        for sim_id in sim_ids
-                       for pure_type in [f"pure{i}" for i in pure_types]]
+                       for sim_type in sim_types
+                       for freq_channel in freq_channels]
 
     # Every rank must have the same shared list
     mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
@@ -108,29 +115,29 @@ def main(args):
                                     logger=logger)
     local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
-    for sim_id, pure_type in local_mpi_list:
-        logger.info(sim_id, pure_type)
+    for sim_id, sim_type, freq_channel in local_mpi_list:
+        logger.info(f"{sim_id}, {sim_type}")
         map_dir = atomic_sim_dir.format(sim_id=sim_id)
         assert os.path.isdir(map_dir), map_dir
         out_fname = sim_string_format.format(sim_id=sim_id,
-                                             pure_type=pure_type)
+                                             sim_type=sim_type)
         out_fname = out_fname.replace(
             ".fits",
             f"_{freq_channel}_science_filtered.fits"
         )
         if os.path.isfile(f"{coadded_dir}/{out_fname}"):
-            logger.warning(f"Sim {sim_id}, {pure_type}: File exists, ignoring.")
+            logger.warning(f"Sim {sim_id}, {sim_type}: File exists, ignoring.")
             return
 
         wmap_list, w_list = ([], [])
         for split_label in intra_obs_pair:
-            logger.info(split_label, "len(atomic_metadata):",
-                        len(atomic_metadata[split_label]))
+            logger.info(f"{split_label}: len(atomic_metadata): "
+                        f"{len(atomic_metadata[(split_label, freq_channel)])}")
             wmap_l, w_l = fu.get_atomics_maps_list(
-                sim_id, pure_type, atomic_metadata[split_label],
+                sim_id, sim_type,
+                atomic_metadata[(split_label, freq_channel)],
                 freq_channel, map_dir, split_label,
                 sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                remove_atomics=True,
                 logger=logger
             )
             wmap_list += wmap_l
@@ -139,15 +146,14 @@ def main(args):
             wmap_list, w_list, pix_type=pix_type,
             car_template_map=car_map_template
         )
-        logger.info("Plot dir:", plot_dir)
+        logger.info(f"Plot dir: {plot_dir}")
         fu.save_and_plot_map(
             map_filtered, out_fname, coadded_dir, plot_dir,
-            pix_type=pix_type, logger=logger
+            pix_type=pix_type
         )
         fu.save_and_plot_map(
             weights, out_fname.replace(".fits", "_weights.fits"),
-            coadded_dir, plot_dir, pix_type=pix_type, do_plot=False,
-            logger=logger
+            coadded_dir, plot_dir, pix_type=pix_type, do_plot=False
         )
     comm.Barrier()
 

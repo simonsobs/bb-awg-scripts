@@ -37,7 +37,7 @@ def main(args):
                              required placeholder {required_tag}")
 
     # Initialize the loggers
-    logger = pp_util.init_logger("summary", verbosity=1)
+    logger = pp_util.init_logger("summary", verbosity=3)
     logger_mute = pp_util.init_logger("mute", verbosity=0)
 
     # MPI related initialization
@@ -61,7 +61,7 @@ def main(args):
     sim_dir = args.sim_dir
     sim_string_format = args.sim_string_format
     sim_ids = args.sim_ids
-    pure_types = args.pure_types
+    sim_types = args.sim_types
 
     # Creating the simulation indices range to filter
     if isinstance(sim_ids, list):
@@ -83,7 +83,7 @@ def main(args):
 
     # Arguments related to pixellization
     pix_type = args.pix_type
-    freq_channel = args.freq_channel
+    freq_channels = args.freq_channels
     if pix_type == "hp":
         nside = args.nside
         mfmt = ".fits"  # TODO: fits.gz for HEALPix
@@ -102,10 +102,9 @@ def main(args):
 
     # Query all atomics used for intra_obs_pair
     atomic_metadata = {}
-    freq_channel = args.freq_channel  # we might wanna allow for general input
     intra_obs_pair = args.intra_obs_pair
 
-    for split_label in intra_obs_pair:
+    for split_label, freq_channel in product(intra_obs_pair, freq_channels):
         query = f"""
                 SELECT obs_id, wafer
                 FROM atomic
@@ -159,30 +158,17 @@ def main(args):
             ]
             meta.restrict("dets", thinned)
 
-        # Process data here to have t2p leakage template
-        # Only need to run it once for all simulations
-        # and only the pre-demodulation part.
-        # UPDATE: We don't worry about T-P leakage for purification (for now)
-        # data_aman = pp_util.multilayer_load_and_preprocess(
-        #     obs_id,
-        #     configs_init,
-        #     configs_proc,
-        #     meta=meta,
-        #     logger=logger,
-        #     init_only=True
-        # )
-
         start = time.time()
         logger.info(f"Processing {obs_id} {wafer}")
 
-        for sim_id, pure_type in product(sim_ids,
-                                         [f"pure{i}" for i in pure_types]):
-            logger.info(f"Processing {pure_type} for sim_id {sim_id:04d}")
-            # Initialize a timer
+        for sim_id, sim_type in product(sim_ids,
+                                        [i for i in sim_types]):
+            logger.info(f"Processing {sim_type} for sim_id {sim_id:04d}")
             start0 = time.time()
+
             # Path to simulation
             map_fname = sim_string_format.format(sim_id=sim_id,
-                                                 pure_type=pure_type)
+                                                 sim_type=sim_type)
             map_file = f"{sim_dir}/{map_fname}"
 
             # Handling pixellization
@@ -196,7 +182,7 @@ def main(args):
                 raise ValueError("pix_type must be hp or car")
 
             logger.info(f"Loading {obs_id} {wafer} {freq_channel} "
-                        f"on {pure_type}, sim {sim_id}")
+                        f"on {sim_type}, sim {sim_id}")
 
             try:
                 aman = pp_util.multilayer_load_and_preprocess_sim(
@@ -206,7 +192,6 @@ def main(args):
                     sim_map=sim,
                     meta=meta,
                     logger=logger_mute,
-                    t2ptemplate_aman=None  # data_aman
                 )
 
             except loader.LoaderError:
@@ -235,7 +220,7 @@ def main(args):
                     # Saving filtered atomics to disk
                     atomic_fname = map_fname.replace(
                         mfmt,
-                        f"_{obs_id}_{wafer}_{freq_channel}_{split_label}{mfmt}"
+                        f"_{obs_id}_{wafer}_{split_label}{mfmt}"
                     )
 
                     f_wmap = f"{atomics_dir[sim_id]}/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"  # noqa
@@ -257,10 +242,10 @@ def main(args):
             # Stop timer
             end0 = time.time()
             logger.info(
-                f"Filtered {pure_type} sim {sim_id:04d} in "
+                f"Filtered {sim_type} sim {sim_id:04d} in "
                 f"{end0 - start0:.1f} seconds."
             )
-        logger.info(f"Processed {len(pure_types)} x {len(sim_ids)} sims for "
+        logger.info(f"Processed {len(sim_types)} x {len(sim_ids)} sims for "
                     f"{obs_id} {wafer} in {time.time() - start:.1f} seconds.")
     comm.Barrier()
 

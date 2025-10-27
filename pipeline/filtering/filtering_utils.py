@@ -91,7 +91,7 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
         # case, it is acceptable to just ignore those when coadding.
         # print("expected file:", fname_wmap)
         if not (os.path.isfile(fname_wmap) and os.path.isfile(fname_w)):
-            logger.warning("Atomic map MISSING:", fname_wmap)
+            logger.warning(f"Atomic map MISSING: {fname_wmap}")
             continue
         else:
             num_real += 1
