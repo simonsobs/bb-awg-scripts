@@ -3,7 +3,8 @@ import numpy as np
 import os
 
 
-def filter_string(rundir, bb_awg_scripts_dir, id_sim_first, id_sim_last, tel,
+def filter_string(rundir, outdir, bb_awg_scripts_dir,
+                  id_sim_first, id_sim_last, tel,
                   email):
     if id_sim_last == id_sim_first:
         sim_string = str(id_sim_last)
@@ -23,34 +24,37 @@ def filter_string(rundir, bb_awg_scripts_dir, id_sim_first, id_sim_last, tel,
 set -e
 
 # Log file
-log="./log_{tel}_cov_sims_filter_{sim_string}"
+log="{outdir}/log_{tel}_cov_sims_filter_{sim_string}"
 
 export OMP_NUM_THREADS=1
 
 module use --append /scratch/gpfs/SIMONSOBS/modules
 module load soconda
 
-basedir={rundir}  ## YOUR RUNNING DIRECTORY
+rundir={rundir}  ## YOUR RUNNING DIRECTORY
+outdir={outdir}  ## YOUR LOGGING DIRECTORY
 bb_awg_scripts_dir={bb_awg_scripts_dir}  ## YOUR bb_awg_scripts DIRECTORY
 
-cd $basedir
-filtering_config="${{basedir}}/sim_covariance/{tel}/filtering_config_covar_{tel}_full.yaml"
+cd $rundir
+filtering_config="${{outdir}}/filtering_config_covar_{tel}_full.yaml"
 
 # This produces filtered atomics
 NOW=$( date '+%F_%H:%M:%S' )
 srun -n 560 -c 4 --cpu_bind=cores \\
 python -u \\
     ${{bb_awg_scripts_dir}}/pipeline/filtering/filter_sims_sotodlib.py \\
-    --config_file $filtering_config --sim_ids {sim_string} > "${{log}}_${{NOW}}" 2>&1
+    --config_file $filtering_config --sim_ids {sim_string} \\
+        > "${{log}}_${{NOW}}" 2>&1
 
 echo "Ending batch script at $(date)"
-    """.format(rundir=rundir, bb_awg_scripts_dir=bb_awg_scripts_dir,
+    """.format(rundir=rundir, outdir=outdir,
+               bb_awg_scripts_dir=bb_awg_scripts_dir,
                sim_string=sim_string, tel=tel, user_email=email)
     return string
 
 
-def coadd_string(rundir, bb_awg_scripts_dir, id_sim_first, id_sim_last, tel,
-                 email):
+def coadd_string(rundir, outdir, bb_awg_scripts_dir, id_sim_first, id_sim_last,
+                 tel, email):
     if id_sim_last == id_sim_first:
         sim_string = str(id_sim_last)
     else:
@@ -61,7 +65,7 @@ def coadd_string(rundir, bb_awg_scripts_dir, id_sim_first, id_sim_last, tel,
 #SBATCH --nodes=20
 #SBATCH --ntasks=80
 #SBATCH --cpus-per-task=28
-#SBATCH --time=00:61:00
+#SBATCH --time=03:00:00
 #SBATCH --job-name={tel}-cov-sims-coadd-{sim_string}
 #SBATCH --mail-user={user_email}
 #SBATCH --mail-type=FAIL
@@ -69,34 +73,37 @@ def coadd_string(rundir, bb_awg_scripts_dir, id_sim_first, id_sim_last, tel,
 set -e
 
 # Log file
-log="./log_{tel}_cov_sims_coadd_{sim_string}"
+log="{outdir}/log_{tel}_cov_sims_coadd_{sim_string}"
 
 export OMP_NUM_THREADS=1
 
 module use --append /scratch/gpfs/SIMONSOBS/modules
 module load soconda
 
-basedir={rundir}  ## YOUR RUNNING DIRECTORY
+rundir={rundir}  ## YOUR RUNNING DIRECTORY
+outdir={outdir}  ## YOUR LOGGING DIRECTORY
 bb_awg_scripts_dir={bb_awg_scripts_dir}  ## YOUR bb_awg_scripts DIRECTORY
 
-cd $basedir
-filtering_config="${{basedir}}/sim_covariance/{tel}/filtering_config_covar_{tel}_full.yaml"
+cd $rundir
+filtering_config="${{outdir}}/filtering_config_covar_{tel}_full.yaml"
 
 # This coadds them into bundles
 NOW=$( date '+%F_%H:%M:%S' )
 srun -n 80 -c 28 --cpu_bind=cores \\
 python -u \\
     ${{bb_awg_scripts_dir}}/pipeline/filtering/coadd_filtered_sims.py \\
-    --config_file $filtering_config --sim_ids {sim_string} > "${{log}}_${{NOW}}" 2>&1
+    --config_file $filtering_config --sim_ids {sim_string} \\
+        > "${{log}}_${{NOW}}" 2>&1
 
 echo "Ending batch script at $(date)"
-    """.format(rundir=rundir, bb_awg_scripts_dir=bb_awg_scripts_dir,
+    """.format(rundir=rundir, outdir=outdir,
+               bb_awg_scripts_dir=bb_awg_scripts_dir,
                sim_string=sim_string, tel=tel, user_email=email)
     return string
 
 
-def delete_string(rundir, bb_awg_scripts_dir, id_sim_first, id_sim_last, tel,
-                 email):
+def delete_string(rundir, outdir, bb_awg_scripts_dir,
+                  id_sim_first, id_sim_last, tel, email):
     if id_sim_last == id_sim_first:
         sim_string = str(id_sim_last)
     else:
@@ -115,27 +122,30 @@ def delete_string(rundir, bb_awg_scripts_dir, id_sim_first, id_sim_last, tel,
 set -e
 
 # Log file
-log="./log_{tel}_cov_sims_delete_{sim_string}"
+log="{outdir}/log_{tel}_cov_sims_delete_{sim_string}"
 
 export OMP_NUM_THREADS=1
 
 module use --append /scratch/gpfs/SIMONSOBS/modules
 module load soconda
 
-basedir={rundir}  ## YOUR RUNNING DIRECTORY
+rundir={rundir}  ## YOUR RUNNING DIRECTORY
+outdir={outdir}  ## YOUR LOGGING DIRECTORY
 bb_awg_scripts_dir={bb_awg_scripts_dir}  ## YOUR bb_awg_scripts DIRECTORY
 
-cd $basedir
-filtering_config="${{basedir}}/sim_covariance/{tel}/filtering_config_covar_{tel}_full.yaml"
+cd $rundir
+filtering_config="${{outdir}}/filtering_config_covar_{tel}_full.yaml"
 
 # This coadds them into bundles
 NOW=$( date '+%F_%H:%M:%S' )
 python -u \\
     ${{bb_awg_scripts_dir}}/pipeline/filtering/delete_atomic_sims.py \\
-    --config_file $filtering_config --sim_ids {sim_string} > "${{log}}_${{NOW}}" 2>&1
+    --config_file $filtering_config --sim_ids {sim_string} --force_delete \\
+        > "${{log}}_${{NOW}}" 2>&1
 
 echo "Ending batch script at $(date)"
-    """.format(rundir=rundir, bb_awg_scripts_dir=bb_awg_scripts_dir,
+    """.format(rundir=rundir, outdir=outdir,
+               bb_awg_scripts_dir=bb_awg_scripts_dir,
                sim_string=sim_string, tel=tel, user_email=email)
     return string
 
@@ -150,8 +160,10 @@ def main(args):
     * delete_{id_batch}.sh  # Delete atomics after enusring bundles exist
 
     Args:
+        rundir: str
+            Running directory where the ISO processing scripts live.
         outdir: str
-            Output directory for scripts to be written to.
+            Output directory for sim-filtering scripts.
         bb_awg_scripts_dir:
             Install directory of bb-awg-scripts repository.
             See https://github.com/simonsobs/bb-awg-scripts
@@ -167,6 +179,7 @@ def main(args):
             User email for SLURM notifications about job failure.
     """
     outdir = os.path.abspath(args.outdir)
+    rundir = os.path.abspath(args.rundir)
     bb_awg_scripts_dir = os.path.abspath(args.bb_awg_scripts_dir)
     id_sim_first = args.id_sim_first
     id_sim_last = args.id_sim_last
@@ -188,18 +201,22 @@ def main(args):
         print(f"{outdir}/filter_{id_batch}.sh",)
 
         with open(f"{outdir}/filter_{id_batch}.sh", "w") as f:
-            f.write(filter_string(outdir, bb_awg_scripts_dir, idfirst, idlast,
+            f.write(filter_string(rundir, outdir, bb_awg_scripts_dir,
+                                  idfirst, idlast,
                                   args.tel, email))
         with open(f"{outdir}/coadd_{id_batch}.sh", "w") as f:
-            f.write(coadd_string(outdir, bb_awg_scripts_dir, idfirst, idlast,
-                                  args.tel, email))
+            f.write(coadd_string(rundir, outdir, bb_awg_scripts_dir,
+                                 idfirst, idlast,
+                                 args.tel, email))
         with open(f"{outdir}/delete_{id_batch}.sh", "w") as f:
-            f.write(delete_string(outdir, bb_awg_scripts_dir, idfirst, idlast,
+            f.write(delete_string(rundir, outdir, bb_awg_scripts_dir,
+                                  idfirst, idlast,
                                   args.tel, email))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--rundir", type=str)
     parser.add_argument("--outdir", type=str, default=os.getcwd())
     parser.add_argument("--bb_awg_scripts_dir", type=str)
     parser.add_argument("--batch_size", type=int, default=5)
