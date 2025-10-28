@@ -1,0 +1,41 @@
+## Required shared arguments ##
+bundle_db: #/scratch/gpfs/SIMONSOBS/users/kw6905/simpure/sky_patch/satp3_iso/bundles_south_seed17_20250324.db
+atomic_db: /cephfs/soukdata/user_data/kwolz/simpure/sky_patch/v1_20251006/atomic_db_ws0.sqlite
+output_dir: &output_dir /cephfs/soukdata/user_data/kwolz/simpure/filtered_pure_sims/satp3/f090/butter4_20251007
+
+sim_dir: /cephfs/soukdata/user_data/kwolz/simpure/input_sims
+sim_string_format: "{sim_type}_20.0arcmin_fwhm30.0_sim{sim_id:04d}_CAR.fits"
+freq_channels: [f090]
+patches: [very_large]
+sim_types: [pureE]
+sim_ids: 300,799  # [0,1,2,3,4]
+
+# (Optional for coadd_filtered_sims)
+intra_obs_splits: [scan_left, scan_right]
+
+## Optional shared arguments ##
+pix_type: car
+car_map_template: /shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/band_car_fejer1_20arcmin.fits
+bundle_id: 0
+query_restrict: "median_weight_qu < 2e10"
+
+
+## Required arguments for filter_sims_sotodlib ##
+preprocess_config_init: /shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/satp3/transfer_preproc_config_satp3_20250108_simpure_init.yaml
+preprocess_config_proc: /shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/satp3/transfer_preproc_config_satp3_20250108_butter4_proc.yaml
+
+
+## Optional arguments for filter_sims_sotodlib ##
+# nside: 512
+fp_thin: 32
+
+
+## Required arguments for coadd_filtered_sims ##
+atomic_sim_dir: !path [*output_dir, atomic_sims, "{sim_id:04d}"]
+
+
+## Optional arguments for coadd_filtered_sims ##
+intra_obs_pair: [scan_left, scan_right]
+inter_obs_splits: []
+nbatch_atomics: 1
+remove_atomics: True
