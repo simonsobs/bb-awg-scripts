@@ -109,6 +109,9 @@ def main(args):
             intra_obs_splits = [intra_obs_splits]
         else:
             intra_obs_splits = intra_obs_splits.split(",")
+    if not len(intra_obs_splits):
+        # If no intra-obs splits are given to coadd, use the default ones.
+        intra_obs_splits = ["scan_left", "scan_right"]
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id - null split combination
@@ -188,9 +191,43 @@ def main(args):
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
     for patch, freq_channel, obs_id, wafer in local_mpi_list:
-        # if (obs_id, wafer) != ("obs_1716645605_satp1_1101100", "ws1"):
-        #     continue
         start = time.time()
+
+        # First, check if atomic maps already exist.
+        maps_exist = True
+        for sim_id, sim_type in product(sim_ids, args.sim_types):
+            # Path to unfiltered simulation
+            map_fname = sim_string_format.format(
+                sim_id=sim_id,
+                sim_type=sim_type,
+                freq_channel=freq_labels[freq_channel]
+            )
+
+            for split_label in intra_obs_splits:
+                if (patch, freq_channel, obs_id, wafer) in atomic_metadata[split_label]:  # noqa
+
+                    # Saving filtered atomics to disk
+                    atomic_fname = map_fname.split("/")[-1].replace(
+                        mfmt,
+                        f"_{obs_id}_{wafer}_{split_label}{mfmt}"
+                    )
+
+                    f_wmap = atomics_dir[patch, freq_channel][sim_id]
+                    f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
+                    f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
+
+                    if not (os.path.isfile(f_wmap) and os.path.isfile(f_w)):
+                        maps_exist = False
+                else:
+                    maps_exist = False
+
+        # If they exist and we don't overwrite, skip this atomic.
+        if maps_exist and not args.overwrite_atomics:
+            logger.info(
+                f"Map exists: ({patch}, {freq_channel}, {obs_id}, {wafer})"
+                f" to filter sims {sim_ids}, {args.sim_types}"
+            )
+            continue
 
         # Get axis manager metadata for the given obs
         dets = {"wafer_slot": wafer, "wafer.bandpass": freq_channel}
@@ -236,32 +273,6 @@ def main(args):
                 freq_channel=freq_labels[freq_channel]
             )
             map_file = f"{sim_dir}/{map_fname}"
-
-            # First, check if all atomic maps for this simulation exist.
-            maps_exist = True
-            for split_label in intra_obs_splits:
-                if (patch, freq_channel, obs_id, wafer) in atomic_metadata[split_label]:  # noqa
-
-                    # Saving filtered atomics to disk
-                    atomic_fname = map_fname.split("/")[-1].replace(
-                        mfmt,
-                        f"_{obs_id}_{wafer}_{split_label}{mfmt}"
-                    )
-
-                    f_wmap = atomics_dir[patch, freq_channel][sim_id]
-                    f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
-                    f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
-
-                    if not (os.path.isfile(f_wmap) and os.path.isfile(f_w)):
-                        maps_exist = False
-
-            # If they exist and we don't overwrite, skip this simulation.
-            if maps_exist and not args.overwrite_atomics:
-                logger.info(
-                    f"Map exists: ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                    f" to filter {sim_type}, sim {sim_id}"
-                )
-                continue
 
             logger.info(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
                         f" to filter {sim_type}, sim {sim_id}")
