@@ -1,0 +1,243 @@
+context_file: 'contexts/satp1/use_this_local_250801.yaml'
+#plot_dir: '/global/cfs/cdirs/sobs/sat-iso/v3/preprocessing/satp1_20250801_proc/preprocess_plots'
+plot_dir: '/scratch/gpfs/SIMONSOBS/sat-iso/v3/preprocessing/satp1_20250801_proc/preprocess_plots'
+
+subobs:
+  use: ['wafer_slot', 'wafer.bandpass']
+  label: wafer_slot
+  
+archive:
+  #index: '/global/cfs/cdirs/sobs/sat-iso/v3/preprocessing/satp1_20250801_proc/process_archive.sqlite'
+  index: '/scratch/gpfs/SIMONSOBS/sat-iso/v3/preprocessing/satp1_20250801_proc/process_archive.sqlite'
+  policy:
+    type: 'simple'
+    #filename: '/global/cfs/cdirs/sobs/sat-iso/v3/preprocessing/satp1_20250801_proc/preprocess_archive.h5'
+    filename: '/scratch/gpfs/SIMONSOBS/sat-iso/v3/preprocessing/satp1_20250801_proc/preprocess_archive.h5'
+
+process_pipe:
+    - name: "azss"
+      skip_on_sim: True  # No estimation on sims
+      calc:
+        signal: 'dsT'
+        azss_stats_name: 'azss_statsT_left'
+        azrange: [-1.57079, 7.85398]
+        bins: 1351 # This is 0.4 deg bins.
+        flags: 'glitch_flags_left'
+        merge_stats: True
+        merge_model: False
+      save: True
+      process:
+        subtract: False
+
+    - name: "subtract_azss_template"
+      skip_on_sim: False
+      process:
+        signal: 'dsT'
+        azss: 'azss_statsT_left'
+        method: 'interpolate'
+        scan_flags: 'left_scan'
+        subtract: True
+
+    - name: "azss"
+      skip_on_sim: True  # No estimation on sims
+      calc:
+        signal: 'demodQ'
+        azss_stats_name: 'azss_statsQ_left'
+        azrange: [-1.57079, 7.85398]
+        bins: 1351 # This is 0.4 deg bins.
+        flags: 'glitch_flags_left'
+        merge_stats: True
+        merge_model: False
+      save: True
+      process:
+        subtract: False
+        
+    - name: "subtract_azss_template"
+      skip_on_sim: False
+      process:
+        signal: 'demodQ'
+        azss: 'azss_statsQ_left'
+        method: 'interpolate'
+        scan_flags: 'left_scan'
+        subtract: True
+
+    - name: "azss"
+      skip_on_sim: True  # No estimation on sims
+      calc:
+        signal: 'demodU'
+        azss_stats_name: 'azss_statsU_left'
+        azrange: [-1.57079, 7.85398]
+        bins: 1351 # This is 0.4 deg bins.
+        flags: 'glitch_flags_left'
+        merge_stats: True
+        merge_model: False
+      save: True
+      process:
+        subtract: False
+
+    - name: "subtract_azss_template"
+      skip_on_sim: False
+      process:
+        signal: 'demodU'
+        azss: 'azss_statsU_left'
+        method: 'interpolate'
+        scan_flags: 'left_scan'
+        subtract: True
+
+    - name: "azss"
+      skip_on_sim: True  # No estimation on sims
+      calc:
+        signal: 'dsT'
+        azss_stats_name: 'azss_statsT_right'
+        azrange: [-1.57079, 7.85398]
+        bins: 1351 # This is 0.4 deg bins.
+        flags: 'glitch_flags_right'
+        merge_stats: True
+        merge_model: False
+      save: True
+      process:
+        subtract: False
+
+    - name: "subtract_azss_template"
+      skip_on_sim: False
+      process:
+        signal: 'dsT'
+        azss: 'azss_statsT_right'
+        method: 'interpolate'
+        scan_flags: 'right_scan'
+        subtract: True
+
+    - name: "azss"
+      skip_on_sim: True  # No estimation on sims
+      calc:
+        signal: 'demodQ'
+        azss_stats_name: 'azss_statsQ_right'
+        azrange: [-1.57079, 7.85398]
+        bins: 1351 # This is 0.4 deg bins.
+        flags: 'glitch_flags_right'
+        merge_stats: True
+        merge_model: False
+      save: True
+      process:
+        subtract: False
+
+    - name: "subtract_azss_template"
+      skip_on_sim: False
+      process:
+        signal: 'demodQ'
+        azss: 'azss_statsQ_right'
+        method: 'interpolate'
+        scan_flags: 'right_scan'
+        subtract: True
+
+    - name: "azss"
+      skip_on_sim: True  # No estimation on sims
+      calc:
+        signal: 'demodU'
+        azss_stats_name: 'azss_statsU_right'
+        azrange: [-1.57079, 7.85398]
+        bins: 1351 # This is 0.4 deg bins.
+        flags: 'glitch_flags_right'
+        merge_stats: True
+        merge_model: False
+      save: True
+      process:
+        subtract: False
+
+    - name: "subtract_azss_template"
+      skip_on_sim: False
+      process:
+        signal: 'demodU'
+        azss: 'azss_statsU_right'
+        method: 'interpolate'
+        scan_flags: 'right_scan'
+        subtract: True
+        
+    - name: "estimate_t2p"
+      skip_on_sim: True  # No estimation on sims
+      calc:
+        flag_name: "glitch_flags"
+        f_lpf_cutoff: 4
+      save: True
+
+    - name: "subtract_t2p"
+      skip_on_sim: False
+      use_data_aman: True  # Use the time ordered data to get T-to-P template
+      process: {}
+
+    - name: "inv_var_flags"
+      skip_on_sim: False
+      calc:
+        signal_name: 'demodQ'
+        nsigma: 2
+      save: True
+      select: True
+    
+    - name: "sub_polyf"
+      skip_on_sim: False
+      process:
+        signal_name: "dsT"
+        degree: 9
+        in_place: True
+        mask: "glitch_flags"
+
+    - name: "sub_polyf"
+      skip_on_sim: False
+      process:
+        signal_name: "demodQ"
+        degree: 1
+        in_place: True
+        mask: "glitch_flags"
+
+    - name: "sub_polyf"
+      skip_on_sim: False
+      process:
+        signal_name: "demodU"
+        degree: 1
+        in_place: True
+        mask: "glitch_flags"
+
+    - name: "rotate_qu"
+      skip_on_sim: False  # We rotate in init, now we must rotate back.
+      process:
+        sign: -1
+        offset: 0
+        update_focal_plane: False
+
+    - name: "split_flags"
+      skip_on_sim: False
+      calc:
+        right_focal_plane: 0
+        top_focal_plane: 0
+        central_pixels: 0.20023039
+        high_gain: 0.115
+        high_noise: 3.5e-5
+        high_tau: 1.5e-3
+        det_A: A
+        pol_angle: 35
+        crossover: BL
+        high_leakage: 1.0e-3
+        high_2f: 1.5e-3
+      save: True
+
+    - name: "psd"
+      skip_on_sim: True  # We won't need this from sims
+      signal: "demodQ"
+      wrap: "psdQ_mapmaking"
+      calc:
+        max_samples: 524288 #2**19
+        merge: False
+        nperseg: 65536 #2**16
+        noverlap: 0
+        full_output: True
+      save: True
+
+    - name: "noise"
+      skip_on_sim: True  # We won't need this from sims
+      psd: "psdQ_mapmaking"
+      fit: False
+      calc:
+        low_f: 1
+        high_f: 2
+      save:
+        wrap_name: "noiseQ_mapmaking"
