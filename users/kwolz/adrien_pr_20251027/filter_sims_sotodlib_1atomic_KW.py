@@ -4,7 +4,7 @@ from pixell import enmap, enplot
 import datetime
 import time
 
-# TODO: Make it an actual module
+# TODO: Replace by your local bb-awg-scrips install
 sys.path.append(
     "/home/kw6905/bbdev/bb-awg-scripts/pipeline/filtering"
 )
