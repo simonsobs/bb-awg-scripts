@@ -368,7 +368,7 @@ if __name__ == "__main__":
         "--config_file", type=str, help="yaml file with configuration."
     )
     parser.add_argument(
-        "--sim_ids", type=str, default=0,
+        "--sim_ids", type=str, default="0",
         help="Simulations to be processed, in format [first],[last]."
              "Overwrites the yaml file configs."
     )
