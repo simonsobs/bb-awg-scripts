@@ -9,7 +9,7 @@ from coordinator import BundleCoordinator
 import itertools
 
 import matplotlib.pyplot as plt
-
+from procs_pool import get_exec_env
 
 def car2healpix(norm_hits_map):
     """
@@ -19,7 +19,7 @@ def car2healpix(norm_hits_map):
     return reproject.map2healpix(norm_hits_map, spin=[0])
 
 
-def main(args):
+def main(args, parallelizor=None):
     """
     """
     args = args.copy()  # Make sure we don't accidentally modify the input args
@@ -92,7 +92,7 @@ def main(args):
             null_prop_val=split_inter_obs,
             map_dir=args.map_dir,
             abscal=args.abscal,
-            nproc=args.nproc
+            parallelizor=parallelizor
         )
 
         # Map naming convention
@@ -188,14 +188,8 @@ def main(args):
                 plt.close()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Make bundled maps")
-    parser.add_argument(
-        "--config_file", type=str, help="yaml file with configuration."
-    )
-
-    args = parser.parse_args()
-    config = bundling_utils.Cfg.from_yaml(args.config_file)
+def _main(config_file, parallelizor):
+    config = bundling_utils.Cfg.from_yaml(config_file)
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
     patch_list = config.patch
 
@@ -230,7 +224,7 @@ if __name__ == "__main__":
                         print(null_prop_val)
                         config2.null_prop_val_inter_obs = null_prop_val
                         try:
-                            main(config2)
+                            main(config2, parallelizor)
                         except ValueError as e:
                             print(e)
 
@@ -243,7 +237,7 @@ if __name__ == "__main__":
                         print(split_val)
                         config2.split_label_intra_obs = split_val
                         try:
-                            main(config2)
+                            main(config2, parallelizor)
                         except ValueError as e:
                             print(e)
 
@@ -287,3 +281,21 @@ if __name__ == "__main__":
                         plot = enplot.plot(coadd_map*1e6, colorbar=True, color='gray', range="100:20:20", ticks=10, downgrade=2, autocrop=True)
                         enplot.write(savename.replace("{}.fits", "mapQ.png"), plot[1])
                         enplot.write(savename.replace("{}.fits", "mapU.png"), plot[2])
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Make bundled maps")
+    parser.add_argument(
+        "--config_file", type=str, help="yaml file with configuration."
+    )
+    parser.add_argument(
+        "--nproc", type=int, default=1, help="Number of parallel processes for concurrent futures."
+    )
+
+    args = parser.parse_args()
+    rank, executor, as_completed_callable = get_exec_env(args.nproc)
+    if rank == 0:
+        try:
+            nproc = executor.num_workers
+        except AttributeError:
+            nproc = executor._max_workers
+        _main(args.config_file, (executor, as_completed_callable, nproc))
