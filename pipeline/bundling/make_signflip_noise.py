@@ -55,20 +55,32 @@ def main(args, size, rank, comm):
     car_map_template = args.car_map_template
 
     bundle_ids = range(args.n_bundles)
-    n_sims = config.n_sims
+    #n_sims = config.n_sims
+    n_sims = getattr(args, "n_sims", None) or getattr(globals().get("config", object()), "n_sims", None)
+    if n_sims is None:
+        raise ValueError("n_sims not found on args or global config.")
+
 
     # Figure out split tag ahead of time
     split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
                                         args.null_prop_val_inter_obs)
 
+    # Default cases
     if (split_intra_obs, split_inter_obs) == (None, None):
         split_tag = "science"
     elif split_inter_obs is not None:
         split_tag = split_inter_obs
     elif split_intra_obs is not None:
-        split_tag = split_intra_obs
+        # if it's the coadd pair, call it "full"
+        pair = getattr(args, "coadd_split_pair", None) or getattr(args, "intra_obs_pair", None)
+        if isinstance(split_intra_obs, (list, tuple)) and pair and list(split_intra_obs) == list(pair):
+            split_tag = getattr(args, "coadd_splits_name", "full")
+        else:
+            split_tag = split_intra_obs
+
+    # normalize list, i.e. joined string if still a list
     if isinstance(split_tag, list):
-        split_tag = '_'.join(split_tag)
+        split_tag = "_".join(split_tag)
 
     wafer_tag = args.wafer if args.wafer is not None else ""
     patch_tag = args.patch if args.patch is not None else ""
@@ -159,7 +171,9 @@ def main(args, size, rank, comm):
                 
             if combined_map is None:
                 print(f"No valid maps for bundle_id={bundle_id} sim_id={sim_id}, skipping save.")
-                exut()
+                #exut()
+                continue
+                
  
 
         # Output filenames
@@ -176,6 +190,12 @@ def main(args, size, rank, comm):
         out_fname = out_fname.replace("__", "_")
         out_fname = out_fname.replace("_map.fits", f"_{sim_id:04d}_map.fits")
         os.makedirs(os.path.dirname(out_fname), exist_ok=True)
+
+        # Skip existing maps if overwrite=False
+        if (not args.overwrite) and os.path.exists(out_fname):
+            if rank == 0:
+                print(f"Skipping existing: {out_fname}")
+            continue
 
         # Save maps
         if args.pix_type == "car":
@@ -229,6 +249,15 @@ if __name__ == "__main__":
                 config1 = config.copy()
                 config1.patch = patch
                 config1.freq_channel, config1.wafer = it
+                
+                # --- science/full run: coadd the pair, no inter-obs null ---
+                config_science = config1.copy()
+                config_science.null_prop_val_inter_obs = None
+                config_science.split_label_intra_obs  = config_science.intra_obs_pair  # e.g. ["scan_left","scan_right"]
+                try:
+                    main(config_science, size, rank, comm)
+                except ValueError as e:
+                    print(e)
 
                 # Inter-obs splits
                 if config1.inter_obs_splits is not None:
