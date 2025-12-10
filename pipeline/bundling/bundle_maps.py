@@ -63,7 +63,10 @@ def main(args, parallelizor=None):
 
     atomic_list = None
     if args.atomic_list is not None:
-        atomic_list = np.load(args.atomic_list)
+        if '.npz' in args.atomic_list:
+            atomic_list = np.load(args.atomic_list)["atomic_list"]
+        else:
+            atomic_list = np.load(args.atomic_list)
 
     car_map_template = args.car_map_template
 
