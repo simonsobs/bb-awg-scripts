@@ -3,7 +3,7 @@ from pixell import enmap
 import healpy as hp
 from astropy.io import fits
 import h5py
-from concurrent.futures import ProcessPoolExecutor, as_completed
+
 from copy import deepcopy
 
 from typing import Optional
@@ -169,7 +169,7 @@ def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
 
 def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
                pix_type="hp", res_car=5., car_template_map=None,
-               dec_cut_car=None, fields_hp=None, abscal=1, nproc=1):
+               dec_cut_car=None, fields_hp=None, abscal=1, parallelizor=None):
     """
     Coadd a list of weighted maps, a list of map weights, and
     (optionally) a list of hits maps corresponding to a set of atomics.
@@ -202,8 +202,8 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     abscal: array
         Multiplicative factor for each map. Output maps will be multiplied
         by this number; the weights map will get abscal**-2
-    nproc: int
-        Number of parallel processes to use. 1 for serial.
+    parallelizor: tuple
+        (MPICommExecutor or ProcessPoolExecutor, as_completed_callable, num_workers)
 
     Returns
     -------
@@ -222,7 +222,7 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     if isinstance(abscal, list):
         abscal = np.array(abscal)
 
-    sum_fn = _make_parallel_proc(sum_maps, nproc) if nproc > 1 else sum_maps
+    sum_fn = _make_parallel_proc(sum_maps, parallelizor) if parallelizor is not None else sum_maps
 
     if pix_type == "car":
         template = _get_map_template_car(car_template_map, res_car,
@@ -400,7 +400,7 @@ def _add_map(imap, omap, pix_type):
                       op=np.ndarray.__iadd__)
 
 
-def _make_parallel_proc(fn, nproc_default):
+def _make_parallel_proc(fn, parallelizor):
     """Parallelize a coaddition function using ProcessPoolExecutor.
 
     Parameters
@@ -408,29 +408,30 @@ def _make_parallel_proc(fn, nproc_default):
     fn: function
         coaddition function with input params (list of filenames, template map)
         and return: coadded map
-    nproc_default: int
-        Default number of processes to use
+    parallelizor: tuple
+        (MPICommExecutor or ProcessPoolExecutor, as_completed_callable, num_workers)
 
     Returns
     -------
     fn: function
         Parallelized coaddition function with same input params, plus optional
-        nproc=nproc_default
+        nproc=num_workers from parallelizor
     """
-    def parallel_fn(filenames, template, *args, nproc=nproc_default, **kwargs):
+    exe, as_completed, nproc = parallelizor
+    def parallel_fn(filenames, template, *args, nproc=nproc, **kwargs):
         ibin = int(np.ceil(len(filenames)/nproc))
         slices = [slice(iproc*ibin, (iproc+1)*ibin) for iproc in range(nproc)]
         out = None
-        with ProcessPoolExecutor(nproc) as exe:
-            futures = [exe.submit(fn, filenames, template, *args,
-                                  islice=slices[iproc], **kwargs)
-                       for iproc in range(nproc)]
-            for future in as_completed(futures):
-                if out is None:
-                    out = future.result()
-                else:
-                    out += future.result()
-                futures.remove(future)
+
+        futures = [exe.submit(fn, filenames, template, *args,
+                              islice=slices[iproc], **kwargs)
+                   for iproc in range(nproc)]
+        for future in as_completed(futures):
+            if out is None:
+                out = future.result()
+            else:
+                out += future.result()
+            futures.remove(future)
 
         return out
     return parallel_fn
@@ -587,8 +588,6 @@ class Cfg:
         Wafer label, e.g. 'ws0'. May be a list of strings.
     save_fnames: bool
         Save the atomic map filenames for each bundle
-    nproc: int
-        Number of parallel processes to use in coadd
     atomic_list: str
         Path to npy file of atomic map names to restrict the atomic db
     abscal: bool
@@ -623,7 +622,6 @@ class Cfg:
     car_map_template: Optional[str] = None
     wafer: Optional[str] = None
     save_fnames: bool = False
-    nproc: int = 1
     atomic_list: Optional[str] = None
     abscal: bool = False
     tel: Optional[str] = None
