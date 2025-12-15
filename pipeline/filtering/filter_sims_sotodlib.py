@@ -296,7 +296,7 @@ def main(args):
                     sim_map=sim,
                     meta=meta,
                     logger=logger,
-                    t2ptemplate_aman=data_aman
+                    t2ptemplate_aman=None,
                 )
             except loader.LoaderError:
                 logger.warning(
