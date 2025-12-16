@@ -320,6 +320,7 @@ class Cfg:
     remove_atomics: Optional[bool] = False
     overwrite_atomics: Optional[bool] = True
     base_dir: Optional[str] = None
+    t2p_template: Optional[bool] = True
 
     def update(self, dict):
         # Add extra private args not expected in config file
