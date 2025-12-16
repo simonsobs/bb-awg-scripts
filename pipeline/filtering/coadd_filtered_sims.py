@@ -276,26 +276,68 @@ def main(args):
                                                           ib]
                 ]
     db_con.close()
+    
+    # --------------------------------------------
+    # Build wafer lists per (patch, freq_channel, ib)
+    # Use the wafers that appear in SCIENCE atomics for that batch,
+    # so wafer coadds are consistent with the science selection.
+    # --------------------------------------------
+    wafers_by_pfb = None
+    if args.coadd_wafers:
+        wafers_by_pfb = {}
+        for patch, freq_channel in product(patches, freq_channels):
+            for ib in batches[patch]:
+                wafers = sorted(list(set([
+                    wafer for (_, wafer) in atomic_metadata[patch, freq_channel, "science", ib]
+                ])))
+                # If user provided a wafer list, restrict to it
+                wafer_sel = getattr(args, "wafer", None)  # can be None, str, list
+                if isinstance(wafer_sel, str):
+                    wafer_sel = [wafer_sel]
+                if wafer_sel is not None:
+                    wafers = [w for w in wafers if w in wafer_sel]
+                wafers_by_pfb[(patch, freq_channel, ib)] = wafers
 
     split_labels_all = ["science"] + intra_obs_splits + inter_obs_splits
-    split_labels_all = list(dict.fromkeys(split_labels_all))  # no duplicates
-    mpi_shared_list = [(patch, freq_channel, sim_id, split_label, sim_type)
-                       for patch in patches
-                       for freq_channel in freq_channels
-                       for sim_id in sim_ids
-                       for split_label in split_labels_all
-                       for sim_type in sim_types]
+    split_labels_all = list(dict.fromkeys(split_labels_all))
 
-    # Every rank must have the same shared list
-    mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
-    task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list),
-                                    logger=logger)
-    local_mpi_list = [mpi_shared_list[i] for i in task_ids]
-    loop_over = [(patch, freq, sim, split, sim_type, ib)
-                 for ib in batches[patch]
-                 for patch, freq, sim, split, sim_type in local_mpi_list]
+    mpi_shared_list = []
 
-    for patch, freq_channel, sim_id, split_label, sim_type, ib in loop_over:
+    if not args.coadd_wafers:
+        mpi_shared_list = [(patch, freq_channel, sim_id, split_label, sim_type)
+                           for patch in patches
+                           for freq_channel in freq_channels
+                           for sim_id in sim_ids
+                           for split_label in split_labels_all
+                           for sim_type in sim_types]
+
+        mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
+        task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list), logger=logger)
+        local_mpi_list = [mpi_shared_list[i] for i in task_ids]
+
+        loop_over = [(patch, freq, sim, split, sim_type, ib, None)
+                     for patch, freq, sim, split, sim_type in local_mpi_list
+                     for ib in batches[patch]]
+
+    else:
+        # Wafer-expanded behavior
+        for patch in patches:
+            for freq_channel in freq_channels:
+                for ib in batches[patch]:
+                    for wafer in wafers_by_pfb[(patch, freq_channel, ib)]:
+                        for sim_id in sim_ids:
+                            for split_label in split_labels_all:
+                                for sim_type in sim_types:
+                                    mpi_shared_list.append(
+                                        (patch, freq_channel, sim_id, split_label, sim_type, ib, wafer)
+                                    )
+
+        mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
+        task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list), logger=logger)
+        loop_over = [mpi_shared_list[i] for i in task_ids]
+
+    for patch, freq_channel, sim_id, split_label, sim_type, ib, wafer in loop_over:
+
         map_dir = atomic_sim_dir.format(
             patch=patch,
             freq_channel=freq_labels[freq_channel],
@@ -309,17 +351,28 @@ def main(args):
                         f" to filter {sim_type}, {split_label}, sim {sim_id}")
 
         w_list, wmap_list = ([], [])
+        
+        def _filter_by_wafer(meta_list, wafer_sel):
+            if wafer_sel is None:
+                return meta_list
+            return [(obs_id, w) for (obs_id, w) in meta_list if w == wafer_sel]
 
         if split_label == "science":
             tracemalloc.start()
             for coadd in intra_obs_pair:
+                meta = _filter_by_wafer(
+                    atomic_metadata[patch, freq_channel, coadd, ib], wafer
+                )
+                if len(meta) == 0:
+                    continue
                 wmap_l, w_l = fu.get_atomics_maps_list(
                     sim_id, sim_type,
-                    atomic_metadata[patch, freq_channel, coadd, ib],
+                    meta,
                     freq_labels[freq_channel], map_dir, coadd,
                     sim_string_format, mfmt=mfmt, pix_type=pix_type,
                     logger=logger
                 )
+
                 wmap_list += wmap_l
                 w_list += w_l
             current_gb, peak_gb = [1024**(-3) * c
@@ -329,28 +382,48 @@ def main(args):
             tracemalloc.stop()
         elif split_label in inter_obs_splits:
             for coadd in intra_obs_pair:
+                meta = _filter_by_wafer(
+                    atomic_metadata[patch, freq_channel, split_label, coadd, ib], wafer
+                )
+                if len(meta) == 0:
+                    continue
                 wmap_l, w_l = fu.get_atomics_maps_list(
                     sim_id, sim_type,
-                    atomic_metadata[patch, freq_channel, split_label, coadd, ib],  # noqa
+                    meta,
                     freq_channel, map_dir, coadd,
                     sim_string_format, mfmt=mfmt, pix_type=pix_type,
                     logger=logger
                 )
+
                 wmap_list += wmap_l
                 w_list += w_l
         else:
+            meta = _filter_by_wafer(
+                atomic_metadata[patch, freq_channel, split_label, ib], wafer
+            )
+            if len(meta) == 0:
+                continue
             wmap_list, w_list = fu.get_atomics_maps_list(
                 sim_id, sim_type,
-                atomic_metadata[patch, freq_channel, split_label, ib],
+                meta,
                 freq_channel, map_dir, split_label,
                 sim_string_format, mfmt=mfmt, pix_type=pix_type,
                 logger=logger
             )
 
+
         if not ib:
             logger.info(f"Coadding atomics for ({patch}, {freq_channel}, "
                         f"{split_label})"
                         f" to filter {sim_type}, sim {sim_id}")
+
+        if len(wmap_list) == 0:
+            if not ib:
+                logger.info(
+                    f"Skipping (no atomics) for wafer={wafer} "
+                    f"({patch}, {freq_channel}, {split_label}), sim={sim_id}, type={sim_type}"
+                )
+            continue
 
         map_filtered, weights = bu.coadd_maps(
             wmap_list, w_list, pix_type=pix_type,
@@ -362,10 +435,12 @@ def main(args):
             freq_channel=freq_labels[freq_channel]
         ).split("/")[-1]
         batch_label = "" if ib is None else f"_batch{ib}of{nbatches}"
+        wafer_tag = "" if wafer is None else f"_wafer{wafer}"
         out_fname = out_fname.replace(
             ".fits",
-            f"_bundle{bundle_id}_{freq_channel}_{split_label}{batch_label}_filtered.fits"  # noqa
+            f"_bundle{bundle_id}_{freq_channel}_{split_label}{wafer_tag}{batch_label}_filtered.fits"
         )
+
         fu.save_and_plot_map(
             map_filtered, out_fname,
             coadded_dirs[patch, freq_channel],
@@ -386,13 +461,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
     )
+    #parser.add_argument(
+    #    "--sim_ids", type=str, default=0,
+    #    help="Simulations to be processed, in format [first],[last]."
+    #         "Overwrites the yaml file configs."
+    #)
     parser.add_argument(
-        "--sim_ids", type=str, default=0,
-        help="Simulations to be processed, in format [first],[last]."
-             "Overwrites the yaml file configs."
+        "--sim_ids", type=str, default=None,
+        help="Simulations to be processed, in format 'first,last'. Overrides YAML if provided."
     )
+
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
-    config.update(vars(args))
+    #config.update(vars(args))
+    overrides = {k: v for k, v in vars(args).items() if v is not None}
+    config.update(overrides)
+    
+    # wafer in YAML implies wafer coadds
+    if hasattr(config, "wafer") and config.wafer:
+        config.coadd_wafers = True
+    else:
+        config.coadd_wafers = False
+        config.wafer = None
+
 
     main(config)

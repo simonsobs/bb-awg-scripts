@@ -3,7 +3,7 @@ import yaml
 import numpy as np
 import healpy as hp
 from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 import matplotlib.pyplot as plt
 
 from pixell import enmap, enplot
@@ -329,4 +329,27 @@ class Cfg:
     @classmethod
     def from_yaml(cls, path) -> "Cfg":
         d = yaml_loader(path)
-        return cls(**d)
+
+        # Only pass known dataclass fields to __init__
+        allowed = {f.name for f in fields(cls)}
+        init_kwargs = {k: v for k, v in d.items() if k in allowed}
+        cfg = cls(**init_kwargs)
+
+        # Attach extra YAML keys as attributes (won't break parsing)
+        extras = {k: v for k, v in d.items() if k not in allowed}
+        cfg.update(extras)
+
+        # ---- implied behavior: wafer(list) => coadd_wafers ----
+        wafer_val = getattr(cfg, "wafer", None)
+
+        # Interpret "wafer" as:
+        # - None / missing: no wafer coadds (old behavior)
+        # - string: treat as single wafer selection (NO per-wafer fanout)
+        # - list/tuple: fan out one output per wafer
+        if isinstance(wafer_val, (list, tuple)) and len(wafer_val) > 0:
+            cfg.coadd_wafers = True
+        else:
+            cfg.coadd_wafers = False
+
+        return cfg
+
