@@ -310,4 +310,4 @@ if __name__ == "__main__":
             nproc = executor.num_workers
         except AttributeError:
             nproc = executor._max_workers
-        _main(args.config_file, (executor, as_completed_callable, nproc))
+        _main(args, (executor, as_completed_callable, nproc))
