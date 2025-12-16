@@ -46,6 +46,11 @@ def main(args):
                   for patch in args.patches}
     atom_db = args.atomic_db
 
+    try:
+        t2p_template = args.t2p_template
+    except AttributeError:
+        t2p_template = True # if this is not defined then we run t2p_template by default
+
     # Pre-processing configuration files
     preprocess_config_init = args.preprocess_config_init
     preprocess_config_proc = args.preprocess_config_proc
@@ -255,14 +260,17 @@ def main(args):
         # Process data here to have t2p leakage template
         # Only need to run it once for all simulations
         # and only the pre-demodulation part.
-        data_aman = pp_util.multilayer_load_and_preprocess(
-            obs_id,
-            configs_init,
-            configs_proc,
-            meta=meta,
-            logger=logger,
-            init_only=True,
-        )
+        if t2p_template:
+            data_aman = pp_util.multilayer_load_and_preprocess(
+                obs_id,
+                configs_init,
+                configs_proc,
+                meta=meta,
+                logger=logger,
+                init_only=True,
+            )
+        else:
+            data_aman = None
 
         for sim_id, sim_type in product(sim_ids, args.sim_types):
 
