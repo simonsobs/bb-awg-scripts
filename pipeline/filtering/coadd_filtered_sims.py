@@ -435,7 +435,7 @@ def main(args):
             freq_channel=freq_labels[freq_channel]
         ).split("/")[-1]
         batch_label = "" if ib is None else f"_batch{ib}of{nbatches}"
-        wafer_tag = "" if wafer is None else f"_wafer{wafer}"
+        wafer_tag = "" if wafer is None else f"_{wafer}"
         out_fname = out_fname.replace(
             ".fits",
             f"_bundle{bundle_id}_{freq_channel}_{split_label}{wafer_tag}{batch_label}_filtered.fits"
@@ -461,11 +461,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
     )
-    #parser.add_argument(
-    #    "--sim_ids", type=str, default=0,
-    #    help="Simulations to be processed, in format [first],[last]."
-    #         "Overwrites the yaml file configs."
-    #)
     parser.add_argument(
         "--sim_ids", type=str, default=None,
         help="Simulations to be processed, in format 'first,last'. Overrides YAML if provided."
