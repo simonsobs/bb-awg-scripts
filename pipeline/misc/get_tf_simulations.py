@@ -3,7 +3,6 @@ import numpy as np
 from pixell import enmap
 from pixell import uharm
 from pixell import curvedsky
-from pixell import enplot
 import os
 
 
@@ -119,9 +118,8 @@ def main(args):
     n_sims = args.n_sims
     id_sims_start = args.id_sims_start
     smooth_fwhm = args.smooth_fwhm
+    pols_keep = args.pols_keep
     nside = args.nside
-    do_plot = not args.no_plots
-
     out_dir = args.out_dir
     if not os.path.isdir(out_dir):
         raise ValueError(f"Directory does not exist: {out_dir}")
@@ -148,29 +146,33 @@ def main(args):
 
     lmax_sim = lmax + 500
     ells = np.arange(lmax_sim + 1)
+    beam = np.exp(-0.5*ells*(ells+1)*np.radians(smooth_fwhm/60.)**2)
 
-    ps = 1 / (ells + 10) ** 2
+    ps = 1 / (ells + 0.01)**2 * beam**2
     fl = bandlim_sine2(ells, 650, 50)
 
-    for id_sim in range(id_sims_start, id_sims_start+n_sims):
+    pure_types = [f"pure{p}" for p in pols_keep]
 
+    for id_sim in range(id_sims_start, id_sims_start+n_sims):
+        print(f"sim {id_sim+1} / {id_sims_start + n_sims}")
         np.random.seed(id_sim)
         alms = hp.synalm(ps, lmax=lmax_sim)
         alms = hp.almxfl(alms, fl)
 
-        for i, tag in enumerate(["pureT", "pureE", "pureB"]):
-            alms_list = np.zeros((3, *alms.shape), dtype=np.complex64)
-            alms_list[i, :] += alms
+        for tag in pure_types:
+            i = {"pureT": 0, "pureE": 1, "pureB": 2}[tag]
+            alms_list = 3*[alms*0]
+            alms_list[i] = alms
 
             if pix_type == "hp":
                 map = hp.alm2map(
-                    alms_list, nside=nside, lmax=lmax_sim,
-                    fwhm=np.deg2rad(smooth_fwhm/60)
+                    alms_list, nside, lmax=lmax_sim
                 )
                 hp.write_map(
                     f"{out_dir}/{tag}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
                     map,
-                    overwrite=True
+                    overwrite=True,
+                    dtype=float
                 )
             elif pix_type == "car":
                 map = curvedsky.alm2map(
@@ -181,17 +183,6 @@ def main(args):
                     f"{out_dir}/{tag}_{res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
                     map
                 )
-                if not do_plot:
-                    continue
-                for i, fp in enumerate("TQU"):
-                    plot = enplot.plot(
-                        map.downgrade(8)[i], color="planck", ticks=10,
-                        range=1.7, colorbar=True
-                    )
-                    enplot.write(
-                        f"{out_dir}/{tag}_{res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits_{fp}",  # noqa
-                        plot
-                    )
 
 
 if __name__ == "__main__":
@@ -235,6 +226,12 @@ if __name__ == "__main__":
         type=float,
         help="Resolution in arcmin. "
              "Will be ignored if car_template_map is given."
+    )
+    parser.add_argument(
+        "--pols_keep",
+        help="Pure polarization types to keep, e.g. 'TEB' means that pureT,"
+             "pureE, pureB will all be simulated.",
+        default="TEB"
     )
     args = parser.parse_args()
 

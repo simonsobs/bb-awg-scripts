@@ -107,7 +107,7 @@ def main(args):
         lmax = lmax_from_map(template, pix_type="car")
     else:
         lmax = 3 * nside - 1
-    lmax_sim = lmax + 500
+    lmax_sims = lmax + 500
 
     cosmo = {
        "cosmomc_theta": 0.0104085,
@@ -119,11 +119,8 @@ def main(args):
        "tau": 0.0544,
        "r": 0.0,
     }
-
-    lth, clth = get_theory_cls(
-        cosmo,
-        lmax=lmax_sim
-    )
+    ls, clth = get_theory_cls(cosmo, lmax=lmax_sims)
+    beam = np.exp(-0.5*ls*(ls+1)*np.radians(smooth_fwhm/60.)**2)
     pairs_keep = {
         "TEB": ["TT", "TE", "EE", "BB"],
         "EB": ["EE", "BB"],
@@ -135,7 +132,8 @@ def main(args):
     }
     for fp in clth:
         if fp not in pairs_keep[pols_keep]:
-            clth[fp] = np.zeros_like(clth[fp])
+            clth[fp] = np.zeros_like(clth[fp], dtype=float)
+        clth[fp] *= beam**2
 
     if do_plots:
         os.makedirs(f"{out_dir}/plots", exist_ok=True)
@@ -144,15 +142,15 @@ def main(args):
         print(f"sim {id_sim+1} / {id_start + n_sims}")
         alms = hp.synalm(
             [clth["TT"], clth["TE"], clth["EE"], clth["BB"]],
-            lmax=lmax_sim
+            lmax=lmax_sims
         )
-        alms = hp.smoothalm(alms, fwhm=np.deg2rad(smooth_fwhm/60))
         if args.pix_type == "hp":
             map = hp.alm2map(alms, nside=nside)
             hp.write_map(
                 f"{out_dir}/cmb{pols_keep}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
                 map,
-                overwrite=True
+                overwrite=True,
+                dtype=float
             )
         elif args.pix_type == "car":
             map = curvedsky.alm2map(alms, template, copy=True)
