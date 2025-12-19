@@ -211,7 +211,7 @@ def main(args):
     # TODO: check if query_restrict is channel- or patch-specific
     query_restrict = args.query_restrict
 
-    relevant_splits = ["science"] + intra_obs_splits
+    relevant_splits = list(set(["science"] + intra_obs_splits + intra_obs_pair))  # noqa
     queries = {
         (patch, freq_channel, split_label, ib): fu.get_query_atomics(
             freq_channel, ctimes[patch, "science", ib],
