@@ -40,6 +40,8 @@ def main(args):
 
     # Initialize the logger
     logger = pp_util.init_logger("benchmark", verbosity=1)
+    if rank == 0:
+        start = time.time()
 
     # Path to databases
     bundle_dbs = {patch: args.bundle_db.format(patch=patch)
@@ -128,10 +130,6 @@ def main(args):
         # Extract all ctimes for the given bundle_id
         ctimes[patch] = bundle_coordinator.get_ctimes(bundle_id=bundle_id)
 
-    # Connect the the atomic map DB
-    db_con = sqlite3.connect(atom_db)
-    db_cur = db_con.cursor()
-
     # TODO: check if query_restrict is channel- or patch-specific
     query_restrict = args.query_restrict
     queries = {
@@ -144,8 +142,11 @@ def main(args):
     atomic_metadata = {split_label: [] for split_label in intra_obs_splits}
     atomic_metadata["science"] = []
     for (patch, freq_channel), query in queries.items():
+
+        db_cur = sqlite3.connect(atom_db).cursor()
         res_science = db_cur.execute(query)
         res_science = res_science.fetchall()
+        db_cur.close()
 
         for obs_id, wafer in res_science:
             atomic_metadata["science"] += [(patch, freq_channel,
@@ -154,8 +155,10 @@ def main(args):
             query = fu.get_query_atomics(freq_channel, ctimes[patch],
                                          split_label=split_label,
                                          query_restrict=query_restrict)
+            db_cur = sqlite3.connect(atom_db).cursor()
             res_split = db_cur.execute(query)
             res_split = res_split.fetchall()
+            db_cur.close()
             for obs_id, wafer in res_split:
                 if (obs_id, wafer) in res_science:
                     atomic_metadata[split_label] += [
@@ -165,7 +168,6 @@ def main(args):
             f"{patch}, {freq_channel}, 'science': "
             f"{len(res_science)} atomic maps to filter."
         )
-    db_con.close()
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
@@ -363,6 +365,9 @@ def main(args):
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
                     f"{time.time() - start:.1f} seconds.")
     comm.Barrier()
+    if rank == 0:
+        end = time.time()
+        print(f"Filtering completed in (wall time) {int(end - start)}s.")
 
 
 if __name__ == "__main__":
