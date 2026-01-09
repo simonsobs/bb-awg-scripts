@@ -140,7 +140,8 @@ def main(args, size, rank, comm):
                 pix_type=args.pix_type,
                 car_map_template=args.car_map_template,
                 split_label=split_intra_obs,
-                map_dir=map_dir_i
+                map_dir=map_dir_i,
+                atomic_list=atomic_list
             )
         
             print(len(signflipper.fnames))
