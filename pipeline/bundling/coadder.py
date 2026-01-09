@@ -380,7 +380,7 @@ class SignFlipper(_Coadder):
     """
     def __init__(self, atomic_db, bundle_db, freq_channel, car_map_template, 
                  split_label=None, wafer=None, abscal=False, #nproc=1
-                 bundle_id=None, null_prop_val=None, pix_type="hp", map_dir=None):
+                 bundle_id=None, null_prop_val=None, pix_type="hp", map_dir=None, atomic_list=None):
         """
         Constructor for the SignFlipper class. Creates a SignFlipper object,
         given map information from atomic_db and bundling information from
@@ -408,7 +408,7 @@ class SignFlipper(_Coadder):
             Pixelization type. Admissible values are "hp", "car.
         """
         super().__init__(atomic_db, bundle_db, freq_channel, wafer,
-                         pix_type=pix_type, car_map_template=car_map_template)
+                         pix_type=pix_type, car_map_template=car_map_template, atomic_list=atomic_list)
 
         self.fnames, self.ws = self._get_fnames(bundle_id, null_prop_val, split_label, return_weights=True, map_dir=map_dir)
         # TODO: temporary workaround to remove maps with unphysically low weights (flat maps)
