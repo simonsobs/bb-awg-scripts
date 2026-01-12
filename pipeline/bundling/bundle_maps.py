@@ -35,6 +35,13 @@ def main(args, parallelizor=None):
         else:
             raise ValueError(f"patch {patch} not recognized.")
 
+    atomic_list = None
+    if args.atomic_list is not None:
+        if '.npz' in args.atomic_list:
+            atomic_list = np.load(args.atomic_list)["atomic_list"]
+        else:
+            atomic_list = np.load(args.atomic_list)
+
     if os.path.isfile(args.bundle_db) and not args.overwrite:
         print(f"Loading from {args.bundle_db}.")
         bundle_coordinator = BundleCoordinator.from_dbfile(
@@ -46,7 +53,7 @@ def main(args, parallelizor=None):
         bundle_coordinator = BundleCoordinator(
             args.atomic_db, n_bundles=args.n_bundles,
             seed=args.seed, null_props=args.inter_obs_props,
-            query_restrict=query_restrict
+            query_restrict=query_restrict, atomic_list=atomic_list
         )
         bundle_coordinator.save_db(args.bundle_db)
 
@@ -61,13 +68,6 @@ def main(args, parallelizor=None):
     out_dir = args.output_dir
     os.makedirs(out_dir, exist_ok=True)
 
-    atomic_list = None
-    if args.atomic_list is not None:
-        if '.npz' in args.atomic_list:
-            atomic_list = np.load(args.atomic_list)["atomic_list"]
-        else:
-            atomic_list = np.load(args.atomic_list)
-
     car_map_template = args.car_map_template
 
     bundler = Bundler(
@@ -76,7 +76,6 @@ def main(args, parallelizor=None):
         freq_channel=args.freq_channel,
         wafer=args.wafer,
         pix_type=args.pix_type,
-        atomic_list=atomic_list,
         car_map_template=car_map_template,
         telescope=args.tel,
         query_restrict=query_restrict

@@ -1,10 +1,34 @@
 import numpy as np
 import sqlite3
 
+def filter_by_atomic_list(arr, atomic_list, obs_id_only=False, return_index=False):
+    # Assume first column of arr is obs_ids, and further columns are wafer, freq_channel, anything.
+    # Filter by all three, or just obs_id
+    if atomic_list is None:
+        if return_index:
+            return arr, slice(None)
+        else:
+            return arr
+    else:
+        atomic_list = np.asarray(atomic_list)
+        if obs_id_only:
+            if arr.ndim == 1: # Assume array of obs_id
+                ind = np.isin(arr, atomic_list[:,0])
+            else:
+                ind = np.isin(arr[:,0], atomic_list[:,0])
+        else:
+            tags1 = [' '.join(line[:3]) for line in arr]
+            tags2 = [' '.join(line) for line in atomic_list]
+            ind = np.isin(tags1, tags2)
+        if return_index:
+            return arr[ind], ind
+        else:
+            return arr[ind]
 
 class BundleCoordinator:
     def __init__(self, atomic_db=None, n_bundles=None, seed=None,
-                 null_props=None, bundle_id=None, query_restrict=""):
+                 null_props=None, bundle_id=None, query_restrict="",
+                 atomic_list=None):
         """
         Constructor for the BundleCoordinator class.
         If no atomic database path is provided, the
@@ -32,6 +56,11 @@ class BundleCoordinator:
               - [(min1, max1), (min2, max2), ...] to pick vals in a numerical
                 range
               - [(str1, str2, ...), (str3, str4, ...)] to group string values
+        atomics_list: list
+            External list of string tuples (obs_id, wafer, freq_channel) of
+            atomic maps that are to be used for the bundling.
+            All other atomics in atomic_db will be left out.
+
         """
         if atomic_db is not None:
             self.atomic_db = sqlite3.connect(atomic_db)
@@ -48,9 +77,17 @@ class BundleCoordinator:
             self.bundle_id = bundle_id
             self.null_props = null_props.copy() if null_props is not None else {}
             if query_restrict != "":
+                qr0 = f" WHERE valid=True AND ({query_restrict})"  # noqa
                 query_restrict = f" WHERE split_label='science' AND ({query_restrict})"  # noqa
             else:
+                qr0 = " WHERE valid=True"
                 query_restrict = " WHERE split_label='science'"
+
+            # Get obs_id, wafer, freq_channel, split_label for all valid atomics and filter through atomic_list
+            query0 = "SELECT obs_id, wafer, freq_channel, split_label FROM atomic" + qr0
+            waferband_splits = np.asarray(cursor.execute(query0).fetchall())
+            self.atomics = filter_by_atomic_list(waferband_splits, atomic_list)
+
             if null_props is not None:
                 for null_prop, null_val in null_props.items():
                     if null_prop in db_props:
@@ -58,10 +95,13 @@ class BundleCoordinator:
                     else:
                         raise ValueError(f"Property {null_prop} "
                                          "not found in the database.")
-                    query = f"SELECT {null_prop} FROM atomic" + query_restrict
-                    res = np.asarray(
-                        cursor.execute(query).fetchall()
-                    ).flatten()
+                    query1 = "SELECT obs_id FROM atomic" + query_restrict
+                    query2 = f"SELECT {null_prop} FROM atomic" + query_restrict # Need two queries to preserve dtypes
+                    obs_id = np.asarray(cursor.execute(query1).fetchall()).flatten()
+                    res = np.asarray(cursor.execute(query2).fetchall()).flatten()
+                    filter_obs, ind = filter_by_atomic_list(obs_id, atomic_list, obs_id_only=True, return_index=True)
+                    res = res[ind]
+
                     if np.all(res == None):  # noqa
                         raise ValueError(
                             f"All values for property {null_prop} are None."
@@ -83,13 +123,16 @@ class BundleCoordinator:
                                 "names": all_vals
                             }
 
-            query = f"SELECT {', '.join(self.to_query.keys())} FROM atomic"
+            query_keys = list(self.to_query.keys())
+            assert query_keys[0] == 'obs_id'
+            query = f"SELECT {', '.join(query_keys)} FROM atomic"
             query = query.replace("timestamp", "ctime")
             query += query_restrict
             res = np.asarray(cursor.execute(query).fetchall())
 
             unique_indices = np.unique(res[:, 0], return_index=True)[1]
             res = res[unique_indices]
+            res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
 
             self.relevant_props = res
 
@@ -157,6 +200,12 @@ class BundleCoordinator:
         bundle_coord.relevant_props = results
         bundle_coord.n_bundles = len(list(set(bundle_coord.bundle_ids)))
 
+        assert db_props[0] == 'obs_id'
+        obs_ids = results[:,0]
+        atomics = np.asarray(cursor.execute("SELECT * FROM atomic").fetchall())
+        atomics = filter_by_atomic_list(atomics, obs_ids, obs_id_only=True)
+        bundle_coord.atomics = atomics
+
         return bundle_coord
 
     def gen_bundles(self):
@@ -209,6 +258,8 @@ class BundleCoordinator:
 
         db_con = sqlite3.connect(db_path)
         bundle_db = db_con.cursor()
+
+        # Make bundles table
         names_and_fmt = [f"{prop_name} {prop_type}"
                          for prop_name, prop_type in self.to_query.items()]
         table_format = ",".join(names_and_fmt)
@@ -251,6 +302,7 @@ class BundleCoordinator:
         bundle_db.executemany(f"INSERT INTO bundles VALUES ({table_format})",
                               db_data)
 
+        # Make metadata table containing info about splits
         fmt = ["name TEXT", "min FLOAT", "max FLOAT", "tags TEXT"]
         bundle_db.execute(f"CREATE TABLE metadata ({', '.join(fmt)})")
         db_data = []
@@ -268,6 +320,12 @@ class BundleCoordinator:
         table_format = ",".join(["?" for _ in range(len(fmt))])
         bundle_db.executemany(f"INSERT INTO metadata VALUES ({table_format})",
                               db_data)
+
+        # Make atomic table with info about available atomic maps
+        fmt = ["obs_id TEXT", "wafer TEXT", "freq_channel TEXT", "split_label TEXT"]
+        bundle_db.execute(f"CREATE TABLE atomic ({', '.join(fmt)})")
+        table_format = ",".join(["?" for _ in range(len(fmt))])
+        bundle_db.executemany(f"INSERT INTO atomic VALUES ({table_format})", self.atomics)
 
         db_con.commit()
         db_con.close()

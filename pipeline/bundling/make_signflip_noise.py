@@ -48,10 +48,6 @@ def main(args, size, rank, comm):
     out_dir = args.output_dir
     os.makedirs(out_dir, exist_ok=True)
 
-    atomic_list = None
-    if args.atomic_list is not None:
-        atomic_list = np.load(args.atomic_list)["atomic_list"]
-
     car_map_template = args.car_map_template
 
     bundle_ids = range(args.n_bundles)
