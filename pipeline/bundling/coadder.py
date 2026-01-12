@@ -8,7 +8,7 @@ from pixell import enmap
 
 
 class _Coadder:
-    def __init__(self, atomic_db, bundle_db, freq_channel, wafer=None,
+    def __init__(self, bundle_db, freq_channel, wafer=None,
                  pix_type="hp", atomic_list=None, car_map_template=None,
                  telescope=None, query_restrict=None):
         """
@@ -17,8 +17,6 @@ class _Coadder:
 
         Parameters
         ----------
-        atomic_db: str
-            Path to the atomic database.
         bundle_db: str
             Path to the bundling database.
         freq_channel: str
@@ -41,7 +39,6 @@ class _Coadder:
         self.pix_type = pix_type
         self.fields_hp = range(3) if pix_type == "hp" else None
 
-        self.atomic_db = atomic_db
         self.bundle_db = bundle_db
         self.freq_channel = freq_channel
         self.wafer = wafer
@@ -74,22 +71,10 @@ class _Coadder:
         )
         obs_ids = bundle_coord.obs_id
 
-        # # Restrict list of atomics in atomic_db
-        # if self.atomic_list is not None:
-        #     obs_ids_restricted = []
-        #     for obs_id, _, _ in self.atomic_list:
-        #         if obs_id in obs_ids:
-        #             obs_ids_restricted.append(obs_id)
-        #     obs_ids = obs_ids_restricted
-
         return obs_ids
 
     def _obsid2fnames(self, obs_id, return_weights=False, split_label=None, map_dir=None):
         """
-        TODO: If an atomics_list is given (w/ entries (obs_id, wafer, freq)),
-        select only fnames corresponding to these atomics.
-        Make this and attribute of _Coadder, and call it in __init__.
-
         Given an obs_id, infer the file names of the corresponding atomic maps.
 
         Parameters

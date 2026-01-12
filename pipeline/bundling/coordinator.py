@@ -77,16 +77,20 @@ class BundleCoordinator:
             self.bundle_id = bundle_id
             self.null_props = null_props.copy() if null_props is not None else {}
             if query_restrict != "":
-                qr0 = f" WHERE valid=True AND ({query_restrict})"  # noqa
                 query_restrict = f" WHERE split_label='science' AND ({query_restrict})"  # noqa
             else:
-                qr0 = " WHERE valid=True"
                 query_restrict = " WHERE split_label='science'"
 
             # Get obs_id, wafer, freq_channel, split_label for all valid atomics and filter through atomic_list
-            query0 = "SELECT obs_id, wafer, freq_channel, split_label FROM atomic" + qr0
-            waferband_splits = np.asarray(cursor.execute(query0).fetchall())
-            self.atomics = filter_by_atomic_list(waferband_splits, atomic_list)
+            query1 = "SELECT obs_id, wafer, freq_channel FROM atomic" + query_restrict
+            valid_waferbands = np.asarray(cursor.execute(query1).fetchall())  # Good wafer-bands from query_restrict
+            query2 = "SELECT obs_id, wafer, freq_channel, split_label, prefix_path, ctime FROM atomic WHERE valid=1"
+            query3 = "SELECT median_weight_qu FROM atomic WHERE valid=1"
+            valid_splits = np.asarray(cursor.execute(query2).fetchall())
+            valid_waferbands = filter_by_atomic_list(valid_waferbands, atomic_list)  # Filter wafer-bands through atomic list
+            weights = filter_by_atomic_list(np.asarray(cursor.execute(query3).fetchall()), valid_waferbands)
+
+            self.atomics = filter_by_atomic_list(valid_splits, valid_waferbands)
 
             if null_props is not None:
                 for null_prop, null_val in null_props.items():
@@ -200,10 +204,9 @@ class BundleCoordinator:
         bundle_coord.relevant_props = results
         bundle_coord.n_bundles = len(list(set(bundle_coord.bundle_ids)))
 
-        assert db_props[0] == 'obs_id'
-        obs_ids = results[:,0]
         atomics = np.asarray(cursor.execute("SELECT * FROM atomic").fetchall())
-        atomics = filter_by_atomic_list(atomics, obs_ids, obs_id_only=True)
+        obs_id = np.unique(bundle_coord.obs_id)
+        atomics = filter_by_atomic_list(atomics, obs_id, obs_id_only=True)
         bundle_coord.atomics = atomics
 
         return bundle_coord
