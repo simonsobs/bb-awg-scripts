@@ -562,11 +562,9 @@ def filter_by_atomic_list(arr, atomic_list, obs_id_only=False, return_index=Fals
     else:
         atomic_list = np.asarray(atomic_list)
         if obs_id_only:
-
-            if arr.ndim == 1: # Assume array of obs_id
-                ind = np.isin(arr, atomic_list[:,0])
-            else:
-                ind = np.isin(arr[:,0], atomic_list[:,0])
+            arr_query = arr if arr.ndim == 1 else arr[:,0]
+            atomic_list_query = atomic_list if atomic_list.ndim == 1 else atomic_list[:,0]
+            ind = np.isin(arr_query, atomic_list_query)
         else:
             tags1 = [' '.join(line[:3]) for line in arr]
             tags2 = [' '.join(line) for line in atomic_list]
