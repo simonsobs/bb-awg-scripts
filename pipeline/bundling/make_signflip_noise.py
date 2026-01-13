@@ -34,7 +34,6 @@ def main(args, size, rank, comm):
     
     # Read bundle.db
     sat_bundle_dbs = np.atleast_1d(getattr(args, "bundle_db", []))
-    sat_atomic_dbs = np.atleast_1d(getattr(args, "atomic_db", []))
     sat_map_dirs = np.atleast_1d(args.map_dir)
 
     # Validate each bundle_db exists before proceeding
@@ -125,9 +124,8 @@ def main(args, size, rank, comm):
         combined_weight = None
         
         # Now construct the signflipper (only for needed bundle_id)
-        for atomic_db, bundle_db, map_dir_i in zip(sat_atomic_dbs, sat_bundle_dbs, sat_map_dirs):
+        for bundle_db, map_dir_i in zip(sat_bundle_dbs, sat_map_dirs):
             signflipper = SignFlipper(
-                atomic_db=atomic_db,
                 bundle_db=bundle_db,
                 freq_channel=args.freq_channel,
                 wafer=args.wafer,

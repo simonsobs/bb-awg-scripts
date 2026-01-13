@@ -9,7 +9,7 @@ from copy import deepcopy
 from typing import Optional
 from dataclasses import dataclass
 import yaml
-
+import pandas as pd
 
 def _check_pix_type(pix_type):
     """
@@ -528,6 +528,65 @@ def make_full(template, split_pair, nbundles, pix_type, do_hits=True,
             out.append(ans)
     if return_maps:
         return out
+
+
+def filter_by_atomic_list(arr, atomic_list, obs_id_only=False, return_index=False):
+    """ Filter an array by atomic_list
+
+    Parameters
+    ----------
+    arr: Array
+         First column should be obs_ids. Next columns should be wafer, freq_channel, if also filtering by them.
+         May also be a DataFrame; see filter_by_atomic_list_df
+    atomic_list: Array
+        Array of [(obs_id, wafer, freq_channel), ...]
+    obs_id_only: bool
+        If True filter with only obs_id. Else also use wafer, freq_channel.
+    return_index: bool
+        If True also return indices of selected rows.
+
+    Returns
+    -------
+    arr: Array
+         Filtered array
+    ind: Array [optional]
+         Indices of selected rows
+    """
+    if type(arr) is pd.DataFrame:
+        return filter_by_atomic_list_df(arr, atomic_list, obs_id_only, return_index)
+    if atomic_list is None:
+        if return_index:
+            return arr, slice(None)
+        else:
+            return arr
+    else:
+        atomic_list = np.asarray(atomic_list)
+        if obs_id_only:
+
+            if arr.ndim == 1: # Assume array of obs_id
+                ind = np.isin(arr, atomic_list[:,0])
+            else:
+                ind = np.isin(arr[:,0], atomic_list[:,0])
+        else:
+            tags1 = [' '.join(line[:3]) for line in arr]
+            tags2 = [' '.join(line) for line in atomic_list]
+            ind = np.isin(tags1, tags2)
+        if return_index:
+            return arr[ind], ind
+        else:
+            return arr[ind]
+
+def filter_by_atomic_list_df(df, atomic_list, obs_id_only=False, return_index=False, reindex=True):
+    """Filter a DataFrame by atomic_list; see filter_by_atomic_list"""
+    if 'wafer' in df.columns and 'freq_channel' in df.columns:
+        arr = np.array([df.obs_id, df.wafer, df.freq_channel]).T
+    else:
+        arr = df.obs_id.to_numpy()
+    _, ind = filter_by_atomic_list(arr, atomic_list, obs_id_only, return_index=True)
+    if reindex:
+        return (df[ind]).reset_index(drop=True)
+    else:
+        return df[ind]
 
 
 @dataclass

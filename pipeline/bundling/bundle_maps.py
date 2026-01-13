@@ -90,9 +90,9 @@ def main(args, parallelizor=None):
 
         bundled_map, weights_map, hits_map, fnames = bundler.bundle(
             bundle_id,
+            args.map_dir,
             split_label=split_intra_obs,
             null_prop_val=split_inter_obs,
-            map_dir=args.map_dir,
             abscal=args.abscal,
             parallelizor=parallelizor
         )

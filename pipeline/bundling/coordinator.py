@@ -1,29 +1,8 @@
 import numpy as np
+import pandas as pd
 import sqlite3
-
-def filter_by_atomic_list(arr, atomic_list, obs_id_only=False, return_index=False):
-    # Assume first column of arr is obs_ids, and further columns are wafer, freq_channel, anything.
-    # Filter by all three, or just obs_id
-    if atomic_list is None:
-        if return_index:
-            return arr, slice(None)
-        else:
-            return arr
-    else:
-        atomic_list = np.asarray(atomic_list)
-        if obs_id_only:
-            if arr.ndim == 1: # Assume array of obs_id
-                ind = np.isin(arr, atomic_list[:,0])
-            else:
-                ind = np.isin(arr[:,0], atomic_list[:,0])
-        else:
-            tags1 = [' '.join(line[:3]) for line in arr]
-            tags2 = [' '.join(line) for line in atomic_list]
-            ind = np.isin(tags1, tags2)
-        if return_index:
-            return arr[ind], ind
-        else:
-            return arr[ind]
+from bundling_utils import filter_by_atomic_list
+import os
 
 class BundleCoordinator:
     def __init__(self, atomic_db=None, n_bundles=None, seed=None,
@@ -83,14 +62,16 @@ class BundleCoordinator:
 
             # Get obs_id, wafer, freq_channel, split_label for all valid atomics and filter through atomic_list
             query1 = "SELECT obs_id, wafer, freq_channel FROM atomic" + query_restrict
-            valid_waferbands = np.asarray(cursor.execute(query1).fetchall())  # Good wafer-bands from query_restrict
-            query2 = "SELECT obs_id, wafer, freq_channel, split_label, prefix_path, ctime FROM atomic WHERE valid=1"
-            query3 = "SELECT median_weight_qu FROM atomic WHERE valid=1"
-            valid_splits = np.asarray(cursor.execute(query2).fetchall())
+            valid_waferbands = pd.read_sql_query(query1, self.atomic_db).to_numpy()  # Good wafer-bands from query_restrict
             valid_waferbands = filter_by_atomic_list(valid_waferbands, atomic_list)  # Filter wafer-bands through atomic list
-            weights = filter_by_atomic_list(np.asarray(cursor.execute(query3).fetchall()), valid_waferbands)
+            query2 = "SELECT obs_id, wafer, freq_channel, split_label, prefix_path, ctime, median_weight_qu FROM atomic WHERE valid=1"
+            valid_splits = pd.read_sql_query(query2, self.atomic_db)
+            valid_splits = filter_by_atomic_list(valid_splits, valid_waferbands)
 
-            self.atomics = filter_by_atomic_list(valid_splits, valid_waferbands)
+            atomics = filter_by_atomic_list(valid_splits, valid_waferbands)
+            atomics['basename'] = [f"{str(ctime)[:5]}/{os.path.basename(prefix)}" for ctime, prefix in zip(atomics.ctime, atomics.prefix_path)]
+            atomics=atomics.drop(columns=["ctime", "prefix_path"])
+            self.atomics = atomics
 
             if null_props is not None:
                 for null_prop, null_val in null_props.items():
@@ -99,12 +80,10 @@ class BundleCoordinator:
                     else:
                         raise ValueError(f"Property {null_prop} "
                                          "not found in the database.")
-                    query1 = "SELECT obs_id FROM atomic" + query_restrict
-                    query2 = f"SELECT {null_prop} FROM atomic" + query_restrict # Need two queries to preserve dtypes
-                    obs_id = np.asarray(cursor.execute(query1).fetchall()).flatten()
-                    res = np.asarray(cursor.execute(query2).fetchall()).flatten()
-                    filter_obs, ind = filter_by_atomic_list(obs_id, atomic_list, obs_id_only=True, return_index=True)
-                    res = res[ind]
+                    query = f"SELECT obs_id, {null_prop} FROM atomic" + query_restrict
+                    res = pd.read_sql_query(query, self.atomic_db)
+                    res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
+                    res = getattr(res, null_prop).to_numpy()
 
                     if np.all(res == None):  # noqa
                         raise ValueError(
@@ -204,7 +183,7 @@ class BundleCoordinator:
         bundle_coord.relevant_props = results
         bundle_coord.n_bundles = len(list(set(bundle_coord.bundle_ids)))
 
-        atomics = np.asarray(cursor.execute("SELECT * FROM atomic").fetchall())
+        atomics = pd.read_sql_query("SELECT * FROM atomic", db_con)
         obs_id = np.unique(bundle_coord.obs_id)
         atomics = filter_by_atomic_list(atomics, obs_id, obs_id_only=True)
         bundle_coord.atomics = atomics
@@ -325,10 +304,7 @@ class BundleCoordinator:
                               db_data)
 
         # Make atomic table with info about available atomic maps
-        fmt = ["obs_id TEXT", "wafer TEXT", "freq_channel TEXT", "split_label TEXT"]
-        bundle_db.execute(f"CREATE TABLE atomic ({', '.join(fmt)})")
-        table_format = ",".join(["?" for _ in range(len(fmt))])
-        bundle_db.executemany(f"INSERT INTO atomic VALUES ({table_format})", self.atomics)
+        self.atomics.to_sql("atomic", db_con, index=False)
 
         db_con.commit()
         db_con.close()
