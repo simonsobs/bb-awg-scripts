@@ -71,14 +71,13 @@ def main(args, parallelizor=None):
     car_map_template = args.car_map_template
 
     bundler = Bundler(
-        atomic_db=args.atomic_db,
         bundle_db=args.bundle_db,
         freq_channel=args.freq_channel,
         wafer=args.wafer,
         pix_type=args.pix_type,
+        atomic_list=atomic_list,
         car_map_template=car_map_template,
-        telescope=args.tel,
-        query_restrict=query_restrict
+        telescope=args.tel
     )
 
     bundle_ids = range(args.n_bundles)

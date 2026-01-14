@@ -192,10 +192,8 @@ class BundleCoordinator:
         """
         """
         gen = np.random.default_rng(seed=self.seed)
-        print("seed: ", self.seed)
         bundle_id = np.arange(self.relevant_props.shape[0]) % self.n_bundles
         self.bundle_id = gen.permutation(bundle_id)
-        print("bundle id: ", self.bundle_id)
         return self.bundle_id
 
     def get_ctimes(self, bundle_id, null_prop_val=None):
