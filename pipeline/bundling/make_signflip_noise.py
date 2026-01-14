@@ -11,7 +11,9 @@ from coadder import SignFlipper
 from coordinator import BundleCoordinator
 import bundling_utils
 
-sys.path.append("/home/sa5705/software/bb-awg-scripts/pipeline/misc")
+bundling_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(bundling_dir, "../misc"))
+
 import mpi_utils as mpi  # noqa
 
 def main(args, size, rank, comm):
@@ -22,15 +24,6 @@ def main(args, size, rank, comm):
     args = args_dict = args.copy()  # Make sure we don't modify input
     patch = args.patch
     query_restrict = args.query_restrict
-    if patch is not None:
-        if query_restrict:
-            query_restrict += " AND "
-        if patch == "south":
-            query_restrict += "(azimuth > 90 AND azimuth < 270)"
-        elif patch == "north":
-            query_restrict += "(azimuth < 90 OR azimuth > 270)"
-        else:
-            raise ValueError(f"Patch {patch} not recognized.")
     
     # Read bundle.db
     sat_bundle_dbs = np.atleast_1d(getattr(args, "bundle_db", []))
