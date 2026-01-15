@@ -43,12 +43,14 @@ class BundleCoordinator:
 
         """
         if atomic_db is not None:
-            self.atomic_db = sqlite3.connect(atomic_db)
+            self.atomic_db = atomic_db
+            conn = sqlite3.connect(atomic_db)
             # Load obs_id list from the database
-            cursor = self.atomic_db.cursor()
+            cursor = conn.cursor()
             db_props = cursor.execute(
                 "SELECT name FROM PRAGMA_TABLE_INFO('atomic')"
             ).fetchall()
+            cursor.close()
             db_props = [prop[0] for prop in db_props]
             print("Available info atomic_maps.db: ", db_props)
             self.to_query = ["obs_id", "timestamp"]
@@ -61,11 +63,10 @@ class BundleCoordinator:
 
             # Get obs_id, wafer, freq_channel, split_label for all valid atomics and filter through atomic_list
             query1 = "SELECT obs_id, wafer, freq_channel FROM atomic" + query_restrict
-            valid_waferbands = pd.read_sql_query(query1, self.atomic_db).to_numpy()  # Good wafer-bands from query_restrict
+            valid_waferbands = pd.read_sql_query(query1, conn).to_numpy()  # Good wafer-bands from query_restrict
             valid_waferbands = filter_by_atomic_list(valid_waferbands, atomic_list)  # Filter wafer-bands through atomic list
             query2 = "SELECT obs_id, wafer, freq_channel, split_label, prefix_path, ctime, median_weight_qu FROM atomic WHERE valid=1"
-            valid_splits = pd.read_sql_query(query2, self.atomic_db)
-            valid_splits = filter_by_atomic_list(valid_splits, valid_waferbands)
+            valid_splits = pd.read_sql_query(query2, conn)
 
             atomics = filter_by_atomic_list(valid_splits, valid_waferbands)
             atomics['basename'] = [f"{str(ctime)[:5]}/{os.path.basename(prefix)}" for ctime, prefix in zip(atomics.ctime, atomics.prefix_path)]
@@ -80,7 +81,7 @@ class BundleCoordinator:
                         raise ValueError(f"Property {null_prop} "
                                          "not found in the database.")
                     query = f"SELECT obs_id, {null_prop} FROM atomic" + query_restrict
-                    res = pd.read_sql_query(query, self.atomic_db)
+                    res = pd.read_sql_query(query, conn)
                     res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
                     res = getattr(res, null_prop).to_numpy()
 
@@ -108,8 +109,11 @@ class BundleCoordinator:
             query = f"SELECT {', '.join(self.to_query)} FROM atomic"
             query = query.replace("timestamp", "ctime")
             query += query_restrict
+            cursor = conn.cursor()
             res = cursor.execute(query).fetchall()  # First load directly to deal with timestamp/ctime rename
             res = pd.DataFrame(res, columns=self.to_query)
+            cursor.close()
+            conn.close()
 
             unique_indices = np.unique(res.obs_id, return_index=True)[1]
             res = res.loc[unique_indices]
@@ -150,6 +154,7 @@ class BundleCoordinator:
         db_props = cursor.execute(
             "SELECT name FROM PRAGMA_TABLE_INFO('bundles')"
         ).fetchall()
+        cursor.close()
         db_props = [prop[0] for prop in db_props]
 
         query_fmt = ",".join(db_props)
