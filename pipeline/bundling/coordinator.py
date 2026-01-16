@@ -42,68 +42,69 @@ class BundleCoordinator:
             All other atomics in atomic_db will be left out.
 
        """
-        if atomic_db is not None:
-            self.atomic_db = atomic_db
-            conn = sqlite3.connect(atomic_db)
-            cursor = conn.cursor()
-            db_props = cursor.execute(
-                "SELECT name FROM PRAGMA_TABLE_INFO('atomic')"
-            ).fetchall()
-            cursor.close()
-            db_props = [prop[0] for prop in db_props]
-            print("Available info atomic_maps.db: ", db_props)
+        if atomic_db is None:
+            return
+        self.atomic_db = atomic_db
+        conn = sqlite3.connect(atomic_db)
+        cursor = conn.cursor()
+        db_props = cursor.execute(
+            "SELECT name FROM PRAGMA_TABLE_INFO('atomic')"
+        ).fetchall()
+        cursor.close()
+        db_props = [prop[0] for prop in db_props]
+        print("Available info atomic_maps.db: ", db_props)
 
-            if query_restrict != "":
-                query_restrict = f" WHERE split_label='science' AND ({query_restrict})"  # noqa
+        if query_restrict != "":
+            query_restrict = f" WHERE split_label='science' AND ({query_restrict})"  # noqa
+        else:
+            query_restrict = " WHERE split_label='science'"
+
+        # Get medians and expand null props with full split info
+        _check_null_props(null_props, db_props)
+        self.null_props = _update_null_props(null_props, conn, query_restrict=query_restrict, atomic_list=atomic_list)
+
+        self.to_query = ["obs_id", "timestamp"] + [null_prop for null_prop in self.null_props]
+
+        # Get obs_id, wafer, freq_channel, split_label for all valid atomics and filter through atomic_list
+        query1 = "SELECT obs_id, wafer, freq_channel FROM atomic" + query_restrict
+        valid_waferbands = pd.read_sql_query(query1, conn).to_numpy()  # Good wafer-bands from query_restrict
+        valid_waferbands = filter_by_atomic_list(valid_waferbands, atomic_list)  # Filter wafer-bands through atomic list
+        query2 = "SELECT obs_id, wafer, freq_channel, split_label, prefix_path, ctime, median_weight_qu FROM atomic WHERE valid=1"
+        valid_splits = pd.read_sql_query(query2, conn)
+
+        atomics = filter_by_atomic_list(valid_splits, valid_waferbands)
+        atomics['basename'] = [f"{str(ctime)[:5]}/{os.path.basename(prefix)}" for ctime, prefix in zip(atomics.ctime, atomics.prefix_path)]
+        atomics=atomics.drop(columns=["ctime", "prefix_path"])
+        self.atomics = atomics
+
+        # Get all props used to assign bundle properties
+        query = f"SELECT {', '.join(self.to_query)} FROM atomic"
+        query = query.replace("timestamp", "ctime")
+        query += query_restrict
+        cursor = conn.cursor()
+        res = cursor.execute(query).fetchall()  # First load directly to deal with timestamp/ctime rename
+        res = pd.DataFrame(res, columns=self.to_query)
+        cursor.close()
+        conn.close()
+
+        unique_indices = np.unique(res.obs_id, return_index=True)[1]
+        res = res.loc[unique_indices]
+        res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
+
+        # Replace numerical null_props data from atomic db with labels for bundle db
+        self.relevant_props = pd.DataFrame()
+        for prop in self.to_query:
+            if self.null_props is None or prop not in self.null_props:
+                self.relevant_props[prop] = res[prop]
             else:
-                query_restrict = " WHERE split_label='science'"
+                null_dict = self.null_props[prop]
+                self.relevant_props[prop] = _get_null_labels(null_dict, res[prop])
+            setattr(self, prop, self.relevant_props[prop].to_numpy())
 
-            # Get medians and expand null props with full split info
-            _check_null_props(null_props, db_props)
-            self.null_props = _update_null_props(null_props, conn, query_restrict=query_restrict, atomic_list=atomic_list)
+        self.n_bundles = n_bundles
+        self.seed = seed
 
-            self.to_query = ["obs_id", "timestamp"] + [null_prop for null_prop in self.null_props]
-
-            # Get obs_id, wafer, freq_channel, split_label for all valid atomics and filter through atomic_list
-            query1 = "SELECT obs_id, wafer, freq_channel FROM atomic" + query_restrict
-            valid_waferbands = pd.read_sql_query(query1, conn).to_numpy()  # Good wafer-bands from query_restrict
-            valid_waferbands = filter_by_atomic_list(valid_waferbands, atomic_list)  # Filter wafer-bands through atomic list
-            query2 = "SELECT obs_id, wafer, freq_channel, split_label, prefix_path, ctime, median_weight_qu FROM atomic WHERE valid=1"
-            valid_splits = pd.read_sql_query(query2, conn)
-
-            atomics = filter_by_atomic_list(valid_splits, valid_waferbands)
-            atomics['basename'] = [f"{str(ctime)[:5]}/{os.path.basename(prefix)}" for ctime, prefix in zip(atomics.ctime, atomics.prefix_path)]
-            atomics=atomics.drop(columns=["ctime", "prefix_path"])
-            self.atomics = atomics
-
-            # Get all props used to assign bundle properties
-            query = f"SELECT {', '.join(self.to_query)} FROM atomic"
-            query = query.replace("timestamp", "ctime")
-            query += query_restrict
-            cursor = conn.cursor()
-            res = cursor.execute(query).fetchall()  # First load directly to deal with timestamp/ctime rename
-            res = pd.DataFrame(res, columns=self.to_query)
-            cursor.close()
-            conn.close()
-
-            unique_indices = np.unique(res.obs_id, return_index=True)[1]
-            res = res.loc[unique_indices]
-            res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
-
-            # Replace numerical null_props data from atomic db with labels for bundle db
-            self.relevant_props = pd.DataFrame()
-            for prop in self.to_query:
-                if self.null_props is None or prop not in self.null_props:
-                    self.relevant_props[prop] = res[prop]
-                else:
-                    null_dict = self.null_props[prop]
-                    self.relevant_props[prop] = _get_null_labels(null_dict, res[prop])
-                setattr(self, prop, self.relevant_props[prop].to_numpy())
-
-            self.n_bundles = n_bundles
-            self.seed = seed
-
-            self.gen_bundles()
+        self.gen_bundles()
 
     @classmethod
     def from_dbfile(cls, db_path, bundle_id=None, null_prop_val=None):
