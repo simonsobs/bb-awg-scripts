@@ -36,16 +36,15 @@ class BundleCoordinator:
               - [(str1, str2, ...), (str3, str4, ...)] to group string values
         query_restrict: str
             SQL query to restrict obs from the atomic database
-        atomics_list: list
+        atomic_list: list
             External list of string tuples (obs_id, wafer, freq_channel) of
             atomic maps that are to be used for the bundling.
             All other atomics in atomic_db will be left out.
 
-        """
+       """
         if atomic_db is not None:
             self.atomic_db = atomic_db
             conn = sqlite3.connect(atomic_db)
-            # Load obs_id list from the database
             cursor = conn.cursor()
             db_props = cursor.execute(
                 "SELECT name FROM PRAGMA_TABLE_INFO('atomic')"
@@ -53,13 +52,17 @@ class BundleCoordinator:
             cursor.close()
             db_props = [prop[0] for prop in db_props]
             print("Available info atomic_maps.db: ", db_props)
-            self.to_query = ["obs_id", "timestamp"]
 
-            self.null_props = null_props.copy() if null_props is not None else {}
             if query_restrict != "":
                 query_restrict = f" WHERE split_label='science' AND ({query_restrict})"  # noqa
             else:
                 query_restrict = " WHERE split_label='science'"
+
+            # Get medians and expand null props with full split info
+            _check_null_props(null_props, db_props)
+            self.null_props = _update_null_props(null_props, conn, query_restrict=query_restrict, atomic_list=atomic_list)
+
+            self.to_query = ["obs_id", "timestamp"] + [null_prop for null_prop in self.null_props]
 
             # Get obs_id, wafer, freq_channel, split_label for all valid atomics and filter through atomic_list
             query1 = "SELECT obs_id, wafer, freq_channel FROM atomic" + query_restrict
@@ -73,39 +76,7 @@ class BundleCoordinator:
             atomics=atomics.drop(columns=["ctime", "prefix_path"])
             self.atomics = atomics
 
-            if null_props is not None:
-                for null_prop, null_val in null_props.items():
-                    if null_prop in db_props:
-                        self.to_query.append(null_prop)
-                    else:
-                        raise ValueError(f"Property {null_prop} "
-                                         "not found in the database.")
-                    query = f"SELECT obs_id, {null_prop} FROM atomic" + query_restrict
-                    res = pd.read_sql_query(query, conn)
-                    res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
-                    res = getattr(res, null_prop).to_numpy()
-
-                    if np.all(res == None):  # noqa
-                        raise ValueError(
-                            f"All values for property {null_prop} are None."
-                        )
-                    if np.issubdtype(res.dtype, np.number):
-                        if null_val == "median":
-                            med = np.median(res)
-                            self.null_props[null_prop] = {
-                                "splits": [(-np.inf, med), (med, np.inf)],
-                                "names": [f"low_{null_prop}",
-                                          f"high_{null_prop}"]
-                            }
-                    elif np.issubdtype(res.dtype, np.str_):
-                        if null_val is None:
-                            # Do 1-1 string matching
-                            all_vals = np.unique(res).tolist()  # noqa
-                            self.null_props[null_prop] = {
-                                "splits": [(x,) for x in all_vals],
-                                "names": all_vals
-                            }
-
+            # Get all props used to assign bundle properties
             query = f"SELECT {', '.join(self.to_query)} FROM atomic"
             query = query.replace("timestamp", "ctime")
             query += query_restrict
@@ -119,15 +90,18 @@ class BundleCoordinator:
             res = res.loc[unique_indices]
             res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
 
-            self.relevant_props = res
+            # Replace numerical null_props data from atomic db with labels for bundle db
+            self.relevant_props = pd.DataFrame()
+            for prop in self.to_query:
+                if self.null_props is None or prop not in self.null_props:
+                    self.relevant_props[prop] = res[prop]
+                else:
+                    null_dict = self.null_props[prop]
+                    self.relevant_props[prop] = _get_null_labels(null_dict, res[prop])
+                setattr(self, prop, self.relevant_props[prop].to_numpy())
 
             self.n_bundles = n_bundles
             self.seed = seed
-
-            for prop in self.to_query:
-                setattr(self, prop, res[prop].to_numpy())
-            if getattr(self, "ctime", None) is None:
-                self.ctime = self.timestamp
 
             self.gen_bundles()
 
@@ -173,15 +147,15 @@ class BundleCoordinator:
         query = f"SELECT {query_fmt} FROM bundles{add_query}"
         results = pd.read_sql_query(query, db_con)
 
-        bundle_coord = cls()
-
+        if 'timestamp' not in db_props and 'ctime' in db_props:  # Compatibility with old dbs
+            results['timestamp'] = results['ctime']
         # Handle empty results
         if results.size == 0:
             raise ValueError("Query returned no results.")
 
-        for prop in db_props:
+        bundle_coord = cls()
+        for prop in results:
             setattr(bundle_coord, prop, results[prop].to_numpy())
-
         bundle_coord.relevant_props = results
         bundle_coord.n_bundles = len(list(set(bundle_coord.bundle_id)))
 
@@ -205,16 +179,12 @@ class BundleCoordinator:
         """
         """
         filter = (self.bundle_id == int(bundle_id))
-        if hasattr(self, "timestamp"):
-            timestamps = self.timestamp[filter]
-        else:  # old bundle_db before 20250304
-            timestamps = self.ctime[filter]
+        timestamps = self.timestamp[filter]
         if null_prop_val not in [None, "science"]:
             name_prop = "_".join(null_prop_val.split("_")[1:])
             prop_val = getattr(self, name_prop)[filter]
             filter = prop_val == null_prop_val
             timestamps = timestamps[filter]
-
         return timestamps
 
     def save_db(self, db_path, overwrite=True):
@@ -231,12 +201,7 @@ class BundleCoordinator:
         # Save main bundles table
         save_db = pd.DataFrame()
         for prop in self.to_query:
-            if self.null_props is None or prop not in self.null_props:
-                save_db[prop] = self.relevant_props[prop]
-            else:
-                null_dict = self.null_props[prop]
-                save_db[prop] = _get_null_labels(null_dict, self.relevant_props[prop])
-
+            save_db[prop] = self.relevant_props[prop]
         save_db['bundle_id'] = self.bundle_id
         save_db.to_sql("bundles", db_con, index=False)
 
@@ -282,3 +247,58 @@ def _get_null_labels(null_dict, col):
         elif np.issubdtype(type(split[0]), np.str_):
             out[np.isin(col, split)] = null_dict['names'][isplit]
     return out
+
+def _check_null_props(null_props, db_props):
+    """ Helper function to check all null_props are in the db"""
+    if null_props is None:
+        return
+    for null_prop in null_props:
+        if null_prop not in db_props:
+            raise ValueError(f"Property {null_prop} "
+                             "not found in the database.")
+
+def _update_null_props(null_props, conn, query_restrict="", atomic_list=None):
+    """ Helper function to update null_props with full information from atomic db.
+        Replaces 'median' entries with full {'splits': ..., 'names': ...} format.
+
+        Parameters
+        ----------
+        null_props: dict
+            See BundleCoordinator.__init__
+        conn: sqlite3.Connection
+            Connection to an atomic db
+        query_restrict: str
+            SQL query to restrict obs from the atomic database
+        atomic_list: list
+            See BundleCoordinator.__init__
+    """
+
+    null_props = {} if null_props is None else null_props
+    out_null_props = null_props.copy()
+    for null_prop, null_val in null_props.items():
+        query = f"SELECT obs_id, {null_prop} FROM atomic" + query_restrict
+        res = pd.read_sql_query(query, conn)
+        res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
+        res = getattr(res, null_prop).to_numpy()
+
+        if np.all(res == None):  # noqa
+            raise ValueError(
+                f"All values for property {null_prop} are None."
+            )
+        if np.issubdtype(res.dtype, np.number):
+            if null_val == "median":
+                med = np.median(res)
+                out_null_props[null_prop] = {
+                    "splits": [(-np.inf, med), (med, np.inf)],
+                    "names": [f"low_{null_prop}",
+                              f"high_{null_prop}"]
+                }
+        elif np.issubdtype(res.dtype, np.str_):
+            if null_val is None:
+                # Do 1-1 string matching
+                all_vals = np.unique(res).tolist()  # noqa
+                out_null_props[null_prop] = {
+                    "splits": [(x,) for x in all_vals],
+                    "names": all_vals
+                }
+    return out_null_props
