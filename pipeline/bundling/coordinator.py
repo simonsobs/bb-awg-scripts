@@ -107,6 +107,9 @@ class BundleCoordinator:
         self.gen_bundles()
         self.bundle_db['bundle_id'] = self.bundle_id
 
+        metadata = _get_metadata(self.null_props)
+        self.metadata = pd.DataFrame.from_dict(metadata, orient='columns')
+
     @classmethod
     def from_dbfile(cls, db_path, bundle_id=None, null_prop_val=None):
         """
@@ -201,16 +204,10 @@ class BundleCoordinator:
         db_con = sqlite3.connect(db_path)
 
         # Save main bundles table
-        save_db = pd.DataFrame()
-        for prop in self.to_query:
-            save_db[prop] = self.bundle_db[prop]
-        save_db['bundle_id'] = self.bundle_id
-        save_db.to_sql("bundles", db_con, index=False)
+        self.bundle_db.to_sql("bundles", db_con, index=False)
 
         # Make metadata table containing info about splits
-        metadata = _get_metadata(self.null_props)
-        metadata = pd.DataFrame.from_dict(metadata, orient='columns')
-        metadata.to_sql("metadata", db_con, index=False)
+        self.metadata.to_sql("metadata", db_con, index=False)
 
         # Save atomic table with info about available atomic maps
         self.atomics.to_sql("atomic", db_con, index=False)
