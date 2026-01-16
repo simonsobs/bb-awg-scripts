@@ -169,11 +169,16 @@ class BundleCoordinator:
         atomics = filter_by_atomic_list(atomics, obs_id, obs_id_only=True)
         bundle_coord.atomics = atomics
 
+        bundle_coord.metadata = pd.read_sql_query("SELECT * FROM metadata", db_con)
+
         db_con.close()
         return bundle_coord
 
     def gen_bundles(self):
         """
+        Assign bundle ids for each obs_id and store in self.bundle_id.
+        bundle_ids are generated then randomly assigned to obs, enforcing
+        equal size bundles.
         """
         gen = np.random.default_rng(seed=self.seed)
         bundle_id = np.arange(self.bundle_db.shape[0]) % self.n_bundles
@@ -182,6 +187,8 @@ class BundleCoordinator:
 
     def get_ctimes(self, bundle_id, null_prop_val=None):
         """
+        Get all ctimes corresponding to the obs with a given bundle_id
+        and optionally null_prop_val.
         """
         filter = (self.bundle_id == int(bundle_id))
         timestamps = self.timestamp[filter]
@@ -194,6 +201,12 @@ class BundleCoordinator:
 
     def save_db(self, db_path, overwrite=True):
         """
+        Save the db to a file.
+        The db contains three tables:
+          - bundles: obs_id, timestamp, [all null props], bundle_id
+          - metadata: name, min, max, tags for all null splits (e.g. low_pwv, high_pwv, etc.)
+          - atomics: obs_id, wafer, freq_channel, split_label, median_weight_qu, basename for all
+            available atomic maps matching selection criteria.
         """
         if os.path.exists(db_path):
             if overwrite:
@@ -216,7 +229,11 @@ class BundleCoordinator:
         db_con.close()
 
 def _get_metadata(null_props):
-    """Extract metadata about splits from config null_props"""
+    """
+    Extract metadata about splits from config null_props.
+    Returns a dict with entries 'name', 'min', 'max', 'tags'.
+    Each is a list containing the relevant info for all null splits.
+    """
     metadata = {'name': [], 'min': [], 'max': [], 'tags': []}
     for prop, null_dict in null_props.items():
         for isplit in range(len(null_dict['splits'])):
@@ -235,7 +252,7 @@ def _get_metadata(null_props):
     return metadata
 
 def _get_null_labels(null_dict, col):
-    """ Helper function to assign split labels to a column of data"""
+    """Helper function to assign split labels to a column of data"""
     out = np.full(col.shape, None)
     for isplit in range(len(null_dict['splits'])):
         split = null_dict['splits'][isplit]
@@ -257,7 +274,7 @@ def _check_null_props(null_props, db_props):
                              "not found in the database.")
 
 def _update_null_props(null_props, conn, query_restrict="", atomic_list=None):
-    """ Helper function to update null_props with full information from atomic db.
+    """Helper function to update null_props with full information from atomic db.
         Replaces 'median' entries with full {'splits': ..., 'names': ...} format.
 
         Parameters
