@@ -3,6 +3,7 @@ import argparse
 import sqlite3
 import os
 import sys
+import time
 import tracemalloc
 from itertools import product
 
@@ -50,6 +51,8 @@ def main(args):
 
     # Initialize the logger
     logger = pp_util.init_logger("benchmark", verbosity=3)
+    if rank == 0:
+        start = time.time()
 
     # Ensure that freq_channels for the metadata follow the "f090" convention.
     # We keep the original labels in a dict called freq_labels.
@@ -378,7 +381,10 @@ def main(args):
             plot_dirs[patch, freq_channel],
             pix_type=pix_type, do_plot=False
         )
-    comm.Barrier()
+        comm.Barrier()
+    if rank == 0:
+        end = time.time()
+        print(f"Coadding completed in (wall time) {int(end - start)}s.")
 
 
 if __name__ == "__main__":

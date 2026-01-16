@@ -1,0 +1,41 @@
+output_dir: /scratch/gpfs/SIMONSOBS/sat-iso/v3/simulations/cmb_fg_gaussian_20250925/unfiltered
+nside: 512
+id_sim_start: 0
+id_sim_end: 199
+read_alm: false
+store_alm: false
+store_maps: true
+pix_type: car
+res: 1
+
+## For high-res maps (input to filtering & mapmaking)
+# car_template: ../data/band_car_fejer1_1arcmin.fits
+
+## For v3 maps (after mapmaking)
+car_template: /scratch/gpfs/SIMONSOBS/so/science-readiness/footprint/v20250306/so_geometry_v20250306_sat_f090.fits  # ../data/band_car_fejer1_1arcmin.fits
+
+mpi_bool: true
+mask: /scratch/gpfs/SIMONSOBS/users/cr1744/masks/analysis_mask_full_hp.fits
+freqs:
+- 90
+- 150
+SAT_beams: true
+bpass_integration: false
+plaw_ell_pivot: 80
+cmb_cls_path: ../data/Cls_Planck2018_r0.fits
+fgs_model: d9s4
+A_synch_TT: 0.007848021144834726
+A_synch_EE: 0.004523580917285127
+A_synch_BB: 0.002271846810256514
+alpha_synch_TT: -3.0681570021382965
+alpha_synch_EE: -2.891185318835491
+alpha_synch_BB: -2.8653652819730495
+beta_synch: -3.0
+A_dust_TT: 3.7830105662052196
+A_dust_EE: 0.04575148604509891
+A_dust_BB: 0.027679977350318786
+alpha_dust_TT: -2.7658969387524364
+alpha_dust_EE: -2.5031875050267693
+alpha_dust_BB: -2.563358097102471
+beta_dust: 1.59
+T_dust: 19.6
