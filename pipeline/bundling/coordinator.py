@@ -82,29 +82,30 @@ class BundleCoordinator:
         query = query.replace("timestamp", "ctime")
         query += query_restrict
         cursor = conn.cursor()
-        res = cursor.execute(query).fetchall()  # First load directly to deal with timestamp/ctime rename
-        res = pd.DataFrame(res, columns=self.to_query)
+        all_props = cursor.execute(query).fetchall()  # First load directly to deal with timestamp/ctime rename
+        all_props = pd.DataFrame(all_props, columns=self.to_query)
         cursor.close()
         conn.close()
 
-        unique_indices = np.unique(res.obs_id, return_index=True)[1]
-        res = res.loc[unique_indices]
-        res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
+        unique_indices = np.unique(all_props.obs_id, return_index=True)[1]
+        all_props = all_props.loc[unique_indices]
+        all_props = filter_by_atomic_list(all_props, atomic_list, obs_id_only=True)
 
         # Replace numerical null_props data from atomic db with labels for bundle db
-        self.relevant_props = pd.DataFrame()
-        for prop in self.to_query:
+        self.bundle_db = pd.DataFrame()
+        for prop in all_props:
             if self.null_props is None or prop not in self.null_props:
-                self.relevant_props[prop] = res[prop]
+                self.bundle_db[prop] = all_props[prop]
             else:
                 null_dict = self.null_props[prop]
-                self.relevant_props[prop] = _get_null_labels(null_dict, res[prop])
-            setattr(self, prop, self.relevant_props[prop].to_numpy())
+                self.bundle_db[prop] = _get_null_labels(null_dict, all_props[prop])
+            setattr(self, prop, self.bundle_db[prop].to_numpy())
 
         self.n_bundles = n_bundles
         self.seed = seed
 
         self.gen_bundles()
+        self.bundle_db['bundle_id'] = self.bundle_id
 
     @classmethod
     def from_dbfile(cls, db_path, bundle_id=None, null_prop_val=None):
@@ -157,7 +158,7 @@ class BundleCoordinator:
         bundle_coord = cls()
         for prop in results:
             setattr(bundle_coord, prop, results[prop].to_numpy())
-        bundle_coord.relevant_props = results
+        bundle_coord.bundle_db = results
         bundle_coord.n_bundles = len(list(set(bundle_coord.bundle_id)))
 
         atomics = pd.read_sql_query("SELECT * FROM atomic", db_con)
@@ -172,7 +173,7 @@ class BundleCoordinator:
         """
         """
         gen = np.random.default_rng(seed=self.seed)
-        bundle_id = np.arange(self.relevant_props.shape[0]) % self.n_bundles
+        bundle_id = np.arange(self.bundle_db.shape[0]) % self.n_bundles
         self.bundle_id = gen.permutation(bundle_id)
         return self.bundle_id
 
@@ -202,7 +203,7 @@ class BundleCoordinator:
         # Save main bundles table
         save_db = pd.DataFrame()
         for prop in self.to_query:
-            save_db[prop] = self.relevant_props[prop]
+            save_db[prop] = self.bundle_db[prop]
         save_db['bundle_id'] = self.bundle_id
         save_db.to_sql("bundles", db_con, index=False)
 
