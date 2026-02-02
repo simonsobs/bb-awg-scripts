@@ -1,293 +1,213 @@
 import argparse
-import bundling_utils
+import bundling_utils as utils
 from coadder import Bundler
 import os
-import healpy as hp
-from pixell import enmap, enplot, reproject
 import numpy as np
 from coordinator import BundleCoordinator
 import itertools
 
-import matplotlib.pyplot as plt
 from procs_pool import get_exec_env
 
-def car2healpix(norm_hits_map):
+def main(config_file, parallelizor, atomic_list=None, error=True):
     """
-    Tranforms an intensive spin-0 map (e.g. hits map normalized to maximum 1)
-    into a healpix map.
+    Make bundle db, all bundles, coadd bundles together.
+
+    Parameters
+    ----------
+    config_file: str
+        Path to yaml config
+    parallelizor: tuple
+        (executor, as_completed_callable, nproc) for MPI/concurrent futures parallelization.
+    atomic_list: str
+        Filename for atomic list: .npy or .npz of (obs_id, wafer, freq).
+    error: bool
+        If False errors are caught and printed instead of raised.
     """
-    return reproject.map2healpix(norm_hits_map, spin=[0])
+    config = utils.Cfg.from_yaml(config_file)
 
-
-def main(args, parallelizor=None):
-    """
-    """
-    args = args.copy()  # Make sure we don't accidentally modify the input args
-    patch = args.patch
-    query_restrict = args.query_restrict
-    if patch is not None:
-        if query_restrict:
-            query_restrict += " AND "
-        if patch == "south":
-            query_restrict += "(azimuth > 90 AND azimuth < 270)"
-        elif patch == "north":
-            query_restrict += "(azimuth < 90 OR azimuth > 270)"
-        else:
-            raise ValueError(f"patch {patch} not recognized.")
-
-    atomic_list = None
-    if args.atomic_list is not None:
-        if '.npz' in args.atomic_list:
-            atomic_list = np.load(args.atomic_list)["atomic_list"]
-        else:
-            atomic_list = np.load(args.atomic_list)
-
-    if os.path.isfile(args.bundle_db) and not args.overwrite:
-        print(f"Loading from {args.bundle_db}.")
-        bundle_coordinator = BundleCoordinator.from_dbfile(
-            args.bundle_db,
-            null_prop_val=args.null_prop_val_inter_obs
-        )
-    else:
-        print(f"Writing to {args.bundle_db}.")
-        bundle_coordinator = BundleCoordinator(
-            args.atomic_db, n_bundles=args.n_bundles,
-            seed=args.seed, null_props=args.inter_obs_props,
-            query_restrict=query_restrict, atomic_list=atomic_list
-        )
-        bundle_coordinator.save_db(args.bundle_db)
-
-    if args.only_make_db:
-        return
-
-    if args.pix_type not in ["hp", "car"]:
-        raise ValueError(
-            "Unknown pixel type, must be 'car' or 'hp'."
-        )
-
-    out_dir = args.output_dir
-    os.makedirs(out_dir, exist_ok=True)
-
-    car_map_template = args.car_map_template
-
-    bundler = Bundler(
-        bundle_db=args.bundle_db,
-        freq_channel=args.freq_channel,
-        wafer=args.wafer,
-        pix_type=args.pix_type,
-        atomic_list=atomic_list,
-        car_map_template=car_map_template,
-        telescope=args.tel
-    )
-
-    bundle_ids = range(args.n_bundles)
-
-    for bundle_id in bundle_ids:
-        print(" - bundle_id", bundle_id)
-        split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
-                                            args.null_prop_val_inter_obs)
-
-        bundled_map, weights_map, hits_map, fnames = bundler.bundle(
-            bundle_id,
-            args.map_dir,
-            split_label=split_intra_obs,
-            null_prop_val=split_inter_obs,
-            abscal=args.abscal,
-            parallelizor=parallelizor
-        )
-
-        # Map naming convention
-        if (split_intra_obs, split_inter_obs) == (None, None):
-            split_tag = "science"
-        elif split_inter_obs is not None:
-            # Inter; potentially with summed intras
-            split_tag = split_inter_obs
-        elif split_intra_obs is not None:
-            split_tag = split_intra_obs
-        if isinstance(split_tag, list):
-            split_tag = '_'.join(split_tag)
-
-        wafer_tag = args.wafer if args.wafer is not None else ""
-        patch_tag = args.patch if args.patch is not None else ""
-
-        for required_tag in ["{split}", "{bundle_id}", "{freq_channel}"]:
-            if required_tag not in args.map_string_format:
-                raise ValueError(f"map_string_format does not have \
-                                   required placeholder {required_tag}")
-        for optional_tag, tag_val in zip(["{wafer}", "{patch}"], [wafer_tag, patch_tag]):
-            if optional_tag not in args.map_string_format and tag_val:
-                print(f"Warning: map_string_format does not have optional \
-                       placeholder {optional_tag} but value is passed")
-
-        out_fname = os.path.join(
-            out_dir,
-            args.map_string_format.format(split=split_tag,
-                                          bundle_id=bundle_id,
-                                          wafer=wafer_tag,
-                                          patch=patch_tag,
-                                          freq_channel=args.freq_channel)
-        )
-        # Again hacky removal of hopefully accidental double underscores
-        out_fname = out_fname.replace("__", "_")
-        # For plot titles
-        name_tag = f"{args.freq_channel}_{wafer_tag}_{patch_tag}_{split_tag}"
-        name_tag = name_tag.replace("__", "_")
-
-        os.makedirs(os.path.dirname(out_fname), exist_ok=True)
-        if args.save_fnames:
-            out_filenames = out_fname.replace("map.fits", "fnames.txt")
-            np.savetxt(out_filenames, fnames, fmt='%s')
-        if args.pix_type == "car":
-            enmap.write_map(out_fname, bundled_map)
-            enmap.write_map(out_fname.replace("map.fits", "weights.fits"),
-                            weights_map)
-            enmap.write_map(out_fname.replace("map.fits", "hits.fits"),
-                            hits_map)
-            plot = enplot.plot(
-                bundled_map*1e6, colorbar=True,
-                min=-100, max=100, ticks=10
-            )
-            enplot.write(
-                out_fname.replace(".fits", "_hits"),
-                enplot.plot(
-                    hits_map, colorbar=True,
-                    ticks=10
-                )
-            )
-            enplot.write(
-                out_fname.replace(".fits", "_norm_hits"),
-                enplot.plot(
-                    hits_map/np.max(hits_map, axis=(0, 1)), colorbar=True,
-                    min=-1, max=1, ticks=10
-                )
-            )
-            for ip, p in enumerate(["Q", "U"]):
-                enplot.write(
-                    out_fname.replace(".fits", f"{p}.png"),
-                    plot[ip+1]
-                )
-
-        elif args.pix_type == "hp":
-            hp.write_map(
-                out_fname, bundled_map, overwrite=True, dtype=np.float64
-            )
-            hp.write_map(
-                out_fname.replace("map.fits", "weights.fits"), weights_map,
-                overwrite=True, dtype=np.float64
-            )
-            hp.write_map(
-                out_fname.replace("map.fits", "hits.fits"), hits_map,
-                overwrite=True, dtype=np.float64
-            )
-            for ip, p in enumerate(["Q", "U"]):
-                hp.mollview(
-                    bundled_map[ip+1]*1e6, cmap="RdYlBu_r",
-                    title=f"{p} Bundle {bundle_id} {name_tag}",
-                    min=-100, max=100, unit=r"$\mu$K"
-                )
-                plt.savefig(out_fname.replace(".fits", f"{p}.png"))
-                plt.close()
-
-def _main(args, parallelizor):
-    config_file = args.config_file
-    config = bundling_utils.Cfg.from_yaml(config_file)
-
-    if args.atomic_list is not None:
-        config.atomic_list = args.atomic_list
-        config.map_string_format = config.map_string_format.replace("map.fits", f"{args.atomic_list[:-4]}_map.fits")
+    # Set atomic_list from command line args
+    if atomic_list is not None:
+        new_map_string = config.map_string_format.replace("{map_type}", atomic_list[:-4] + "_{map_type}")
+        config = utils.child_config(config, atomic_list=atomic_list, map_string_format=new_map_string)
         print(f"Set atomic_list to {config.atomic_list}")
 
     its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
-    patch_list = config.patch
+    patch_list = config.patch_list
 
-    for patch in np.atleast_1d(patch_list):
+    # Main loop over patches
+    for patch in patch_list:
         patch_tag = "" if patch is None else patch
-        bundle_db = config.bundle_db.format(patch=patch_tag,
-                                            seed=config.seed)
-        # Hacky but remove any (presumed accidental) double underscores
-        bundle_db = bundle_db.replace("__", "_")
 
-        # Make db only
+        # Make bundle db
+        config_db = utils.child_config(config, patch=patch)
+        if (not os.path.isfile(config_db.bundle_db_full)) or config_db.overwrite:
+            make_bundle_db(config_db)
+
         if config.only_make_db:
-            config1 = config.copy()
-            config1.patch = patch
-            config1.bundle_db = bundle_db
-            main(config1)
+            continue
 
+        # Coadd maps
         else:
+            # Loop over wafer/freq combos
             for it in itertools.product(*its):
-                print(patch, it)
+                freq, wafer = it
+                print(patch, freq if freq is not None else "", wafer if wafer is not None else "")
+                config_it = utils.child_config(config, patch=patch, freq_channel=freq, wafer=wafer)
 
-                config1 = config.copy()
-                config1.patch = patch
-                config1.bundle_db = bundle_db
-                config1.freq_channel, config1.wafer = it
-
+                # Science
+                if config_it.inter_obs_splits is None and config_it.intra_obs_splits is None:
+                    bundle_maps(config_it, config_it.intra_obs_pair, None, parallelizor, error=error)                
                 # Inter-obs
-                if config1.inter_obs_splits is not None:
-                    config2 = config1.copy()
-                    config2.split_label_intra_obs = config2.intra_obs_pair
-                    for null_prop_val in config2.inter_obs_splits:
-                        print(null_prop_val)
-                        config2.null_prop_val_inter_obs = null_prop_val
-                        try:
-                            main(config2, parallelizor)
-                        except ValueError as e:
-                            print(e)
+                if config_it.inter_obs_splits is not None:
+                    for inter_obs in np.atleast_1d(config_it.inter_obs_splits):
+                        bundle_maps(config_it, config_it.intra_obs_pair, inter_obs, parallelizor, error=error)
+                # Intra obs
+                if config_it.intra_obs_splits is not None:
+                    for intra_obs in config_it.intra_obs_splits:
+                        bundle_maps(config_it, intra_obs, None, parallelizor, error=error)
 
-                # Intra-obs
-                if config1.intra_obs_splits is not None:
-                    config2 = config1.copy()
-                    config2.null_prop_val_inter_obs = None
+                # Coadd bundles
+                coadd_bundles(config_it, wafer, freq, patch_tag, error=error, coadd_fnames=config.save_fnames)
 
-                    for split_val in config2.intra_obs_splits:
-                        print(split_val)
-                        config2.split_label_intra_obs = split_val
-                        try:
-                            main(config2, parallelizor)
-                        except ValueError as e:
-                            print(e)
+def make_bundle_db(config):
+    """
+    Make bundle db as determined by config.
+    """
+    print(f"Writing to {config.bundle_db}.")
+    bundle_coordinator = BundleCoordinator(
+        config.atomic_db, n_bundles=config.n_bundles,
+        seed=config.seed, null_props=config.inter_obs_props,
+        query_restrict=config.query_restrict_patch,
+        atomic_list=config.atomic_list
+    )
+    bundle_coordinator.save_db(config.bundle_db_full)
 
-                wafer_tag = "" if config1.wafer is None else config1.wafer
-                template = os.path.join(config1.output_dir,
-                                        config1.map_string_format.format(split="{}",
-                                                                         bundle_id="{}",
-                                                                         wafer=wafer_tag,
-                                                                         patch=patch_tag,
-                                                                         freq_channel=config1.freq_channel
-                                                                         ))
-                template = template.replace("__", "_")
-                template = template.replace("map.fits", "{}.fits")
+def _bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizor=None):
+    """
+    Make all bundles as determined by config.
 
-                # Make full coadds
-                if config1.coadd_split_pair is not None:
-                    print("Making full maps")
+    Parameters
+    ----------
+    config: bundling_utils.Cfg
+        config object loaded from yaml
+    split_intra_obs: str
+        String tag identifying intra obs split to bundle.
+    split_inter_obs: str
+        String tag identifying inter obs split to bundle.
+    parallelizor: tuple
+        (executor, as_completed_callable, nproc) for MPI/concurrent futures parallelization.
+    """
+    out_dir = config.output_dir
+    os.makedirs(out_dir, exist_ok=True)
 
-                    savename = template.format(config1.coadd_splits_name, "{}", "{}")
-                    bundling_utils.make_full(template,
-                                             config1.coadd_split_pair,
-                                             config1.n_bundles,
-                                             config1.pix_type,
-                                             do_hits=True,
-                                             savename=savename,
-                                             return_maps=False)
+    bundler = Bundler(
+        bundle_db=config.bundle_db_full,
+        freq_channel=config.freq_channel,
+        wafer=config.wafer,
+        pix_type=config.pix_type,
+        atomic_list=config.atomic_list,
+        car_map_template=config.car_map_template,
+    )
 
-                if config1.coadd_bundles_splitname is not None:
-                    print("Co-adding bundles")
-                    for coadd_bundles_splitname in np.atleast_1d(config1.coadd_bundles_splitname):
-                        print(coadd_bundles_splitname)
-                        temp = template.format(coadd_bundles_splitname, "{}", "{}")
-                        sum_vals = list(range(config1.n_bundles))
-                        savename = temp.format("!", "{}").replace("_bundle!", "")
-                        coadd_map, _, _ = bundling_utils.coadd_bundles(temp,
-                                                                       sum_vals,
-                                                                       config1.pix_type,
-                                                                       do_hits=True,
-                                                                       savename=savename)
+    bundle_ids = range(config.n_bundles)
+    for bundle_id in bundle_ids:
+        print(" - bundle_id", bundle_id)
 
-                        plot = enplot.plot(coadd_map*1e6, colorbar=True, color='gray', range="100:20:20", ticks=10, downgrade=2, autocrop=True)
-                        enplot.write(savename.replace("{}.fits", "mapQ.png"), plot[1])
-                        enplot.write(savename.replace("{}.fits", "mapU.png"), plot[2])
+        split_tag = utils.get_split_tag(split_intra_obs, split_inter_obs, config.intra_obs_pair, config.coadd_splits_name)
+        wafer_tag = config.wafer if config.wafer is not None else ""
+        patch_tag = config.patch if config.patch is not None else ""
+
+        utils.validate_map_string_format(config.map_string_format, wafer_tag, patch_tag)
+        out_fname = os.path.join(
+            out_dir,
+            config.map_string_format.format(split=split_tag,
+                                          bundle_id=bundle_id,
+                                          wafer=wafer_tag,
+                                          patch=patch_tag,
+                                          freq_channel=config.freq_channel,
+                                          map_type="{}")
+        )
+        out_fname = out_fname.replace("__", "_")  # Again hacky removal of hopefully accidental double underscores
+
+        if os.path.exists(out_fname.format("map")):
+            print(f"Map {out_fname.format('map')} exists: skipping")
+            continue
+
+        bundled_map, weights_map, hits_map, fnames = bundler.bundle(
+            bundle_id,
+            config.map_dir,
+            split_label=split_intra_obs,
+            null_prop_val=split_inter_obs,
+            abscal=config.abscal,
+            parallelizor=parallelizor
+        )
+
+        fnames = fnames if config.save_fnames else None
+
+        utils.write_maps(out_fname, config.pix_type, bundled_map, weights_map, hits_map, fnames)
+
+        savename_plot = out_fname[:out_fname.find(".fits")] + ".png"
+        if config.make_plots:
+            utils.plot_map(savename_plot.format("hits"), config.pix_type, hits_map)
+            utils.plot_map(savename_plot.format("Q"), config.pix_type, bundled_map[1], unit_fac=1e6, vrange=100)
+            utils.plot_map(savename_plot.format("U"), config.pix_type, bundled_map[2], unit_fac=1e6, vrange=100)
+
+
+def bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizor=None, verbose=True, error=True):
+    """See _bundle_maps docstring"""
+    split_tag = utils.get_split_tag(split_intra_obs, split_inter_obs, config.intra_obs_pair, config.coadd_splits_name)
+    if verbose:
+        print(split_tag)
+    if error:
+        _bundle_maps(config, split_intra_obs, split_inter_obs, parallelizor)
+    else:
+        try:
+            _bundle_maps(config, split_intra_obs, split_inter_obs, parallelizor)
+        except ValueError as e:
+            print("Error: ", e)
+
+def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True):
+    """Coadd bundles together to get full-split single-bundle or single-split all-bundle coadds."""
+    wafer_tag = "" if wafer is None else wafer
+    template = os.path.join(config.output_dir, config.map_string_format.format(
+        split="{}", bundle_id="{}", wafer=wafer_tag, patch=patch_tag,
+        freq_channel=freq, map_type="{}"))
+    template = template.replace("__", "_")
+
+    # Make full coadds
+    if config.coadd_split_pair is not None:
+        print("Making full maps")
+        savename = template.format(config.coadd_splits_name, "{}", "{}")
+        try:
+            utils.make_full(template, config.coadd_split_pair, config.n_bundles,
+                                     config.pix_type, coadd_hits=True, coadd_fnames=coadd_fnames, savename=savename, return_maps=False)
+        except FileNotFoundError as e:
+            if error:
+                raise e
+            else:
+                print("Error: ", e)
+
+    if config.coadd_bundles_splitname is not None:
+        print("Co-adding bundles")
+        for coadd_bundles_splitname in np.atleast_1d(config.coadd_bundles_splitname):
+            print(coadd_bundles_splitname)
+            temp = template.format(coadd_bundles_splitname, "{}", "{}")
+            sum_vals = list(range(config.n_bundles))
+            savename = temp.format("!", "{}").replace("_bundle!", "")
+            try:
+                coadd_map, _, coadd_hits = utils.coadd_bundles(temp, sum_vals, config.pix_type,
+                                                               coadd_hits=True, savename=savename)
+                if config.make_plots:
+                    savename_plot = savename[:savename.find(".fits")] + ".png"
+                    utils.plot_map(savename_plot.format("hits"), config.pix_type, coadd_hits)
+                    utils.plot_map(savename_plot.format("mapQ"), config.pix_type, coadd_map[1], unit_fac=1e6, vrange=20)
+                    utils.plot_map(savename_plot.format("mapU"), config.pix_type, coadd_map[2], unit_fac=1e6, vrange=20)
+
+            except FileNotFoundError as e:
+                if error:
+                    raise e
+                else:
+                    print("Error: ", e)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled maps")
@@ -300,6 +220,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nproc", type=int, default=1, help="Number of parallel processes for concurrent futures."
     )
+    parser.add_argument(
+        "--error", action="store_true", help="Raise errors instead of catching and printing"
+    )
 
     args = parser.parse_args()
     rank, executor, as_completed_callable = get_exec_env(args.nproc)
@@ -308,4 +231,8 @@ if __name__ == "__main__":
             nproc = executor.num_workers
         except AttributeError:
             nproc = executor._max_workers
-        _main(args, (executor, as_completed_callable, nproc))
+        if nproc > 1:
+            parallelizor = (executor, as_completed_callable, nproc)
+        else:
+            parallelizor = None
+        main(args.config_file, parallelizor, args.atomic_list, args.error)

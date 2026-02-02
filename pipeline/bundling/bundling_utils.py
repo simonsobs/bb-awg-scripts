@@ -1,29 +1,21 @@
+import os
 import numpy as np
-from pixell import enmap
+from pixell import enmap, enplot
 import healpy as hp
 from astropy.io import fits
 import h5py
-
+import re
 from copy import deepcopy
+from matplotlib import pyplot as plt
 
 from typing import Optional
 from dataclasses import dataclass
 import yaml
 import pandas as pd
 
-def _check_pix_type(pix_type):
-    """
-    Error handling for pixellization types.
-
-    Parameters
-    ----------
-    pix_type : str
-        Pixellization type. Admissible values are "hp", "car.
-    """
-    if not (pix_type in ['hp', 'car']):
-        raise ValueError(f"Unknown pixelisation type {pix_type}.")
-
-
+##############################################################################
+## Map Operations ##
+##############################################################################
 def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
              convert_K_to_muK=False, geometry=None, is_weights=False):
     """
@@ -102,71 +94,85 @@ def write_map(map_file, map, dtype=None, pix_type='hp',
     else:
         enmap.write_map(map_file, map)
 
-
-def _get_map_template_car(template_map=None, res=5., dec_cut=None,
-                          variant='fejer1', dtype=np.float64):
+def write_maps(out_fname, pix_type, bundled_map, weights_map, hits_map=None, fnames=None, dtype=np.float64):
     """
-    Get a map template for CAR
+    Save map, weights, hits, and optionally filenames going into bundles.
 
     Parameters
     ----------
-    template_map : str
-        File name for map or geometry file to use as template
-    res : int
-        Resolution of the map in arcmin if template_map is None
-    dec_cut : tuple
-        Min/max dec in deg if template_map is None
-    variant : str
-        CAR variant to use if template_map is None. 'fejer1' or 'cc'.
-    dtype : np.dtype
-        Data type.
+    out_fname: str
+        File path to write to. Should have a single 'format' field for
+        map type ('map', 'weights', 'hits').
+    pix_type: str
+        'hp' or 'car'
+    fnames: list[str]
+        List of file names going into a bundle.
+    dtype: type
+        dtype for Healpix
     """
-    if template_map is not None:
-        if isinstance(template_map, str):
-            shape, wcs = enmap.read_map_geometry(template_map)
-        else:  # Assume we were passed a pre-loaded map
-            shape, wcs = template_map.geometry
-        shape = shape[-2:]
-    elif dec_cut is not None:
-        print(f"Using band geometry with dec_cut = {dec_cut}")
-        shape, wcs = enmap.band_geometry(
-            (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
-            res=np.deg2rad(res/60), variant=variant
-        )
+    os.makedirs(os.path.dirname(out_fname), exist_ok=True)
+    if fnames is not None:
+        out_filenames = out_fname[:out_fname.find(".fits")] + ".txt"
+        np.savetxt(out_filenames.format("fnames"), fnames, fmt='%s')
+    for imap, tag in zip([bundled_map, weights_map, hits_map], ["map", "weights", "hits"]):
+        if imap is not None:
+            write_map(out_fname.format(tag), imap, dtype=dtype, pix_type=pix_type)
+
+def read_hdf5_map(fname, to_nest=False):
+    """
+    Read a HEALPix map in hdf5 format.
+    """
+    f = h5py.File(fname, "r")
+    dset = f["map"]
+    header = dict(dset.attrs)
+
+    if header["ORDERING"] == "NESTED":
+        file_nested = True
+    elif header["ORDERING"] == "RING":
+        file_nested = False
+
+    if file_nested and not to_nest:
+        mapdata = hp.reorder(dset[:], n2r=True)
+    elif not file_nested and to_nest:
+        mapdata = hp.reorder(dset[:], r2n=True)
     else:
-        print("Using full-sky geometry.")
-        shape, wcs = enmap.fullsky_geometry(res=np.deg2rad(res/60), proj='car',
-                                            variant="fejer1")
+        mapdata = dset
 
-    atom_coadd = enmap.zeros((3, *shape), wcs, dtype=dtype)
-    return atom_coadd
+    return mapdata
 
-
-def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
+def write_hdf5_map(fname, nside, dict_maps, list_of_obsid,
+                   nest_or_ring='RING'):
     """
-    Get a map template for healpix
-
-    Parameters
-    ----------
-    template_map : str
-        File name for map or geometry file to use as template
-    nside : int
-        NSIDE to use if template_map is None
-    dtype : np.dtype
-        Data type.
+    Write a HEALPix map into hdf5 format.
     """
-    if template_map is not None:
-        if isinstance(template_map, str):
-            temp = hp.read_map(template_map)
-        else:
-            temp = template_map  # Assume we were passed a pre-loaded map
-        npix = temp.shape[-1]
-    else:
-        npix = 12 * nside**2
-    atom_coadd = np.zeros((3, npix), dtype=dtype)
-    return atom_coadd
+    with h5py.File(fname, 'w') as f:
+        f.attrs['NSIDE'] = nside
+        f.attrs['ORDERING'] = nest_or_ring
+        f.attrs['OBS_ID'] = list_of_obsid
+        for k, v in dict_maps.items():
+            f.create_dataset(k, data=v)
 
+def plot_map(out_fname, pix_type, imap, unit_fac=1, vrange=None):
+    """Make and save plots of maps. Maps should be single component."""
+    if pix_type == "car":
+        vmin = -vrange if vrange is not None else None
+        plot = enplot.plot(imap*unit_fac, colorbar=True,
+                           min=vmin, max=vrange, ticks=10, downgrade=2)
+        if out_fname[-4:] in ['.png', '.jpg', '.pdf']:
+            out_fname = out_fname[:-4]  # Remove file extensions for enplot
+        enplot.write(out_fname, plot)
 
+    elif pix_type == "hp":
+        hp.mollview(imap * unit_fac, cmap="RdYlBu_r",
+                    min=vmin, max=vrange)
+        if out_fname[-4:] not in ['.png', '.jpg', '.pdf']:
+            out_fname += ".png"  # Add png if no extension
+        plt.savefig(out_fname)
+        plt.close()
+
+##############################################################################
+## Bundling / Coaddition utility functions #
+##############################################################################
 def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
                pix_type="hp", res_car=5., car_template_map=None,
                dec_cut_car=None, fields_hp=None, abscal=1, parallelizor=None):
@@ -258,94 +264,6 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     else:
         return map_coadd, weights_coadd
 
-
-# The following functions are utility function inherited from
-# sat-mapbundle-lib and elsewhere, but are not used (yet).
-def _dbquery(db, query):
-    cursor = db.cursor()
-    result = cursor.execute(query).fetchall()
-    return np.asarray(result).flatten()
-
-
-def read_hdf5_map(fname, to_nest=False):
-    """
-    Read a HEALPix map in hdf5 format.
-    """
-    f = h5py.File(fname, "r")
-    dset = f["map"]
-    header = dict(dset.attrs)
-
-    if header["ORDERING"] == "NESTED":
-        file_nested = True
-    elif header["ORDERING"] == "RING":
-        file_nested = False
-
-    if file_nested and not to_nest:
-        mapdata = hp.reorder(dset[:], n2r=True)
-    elif not file_nested and to_nest:
-        mapdata = hp.reorder(dset[:], r2n=True)
-    else:
-        mapdata = dset
-
-    return mapdata
-
-
-def write_hdf5_map(fname, nside, dict_maps, list_of_obsid,
-                   nest_or_ring='RING'):
-    """
-    Write a HEALPix map into hdf5 format.
-    """
-    with h5py.File(fname, 'w') as f:
-        f.attrs['NSIDE'] = nside
-        f.attrs['ORDERING'] = nest_or_ring
-        f.attrs['OBS_ID'] = list_of_obsid
-        for k, v in dict_maps.items():
-            f.create_dataset(k, data=v)
-
-
-def gen_masks_of_given_atomic_map_list_for_bundles(nmaps, nbundles):
-    """
-    Makes a list (length nbundles) of boolean lists (length nmaps)
-    corresponding to the atomic maps that have to be coadded to make up a
-    given bundle. This is done by uniformly distributing atomic maps into each
-    bundle and, if necessary, looping through the bundles until the remainders
-    have gone.
-
-    Parameters
-    ----------
-    nmaps: int
-        Number of atomic maps to distribute.
-    nbundles: int
-        Number of map bundles to be generated.
-
-    Returns
-    -------
-    boolean_mask_list: list of list of str
-        List of lists of booleans indicating the atomics to be coadded for
-        each bundle.
-    """
-
-    n_per_bundle = nmaps // nbundles
-    nremainder = nmaps % nbundles
-    boolean_mask_list = []
-
-    for idx in range(nbundles):
-        if idx < nremainder:
-            _n_per_bundle = n_per_bundle + 1
-        else:
-            _n_per_bundle = n_per_bundle
-
-        i_begin = idx * _n_per_bundle
-        i_end = (idx+1) * _n_per_bundle
-
-        _m = np.zeros(nmaps, dtype=np.bool_)
-        _m[i_begin:i_end] = True
-
-        boolean_mask_list.append(_m)
-
-    return boolean_mask_list
-
-
 def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x: True,
              islice=slice(None), **read_map_kwargs):
     """Coadd CAR or healpix maps
@@ -389,56 +307,8 @@ def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x: True,
             _add_map(imap, out, pix_type)
     return out
 
-
-def _add_map(imap, omap, pix_type):
-    """Add a single map imap to an existing omap. omap is modified in place."""
-    _check_pix_type(pix_type)
-    if pix_type == 'hp':
-        omap += imap
-    elif pix_type == 'car':
-        enmap.extract(imap, omap.shape, omap.wcs, omap=omap,
-                      op=np.ndarray.__iadd__)
-
-
-def _make_parallel_proc(fn, parallelizor):
-    """Parallelize a coaddition function using ProcessPoolExecutor.
-
-    Parameters
-    ----------
-    fn: function
-        coaddition function with input params (list of filenames, template map)
-        and return: coadded map
-    parallelizor: tuple
-        (MPICommExecutor or ProcessPoolExecutor, as_completed_callable, num_workers)
-
-    Returns
-    -------
-    fn: function
-        Parallelized coaddition function with same input params, plus optional
-        nproc=num_workers from parallelizor
-    """
-    exe, as_completed, nproc = parallelizor
-    def parallel_fn(filenames, template, *args, nproc=nproc, **kwargs):
-        ibin = int(np.ceil(len(filenames)/nproc))
-        slices = [slice(iproc*ibin, (iproc+1)*ibin) for iproc in range(nproc)]
-        out = None
-
-        futures = [exe.submit(fn, filenames, template, *args,
-                              islice=slices[iproc], **kwargs)
-                   for iproc in range(nproc)]
-        for future in as_completed(futures):
-            if out is None:
-                out = future.result()
-            else:
-                out += future.result()
-            futures.remove(future)
-
-        return out
-    return parallel_fn
-
-
-def coadd_bundles(template, sum_vals, pix_type, do_hits=True, savename=None,
-                  **read_map_kwargs):
+def coadd_bundles(template, sum_vals, pix_type, coadd_hits=True, coadd_fnames=False,
+                  savename=None, **read_map_kwargs):
     """Add bundled maps together. Maps are assumed to be unweighted and
     the same shape/geometry
 
@@ -451,34 +321,45 @@ def coadd_bundles(template, sum_vals, pix_type, do_hits=True, savename=None,
         List of strings to put into the template for the files to be summed
     pix_type: str
         hp or car
-    do_hits: bool
+    coadd_hits: bool
         If True also add/return hits
+    coadd_fnames: bool
+        If True also read the fnames files and add them together
     savename: str
         Formattable string filename with args map_type
     read_map_kwargs: dict
         kwargs passed through to read_map
     """
-    out = []
+    out = {'map': None, 'weights': None, 'hits': None, 'filenames': None}
     for val in sum_vals:
         imap = read_map(template.format(val, 'map'), pix_type=pix_type,
                         **read_map_kwargs)
         weights = read_map(template.format(val, 'weights'), pix_type=pix_type,
                            **read_map_kwargs)
-        if len(out) == 0:
-            out.append(imap * weights)
-            out.append(weights)
+        if out['map'] is None:
+            out['map'] = imap * weights
+            out['weights'] = weights
         else:
-            out[0] += imap * weights
-            out[1] += weights
-        if do_hits:
+            out['map'] += imap * weights
+            out['weights'] += weights
+        if coadd_hits:
             hits = read_map(template.format(val, 'hits'), pix_type=pix_type,
                             **read_map_kwargs)
-            if len(out) < 3:
-                out.append(hits)
+            if out['hits'] is None:
+                out['hits'] = hits
             else:
-                out[2] += hits
+                out['hits'] += hits
+        if coadd_fnames:
+            filenames_fn = template[:template.find(".fits")] + ".txt"
+            filenames_fn = filenames_fn.format(val, 'fnames')
+            filenames = np.loadtxt(filenames_fn, dtype=str)
+            if out['filenames'] is None:
+                out['filenames']  = filenames
+            else:
+                out['filenames'] = np.concatenate([out['filenames'], filenames])
+
     del imap
-    wmap, weights = out[:2]
+    wmap, weights = out['map'], out['weights']
     good = weights > 0
     wmap[good] /= weights[good]
 
@@ -487,17 +368,21 @@ def coadd_bundles(template, sum_vals, pix_type, do_hits=True, savename=None,
                   pix_type=pix_type)
         write_map(savename.format("weights"), weights, dtype=weights.dtype,
                   pix_type=pix_type)
-        if do_hits:
-            write_map(savename.format("hits"), out[2], dtype=hits.dtype,
+        if coadd_hits:
+            write_map(savename.format("hits"), out['hits'], dtype=hits.dtype,
                       pix_type=pix_type)
-    if do_hits:
-        return wmap, weights, out[2]
+        if coadd_fnames:
+            savename_fnames = savename[:savename.find(".fits")] + ".txt"
+            np.savetxt(savename_fnames.format("fnames"), sorted(out['filenames']), fmt='%s')
+
+    if coadd_hits:
+        return wmap, weights, out['hits']
     else:
         return wmap, weights
 
 
-def make_full(template, split_pair, nbundles, pix_type, do_hits=True,
-              savename=None, return_maps=True, **read_map_kwargs):
+def make_full(template, split_pair, nbundles, pix_type, coadd_hits=True,
+              coadd_fnames=False, savename=None, return_maps=True, **read_map_kwargs):
     """Add two splits to make a 'full' split for each bundle.
 
     Parameters
@@ -510,8 +395,10 @@ def make_full(template, split_pair, nbundles, pix_type, do_hits=True,
         Number of bundles
     pix_type: str
         hp or car
-    do_hits: bool
+    coadd_hits: bool
         If True also add/return hits
+    coadd_fnames: bool
+        If True also add fnames
     savename: str
         Formattable string filename with args ibundle, map_type
     return_maps: bool
@@ -522,14 +409,16 @@ def make_full(template, split_pair, nbundles, pix_type, do_hits=True,
     for ibundle in range(nbundles):
         sn = savename.format(ibundle, "{}") if savename is not None else None
         ans = coadd_bundles(template.format("{}", ibundle, "{}"),
-                            split_pair, pix_type, do_hits=do_hits,
-                            savename=sn, **read_map_kwargs)
+                            split_pair, pix_type, coadd_hits=coadd_hits,
+                            coadd_fnames=coadd_fnames, savename=sn, **read_map_kwargs)
         if return_maps:
             out.append(ans)
     if return_maps:
         return out
 
-
+##############################################################################
+## Misc Utility ##
+##############################################################################
 def filter_by_atomic_list(arr, atomic_list, obs_id_only=False, return_index=False):
     """ Filter an array by atomic_list
 
@@ -586,7 +475,251 @@ def filter_by_atomic_list_df(df, atomic_list, obs_id_only=False, return_index=Fa
     else:
         return df[ind]
 
+def extract_ws_freq(input_str):
+    """
+    Extract 'ws' and 'freq' from the input string.
 
+    Parameters
+    ----------
+    input_str: str
+        Input string containing 'ws' and 'freq' information.
+
+    Returns
+    -------
+    ws: str
+        Extracted 'ws' value.
+    freq: str
+        Extracted 'freq' value.
+    """
+    pattern = r'ws\d+|f\d+'
+    matches = re.findall(pattern, input_str)
+    ws = next((match for match in matches if match.startswith('ws')), None)
+    freq = next((match for match in matches if match.startswith('f')),
+                None)
+    return ws, freq
+
+def get_basename(prefix_path, depth):
+    """ Get the base filename from a path, to a level given by depth.
+    depth=0 is just the filename, depth=1 includes the first directory, etc.
+    """
+    split_prefix = [dr for dr in prefix_path.split('/') if dr]  # Split and remove double slashes
+    return '/'.join(split_prefix[-depth-1:])
+
+def get_abscal(abscal_dict, wafers, freqs):
+    """ Get an array of abscal values for specific wafers/freqs.
+
+    Parameters
+    ----------
+    abscal_dict: dict
+        Nested dict in format {'ws0': {'f090': 1, 'f150': 1}, ...}.
+        Maps will be multiplied by the abscal factor.
+    wafers: list
+        List of wafer identifiers as given in abscal_dict
+    freqs: list
+        List of freq identifiers as given in abscal_dict
+
+    Returns
+    -------
+    abscal: numpy.array
+        Array of multiplicative abscal factors with the same shape as wafers/freqs
+    """
+    if abscal_dict:
+        abscal = np.array([abscal_dict[wafer][freq] for wafer, freq in zip(wafers, freqs)])
+    else:
+        abscal = np.ones(len(wafers))
+    return abscal
+
+def validate_map_string_format(map_string_format, wafer_tag, patch_tag):
+    """Check that map filename format string has required and requested optional format tags."""
+    for required_tag in ["{split}", "{bundle_id}", "{freq_channel}", "{map_type}"]:
+        if required_tag not in map_string_format:
+            raise ValueError(f"map_string_format does not have \
+                               required placeholder {required_tag}")
+    for optional_tag, tag_val in zip(["{wafer}", "{patch}"], [wafer_tag, patch_tag]):
+        if optional_tag not in map_string_format and tag_val:
+            print(f"Warning: map_string_format does not have optional \
+                   placeholder {optional_tag} but value is passed")
+
+def get_split_tag(split_intra_obs, split_inter_obs, coadd_pair, full_name='full'):
+    """Parse intra/inter obs and set correct split tag."""
+    # Map naming convention
+    if (split_intra_obs, split_inter_obs) == (None, None):
+        split_tag = full_name
+    elif split_inter_obs is not None:
+        # Inter; potentially with summed intras
+        split_tag = split_inter_obs
+    elif split_intra_obs is not None:
+        if list(split_intra_obs) == list(coadd_pair):
+            split_tag = full_name
+        else:
+            split_tag = split_intra_obs
+    if isinstance(split_tag, list):
+        split_tag = '_'.join(split_tag)
+    return split_tag
+
+def add_patch_to_query_restrict(patch, query_restrict=""):
+    """Take a string patch name and add the correct az query to an existing restrict."""
+    if patch is None:
+        return query_restrict
+
+    if patch == "south":
+        patch_query = "(azimuth > 90 AND azimuth < 270)"
+    elif patch == "north":
+        patch_query = "(azimuth < 90 OR azimuth > 270)"
+    else:
+        raise ValueError(f"patch {patch} not recognized.")
+
+    if patch_query in query_restrict:
+        return query_restrict # Don't duplicate
+
+    if query_restrict:
+        query_restrict += " AND "
+    query_restrict += patch_query
+    return query_restrict
+
+def load_atomic_list(atomic_list_fn):
+    """Load an atomic list from .npy or .npz format."""
+    if atomic_list_fn is None:
+        return None
+    if '.npz' in atomic_list_fn:
+        atomic_list = np.load(atomic_list_fn)["atomic_list"]
+    else:
+        atomic_list = np.load(atomic_list_fn)
+    return atomic_list
+
+##############################################################################
+## SQLite ##
+##############################################################################
+def _dbquery(db, query):
+    cursor = db.cursor()
+    result = cursor.execute(query).fetchall()
+    return np.asarray(result).flatten()
+
+##############################################################################
+## Internal Functions ##
+##############################################################################
+def _check_pix_type(pix_type):
+    """
+    Error handling for pixellization types.
+
+    Parameters
+    ----------
+    pix_type : str
+        Pixellization type. Admissible values are "hp", "car.
+    """
+    if not (pix_type in ['hp', 'car']):
+        raise ValueError(f"Unknown pixelisation type {pix_type}.")
+
+def _get_map_template_car(template_map=None, res=5., dec_cut=None,
+                          variant='fejer1', dtype=np.float64):
+    """
+    Get a map template for CAR
+
+    Parameters
+    ----------
+    template_map : str
+        File name for map or geometry file to use as template
+    res : int
+        Resolution of the map in arcmin if template_map is None
+    dec_cut : tuple
+        Min/max dec in deg if template_map is None
+    variant : str
+        CAR variant to use if template_map is None. 'fejer1' or 'cc'.
+    dtype : np.dtype
+        Data type.
+    """
+    if template_map is not None:
+        if isinstance(template_map, str):
+            shape, wcs = enmap.read_map_geometry(template_map)
+        else:  # Assume we were passed a pre-loaded map
+            shape, wcs = template_map.geometry
+        shape = shape[-2:]
+    elif dec_cut is not None:
+        print(f"Using band geometry with dec_cut = {dec_cut}")
+        shape, wcs = enmap.band_geometry(
+            (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
+            res=np.deg2rad(res/60), variant=variant
+        )
+    else:
+        print("Using full-sky geometry.")
+        shape, wcs = enmap.fullsky_geometry(res=np.deg2rad(res/60), proj='car',
+                                            variant="fejer1")
+
+    atom_coadd = enmap.zeros((3, *shape), wcs, dtype=dtype)
+    return atom_coadd
+
+def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
+    """
+    Get a map template for healpix
+
+    Parameters
+    ----------
+    template_map : str
+        File name for map or geometry file to use as template
+    nside : int
+        NSIDE to use if template_map is None
+    dtype : np.dtype
+        Data type.
+    """
+    if template_map is not None:
+        if isinstance(template_map, str):
+            temp = hp.read_map(template_map)
+        else:
+            temp = template_map  # Assume we were passed a pre-loaded map
+        npix = temp.shape[-1]
+    else:
+        npix = 12 * nside**2
+    atom_coadd = np.zeros((3, npix), dtype=dtype)
+    return atom_coadd
+
+def _add_map(imap, omap, pix_type):
+    """Add a single map imap to an existing omap. omap is modified in place."""
+    _check_pix_type(pix_type)
+    if pix_type == 'hp':
+        omap += imap
+    elif pix_type == 'car':
+        enmap.extract(imap, omap.shape, omap.wcs, omap=omap,
+                      op=np.ndarray.__iadd__)
+
+def _make_parallel_proc(fn, parallelizor):
+    """Parallelize a coaddition function using ProcessPoolExecutor.
+
+    Parameters
+    ----------
+    fn: function
+        coaddition function with input params (list of filenames, template map)
+        and return: coadded map
+    parallelizor: tuple
+        (MPICommExecutor or ProcessPoolExecutor, as_completed_callable, num_workers)
+
+    Returns
+    -------
+    fn: function
+        Parallelized coaddition function with same input params, plus optional
+        nproc=num_workers from parallelizor
+    """
+    exe, as_completed, nproc = parallelizor
+    def parallel_fn(filenames, template, *args, nproc=nproc, **kwargs):
+        ibin = int(np.ceil(len(filenames)/nproc))
+        slices = [slice(iproc*ibin, (iproc+1)*ibin) for iproc in range(nproc)]
+        out = None
+
+        futures = [exe.submit(fn, filenames, template, *args,
+                              islice=slices[iproc], **kwargs)
+                   for iproc in range(nproc)]
+        for future in as_completed(futures):
+            if out is None:
+                out = future.result()
+            else:
+                out += future.result()
+            futures.remove(future)
+
+        return out
+    return parallel_fn
+
+##############################################################################
+## Config ##
+##############################################################################
 @dataclass
 class Cfg:
     """
@@ -647,10 +780,8 @@ class Cfg:
         Save the atomic map filenames for each bundle
     atomic_list: str
         Path to npy file of atomic map names to restrict the atomic db
-    abscal: bool
-        Apply stored absolute calibration factors
-    tel: str
-        Telescope identifier for abscal
+    abscal: dict
+        Multiplicative abscals {'ws0': {'f090': 0.8, 'f150': 0.9}, ...}
     coadd_splits_name: str
         "split" name for the coadd of two splits
     coadd_split_pair: list
@@ -680,17 +811,42 @@ class Cfg:
     wafer: Optional[str] = None
     save_fnames: bool = False
     atomic_list: Optional[str] = None
-    abscal: bool = False
-    tel: Optional[str] = None
+    abscal: Optional[dict] = None
     coadd_splits_name: str = "full"
     coadd_split_pair: Optional[list] = None
     coadd_bundles_splitname: Optional[str] = None
     n_sims: Optional[int] = None
+    make_plots: bool = False
 
     def __post_init__(self):
-        # Add extra defaults for private args not expected in config file
-        self.null_prop_val_inter_obs = None
-        self.split_label_intra_obs = None
+        # Process patch argument
+        if type(self.patch) is str or self.patch is None:
+            self.patch_list = [self.patch]
+        else:
+            self.patch_list = self.patch
+            self.patch = None
+
+        self._update_attributes()
+
+    def _update_attributes(self):
+        """Do internal updating of certain attributes"""
+        # Check valid pixelization
+        _check_pix_type(self.pix_type)
+        # Load the atomic list
+        if type(self.atomic_list) is str:
+            self.atomic_list = load_atomic_list(self.atomic_list)
+        # Update query restrict with patch
+        self.query_restrict_patch = add_patch_to_query_restrict(self.patch, query_restrict=self.query_restrict)
+
+        # Update bundle db
+        patch_tag = "" if self.patch is None else self.patch
+        self.bundle_db_full = self.bundle_db.format(patch=patch_tag, seed=self.seed)
+        self.bundle_db_full = self.bundle_db_full.replace("__", "_")  # Hacky but remove any (presumed accidental) double underscores
+
+    def update(self, **kwargs):
+        for key in kwargs:
+            setattr(self, key, kwargs[key])
+        self._update_attributes()
 
     @classmethod
     def from_yaml(cls, path) -> "Cfg":
@@ -700,3 +856,9 @@ class Cfg:
 
     def copy(self):
         return deepcopy(self)
+
+def child_config(config, **kwargs):
+    """Add key-value pairs in **kwargs to a copied config object and return."""
+    config1 = config.copy()
+    config1.update(**kwargs)
+    return config1

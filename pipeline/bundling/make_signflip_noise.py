@@ -1,30 +1,22 @@
 import argparse
 import os
 import sys
-import healpy as hp
 import numpy as np
-import matplotlib.pyplot as plt
 import itertools
-from pixell import enmap, enplot
-
 from coadder import SignFlipper
-from coordinator import BundleCoordinator
-import bundling_utils
+import bundling_utils as utils
 
 bundling_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(bundling_dir, "../misc"))
 
 import mpi_utils as mpi  # noqa
 
-def main(args, size, rank, comm):
+def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs=None):
     """
     Main function to create sign-flipped noise realizations.
     """
+    args = args.copy()  # Make sure we don't modify input
 
-    args = args_dict = args.copy()  # Make sure we don't modify input
-    patch = args.patch
-    query_restrict = args.query_restrict
-    
     # Read bundle.db
     sat_bundle_dbs = np.atleast_1d(getattr(args, "bundle_db", []))
     sat_map_dirs = np.atleast_1d(args.map_dir)
@@ -34,13 +26,8 @@ def main(args, size, rank, comm):
         if not os.path.isfile(db):
             raise FileNotFoundError(f"File {db} does not exist.")
 
-    if args.pix_type not in ["hp", "car"]:
-        raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
-
     out_dir = args.output_dir
     os.makedirs(out_dir, exist_ok=True)
-
-    car_map_template = args.car_map_template
 
     bundle_ids = range(args.n_bundles)
     #n_sims = config.n_sims
@@ -48,28 +35,7 @@ def main(args, size, rank, comm):
     if n_sims is None:
         raise ValueError("n_sims not found on args or global config.")
 
-
-    # Figure out split tag ahead of time
-    split_intra_obs, split_inter_obs = (args.split_label_intra_obs,
-                                        args.null_prop_val_inter_obs)
-
-    # Default cases
-    if (split_intra_obs, split_inter_obs) == (None, None):
-        split_tag = "science"
-    elif split_inter_obs is not None:
-        split_tag = split_inter_obs
-    elif split_intra_obs is not None:
-        # if it's the coadd pair, call it "full"
-        pair = getattr(args, "coadd_split_pair", None) or getattr(args, "intra_obs_pair", None)
-        if isinstance(split_intra_obs, (list, tuple)) and pair and list(split_intra_obs) == list(pair):
-            split_tag = getattr(args, "coadd_splits_name", "full")
-        else:
-            split_tag = split_intra_obs
-
-    # normalize list, i.e. joined string if still a list
-    if isinstance(split_tag, list):
-        split_tag = "_".join(split_tag)
-
+    split_tag = utils.get_split_tag(split_intra_obs, split_inter_obs, args.intra_obs_pair, args.coadd_splits_name)
     wafer_tag = args.wafer if args.wafer is not None else ""
     patch_tag = args.patch if args.patch is not None else ""
 
@@ -87,12 +53,13 @@ def main(args, size, rank, comm):
                     bundle_id=bundle_id,
                     wafer=wafer_tag,
                     patch=patch_tag,
-                    freq_channel=args.freq_channel
+                    freq_channel=args.freq_channel,
+                    map_type="{map_type}"
                 )
             )
+            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{map_type}")
             out_fname = out_fname.replace("__", "_")
-            out_fname = out_fname.replace("_map.fits", f"_{sim_id:04d}_map.fits")
-            if not os.path.exists(out_fname) or args.overwrite:
+            if not os.path.exists(out_fname.format(map_type="map")) or args.overwrite:
                 print(f"{sim_id:04d}") #{out_fname}")
                 missing_tasks.append((bundle_id, sim_id))
     # --------------------------------------------
@@ -115,7 +82,7 @@ def main(args, size, rank, comm):
 
         combined_map = None
         combined_weight = None
-        
+
         # Now construct the signflipper (only for needed bundle_id)
         for bundle_db, map_dir_i in zip(sat_bundle_dbs, sat_map_dirs):
             signflipper = SignFlipper(
@@ -129,7 +96,7 @@ def main(args, size, rank, comm):
                 split_label=split_intra_obs,
                 map_dir=map_dir_i
             )
-        
+
             print(len(signflipper.fnames))
 
             # NEW check here
@@ -147,7 +114,7 @@ def main(args, size, rank, comm):
             except Exception as e:
                 print(f"SignFlipper crashed for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {e}")
                 continue
-            
+
             # Initialize or accumulate
             if combined_map is None:
                 combined_map = noise_map.copy()
@@ -155,13 +122,10 @@ def main(args, size, rank, comm):
             else:
                 combined_map += noise_map
                 combined_weight += noise_weight
-                
+
             if combined_map is None:
                 print(f"No valid maps for bundle_id={bundle_id} sim_id={sim_id}, skipping save.")
-                #exut()
                 continue
-                
- 
 
         # Output filenames
         out_fname = os.path.join(
@@ -171,99 +135,74 @@ def main(args, size, rank, comm):
                 bundle_id=bundle_id,
                 wafer=wafer_tag,
                 patch=patch_tag,
-                freq_channel=args.freq_channel
+                freq_channel=args.freq_channel,
+                map_type='{map_type}'
             )
         )
         out_fname = out_fname.replace("__", "_")
-        out_fname = out_fname.replace("_map.fits", f"_{sim_id:04d}_map.fits")
-        os.makedirs(os.path.dirname(out_fname), exist_ok=True)
+        out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{map_type}")
 
         # Skip existing maps if overwrite=False
-        if (not args.overwrite) and os.path.exists(out_fname):
+        if (not args.overwrite) and os.path.exists(out_fname.format("map")):
             if rank == 0:
                 print(f"Skipping existing: {out_fname}")
             continue
 
         # Save maps
-        if args.pix_type == "car":
-            enmap.write_map(out_fname, combined_map)
-            enmap.write_map(out_fname.replace("map.fits", "weights.fits"), combined_weight)
-            print(out_fname)
+        print(out_fname)
+        utils.write_maps(out_fname, args.pix_type, combined_map, combined_weight, dtype=np.float32)
 
-            # Quickplots
-            if sim_id % (n_sims // 3) == 0:
-                plot = enplot.plot(combined_map*1e6, colorbar=True, min=-50, max=50, ticks=10)
-                for ip, p in enumerate(["Q", "U"]):
-                    enplot.write(out_fname.replace(".fits", f"{p}.png"), plot[ip+1])
+        # Quickplots
+        if sim_id % (n_sims // 3) == 0:
+            savename_plot = out_fname[:out_fname.find(".fits")] + ".png"
+            utils.plot_map(savename_plot.format("Q"), args.pix_type, combined_map[1], unit_fac=1e6, vrange=50)
+            utils.plot_map(savename_plot.format("U"), args.pix_type, combined_map[2], unit_fac=1e6, vrange=50)
 
-        else:  # HEALPix
-            hp.write_map(out_fname, combined_map, overwrite=True, dtype=np.float32)
-            hp.write_map(out_fname.replace("map.fits", "weights.fits"), combined_weight, overwrite=True, dtype=np.float32)
-
-            if sim_id % (n_sims // 3) == 0:
-                for ip, p in enumerate(["Q", "U"]):
-                    hp.mollview(combined_map[ip+1]*1e6, cmap="RdYlBu_r",
-                                title=f"{p} Noise {bundle_id} sim{sim_id}",
-                                min=-100, max=100, unit=r"$\mu$K")
-                    plt.savefig(out_fname.replace(".fits", f"{p}.png"))
-                    plt.close()
     comm.Barrier()
+
+def make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs=None):
+    try:
+        _make_signflip(args, size, rank, comm, split_intra_obs, split_inter_obs)
+    except ValueError as e:
+        print(e)
+
+
+def main(args):
+    # Load config
+    config = utils.Cfg.from_yaml(args.config_file)
+
+    # Build frequency x wafer combinations
+    its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
+    patch_list = config.patch_list
+
+    # MPI initialization
+    rank, size, comm = mpi.init(True)
+
+    for patch in np.atleast_1d(patch_list):
+        if config.only_make_db:
+            config_db = utils.child_config(config, patch=patch)
+            make_signflip(config_db, size, rank, comm)
+        else:
+            for it in itertools.product(*its):
+                config_it = utils.child_config(config, patch=patch, freq_channel=it[0], wafer=it[1])
+                intra_pair = config_it.intra_obs_pair
+
+                # --- science/full run: coadd the pair, no inter-obs null ---
+                make_signflip(config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=None)
+
+                # Inter-obs splits
+                if config_it.inter_obs_splits is not None:
+                    for null_prop_val in config_it.inter_obs_splits:
+                        make_signflip(config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=null_prop_val)
+
+                # Intra-obs splits
+                if config_it.intra_obs_splits is not None:
+                    for split_val in config_it.intra_obs_splits:
+                        make_signflip(config_it, size, rank, comm, split_intra_obs=split_val, split_inter_obs=None)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled noise maps.")
     parser.add_argument("--config_file", type=str, help="YAML file with configuration.")
     args = parser.parse_args()
 
-    # Load config
-    config = bundling_utils.Cfg.from_yaml(args.config_file)
-
-    # Build frequency x wafer combinations
-    its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
-    patch_list = config.patch
-
-    # MPI initialization
-    rank, size, comm = mpi.init(True)
-
-    for patch in np.atleast_1d(patch_list):
-        patch_tag = "" if patch is None else patch
-
-        if config.only_make_db:
-            config1 = config.copy()
-            config1.patch = patch
-            main(config1, size, rank, comm)
-        else:
-            for it in itertools.product(*its):
-                config1 = config.copy()
-                config1.patch = patch
-                config1.freq_channel, config1.wafer = it
-                
-                # --- science/full run: coadd the pair, no inter-obs null ---
-                config_science = config1.copy()
-                config_science.null_prop_val_inter_obs = None
-                config_science.split_label_intra_obs  = config_science.intra_obs_pair  # e.g. ["scan_left","scan_right"]
-                try:
-                    main(config_science, size, rank, comm)
-                except ValueError as e:
-                    print(e)
-
-                # Inter-obs splits
-                if config1.inter_obs_splits is not None:
-                    config2 = config1.copy()
-                    config2.split_label_intra_obs = config2.intra_obs_pair
-                    for null_prop_val in config2.inter_obs_splits:
-                        config2.null_prop_val_inter_obs = null_prop_val
-                        try:
-                            main(config2, size, rank, comm)
-                        except ValueError as e:
-                            print(e)
-
-                # Intra-obs splits
-                if config1.intra_obs_splits is not None:
-                    config2 = config1.copy()
-                    config2.null_prop_val_inter_obs = None
-                    for split_val in config2.intra_obs_splits:
-                        config2.split_label_intra_obs = split_val
-                        try:
-                            main(config2, size, rank, comm)
-                        except ValueError as e:
-                            print(e)
+    main(args)

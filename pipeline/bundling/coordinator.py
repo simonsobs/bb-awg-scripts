@@ -6,7 +6,8 @@ import os
 
 class BundleCoordinator:
     def __init__(self, atomic_db=None, n_bundles=None, seed=None,
-                 null_props=None, query_restrict="", atomic_list=None):
+                 null_props=None, query_restrict="", atomic_list=None,
+                 weight='median_weight_qu'):
         """
         Constructor for the BundleCoordinator class.
         If no atomic database path is provided, the
@@ -40,7 +41,8 @@ class BundleCoordinator:
             External list of string tuples (obs_id, wafer, freq_channel) of
             atomic maps that are to be used for the bundling.
             All other atomics in atomic_db will be left out.
-
+        weight: str
+            Column name in the atomic_db of the atomic map weight you want to use
        """
         if atomic_db is None:
             return
@@ -52,7 +54,7 @@ class BundleCoordinator:
         ).fetchall()
         cursor.close()
         db_props = [prop[0] for prop in db_props]
-        print("Available info atomic_maps.db: ", db_props)
+        # print("Available info atomic_maps.db: ", db_props)
 
         if query_restrict != "":
             query_restrict = f" WHERE split_label='science' AND ({query_restrict})"  # noqa
@@ -69,12 +71,16 @@ class BundleCoordinator:
         query1 = "SELECT obs_id, wafer, freq_channel FROM atomic" + query_restrict
         valid_waferbands = pd.read_sql_query(query1, conn).to_numpy()  # Good wafer-bands from query_restrict
         valid_waferbands = filter_by_atomic_list(valid_waferbands, atomic_list)  # Filter wafer-bands through atomic list
-        query2 = "SELECT obs_id, wafer, freq_channel, split_label, prefix_path, ctime, median_weight_qu FROM atomic WHERE valid=1"
+        to_query2 = "obs_id, wafer, freq_channel, split_label, prefix_path"
+        to_query2 += f", {weight}" if weight else ""
+        query2 = f"SELECT {to_query2} FROM atomic WHERE valid=1"
         valid_splits = pd.read_sql_query(query2, conn)
 
         atomics = filter_by_atomic_list(valid_splits, valid_waferbands)
-        atomics['basename'] = [f"{str(ctime)[:5]}/{os.path.basename(prefix)}" for ctime, prefix in zip(atomics.ctime, atomics.prefix_path)]
-        atomics=atomics.drop(columns=["ctime", "prefix_path"])
+        if weight:
+            atomics=atomics.rename(columns={weight: 'weight'})
+        else:
+            atomics['weight'] = np.full(atomics.shape[0], None)
         self.atomics = atomics
 
         # Get all props used to assign bundle properties
@@ -205,7 +211,7 @@ class BundleCoordinator:
         The db contains three tables:
           - bundles: obs_id, timestamp, [all null props], bundle_id
           - metadata: name, min, max, tags for all null splits (e.g. low_pwv, high_pwv, etc.)
-          - atomics: obs_id, wafer, freq_channel, split_label, median_weight_qu, basename for all
+          - atomics: obs_id, wafer, freq_channel, split_label, weight, prefix_path for all
             available atomic maps matching selection criteria.
         """
         if os.path.exists(db_path):
