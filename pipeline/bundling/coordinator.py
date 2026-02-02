@@ -300,9 +300,12 @@ def _update_null_props(null_props, conn, query_restrict="", atomic_list=None):
     for null_prop, null_val in null_props.items():
         query = f"SELECT obs_id, {null_prop} FROM atomic" + query_restrict
         res = pd.read_sql_query(query, conn)
+        if res.shape[0] == 0:
+            raise ValueError(f"No results for query {query}")
         res = filter_by_atomic_list(res, atomic_list, obs_id_only=True)
         res = getattr(res, null_prop).to_numpy()
-
+        if res.shape[0] == 0:
+            raise ValueError("All results eliminated by atomic list")
         if np.all(res == None):  # noqa
             raise ValueError(
                 f"All values for property {null_prop} are None."

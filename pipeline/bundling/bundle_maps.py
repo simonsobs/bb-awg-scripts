@@ -73,7 +73,7 @@ def make_bundle_db(config):
     """
     Make bundle db as determined by config.
     """
-    print(f"Writing to {config.bundle_db}.")
+    print(f"Writing to {config.bundle_db_full}.")
     bundle_coordinator = BundleCoordinator(
         config.atomic_db, n_bundles=config.n_bundles,
         seed=config.seed, null_props=config.inter_obs_props,

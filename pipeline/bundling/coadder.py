@@ -89,7 +89,6 @@ class _Coadder:
             %s-style format string. Full file path will be new_path % maptype
             where maptype = 'wmap', 'weights', or 'hits'
         """
-        # TODO add docstring
         # For now, assume HEALPix maps are gzipped fits and CAR maps are fits.
         suffix = ".fits.gz" if self.pix_type == "hp" else ".fits"
         if map_dir is None:
@@ -232,13 +231,6 @@ class Bundler(_Coadder):
         """
         bundle_info = self._get_bundle_info(bundle_id, map_dir, null_prop_val=null_prop_val, split_label=split_label)
         fnames = list(bundle_info['filename'])
-        ## TODO delete this after testing
-        if len(set(fnames)) < len(fnames):
-            raise ValueError("fnames contains duplicates")
-        print(
-            f"{len(fnames)} atomic file names (bundle {bundle_id})"
-        )
-
         maps_list = [fname % "wmap" for fname in fnames]
         weights_list = [fname % "weights" for fname in fnames]
         hits_list = [fname % "hits" for fname in fnames]
@@ -300,14 +292,6 @@ class SignFlipper(_Coadder):
         self.ws = bundle_info['weight']
         self.full_abscal = utils.get_abscal(abscal, bundle_info)
         self.ws *= self.full_abscal**-2  # ivar gets -2 powers of abscal
-
-        # TODO remove this after checking
-        # DEBUG
-        if len(set(self.fnames)) < len(self.fnames):
-            raise ValueError("fnames contains duplicates")
-        print(
-            f"{len(self.fnames)} atomic file names (bundle {bundle_id})"
-        )
 
         self.wmaps = [utils.read_map(fname%'wmap',
                                      pix_type=self.pix_type,

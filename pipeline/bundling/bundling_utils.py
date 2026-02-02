@@ -789,6 +789,14 @@ class Cfg:
     coadd_bundles_splitname: str
         Split name for which to coadd all bundles to a full map.
         May also be a list of names.
+    n_sims: int
+        Number of sign flip realisations
+    make_plots: bool
+        If True make and save plots of the bundles
+    tel: str
+        **Deprecated** This doesn't do anything but kept for config compatibility
+    nproc: int
+        **Deprecated** This doesn't do anything but kept for config compatibility
     """
     bundle_db: str
     atomic_db: str
@@ -817,6 +825,8 @@ class Cfg:
     coadd_bundles_splitname: Optional[str] = None
     n_sims: Optional[int] = None
     make_plots: bool = False
+    tel: Optional[str] = None
+    nproc: Optional[int] = None
 
     def __post_init__(self):
         # Process patch argument
