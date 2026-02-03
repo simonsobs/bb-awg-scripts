@@ -9,6 +9,11 @@ from scipy.linalg import pinvh
 from itertools import product
 
 
+# # Changelog:
+# * 2025/12/20: deproject only the QU part
+# * 2026/01/17: fix bug related to field pairs ordering in TF calculation
+
+
 def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
     """
     """
@@ -346,10 +351,10 @@ def deproject_many(mp, simvec, mat):
     wcs = None if not hasattr(mp, "wcs") else mp.wcs
     # [3*npix]
     npix = len(mp[0].flatten())
-    mp_h = mp.flatten()
-    # [ndeproj, 3*npix]
+    mp_h = mp[-2:].flatten()
+    # [ndeproj, 2*npix]
     ndeproj = len(simvec)  # ndeproj is the number of sims to deproject
-    simvec_h = simvec.reshape([ndeproj, 3*npix])
+    simvec_h = simvec[:, -2:, :].reshape([ndeproj, 2*npix])
 
     # [ndeproj, ndeproj]
     Nij = mat[:ndeproj][:, :ndeproj]
@@ -359,11 +364,13 @@ def deproject_many(mp, simvec, mat):
     # [ndeproj]
     Niprod = np.dot(pinvh(Nij, rtol=1E-3), prods)
     # Niprod = np.linalg.solve(Nij, prods)
-    # [ndeproj, 3*npix] * [ndeproj] = [3*npix]
+    # [ndeproj, 2*npix] * [ndeproj] = [2*npix]
     mcont = np.dot(Niprod, simvec_h)
     # [3, npix]
-    mp_deproject = mcont.reshape(mp.shape)
-    mp_deprojected = (mp_h - mcont).reshape(mp.shape)
+    mp_deproject = np.array([mp[0]] + list(mcont.reshape(mp[-2:].shape)))
+    mp_deprojected = np.array(
+        [mp[0]] + list((mp_h - mcont).reshape(mp[-2:].shape))
+    )
     if wcs is not None:
         mp_deproject = enmap.ndmap(mp_deproject, wcs=wcs)
         mp_deprojected = enmap.ndmap(mp_deprojected, wcs=wcs)
@@ -573,7 +580,9 @@ def get_pcls_mat_transfer(fields, nmt_binning, fields2=None):
             "BB": pcls["spin2xspin2"][3]
         }
 
-    for idx, (pure_type1, pure_type2) in enumerate(product(cases, cases)):
+    field_pairs = ["TT", "TE", "TB", "ET", "BT", "EE", "EB", "BE", "BB"]
+    for idx, fp in enumerate(field_pairs):
+        pure_type1, pure_type2 = (f"pure{fp[0]}", f"pure{fp[1]}")
         pcls_mat[idx] = np.array([
             tmp_pcls[pure_type1, pure_type2]["TT"],
             tmp_pcls[pure_type1, pure_type2]["TE"],
@@ -618,6 +627,7 @@ def get_transfer_with_error(mean_pcls_mat_filt,
                             mean_pcls_mat_unfilt,
                             pcls_mat_filt):
     """
+    from SOOPERCOOL
     """
     cct_inv = np.transpose(
         np.linalg.inv(
@@ -654,32 +664,23 @@ def get_transfer_with_error(mean_pcls_mat_filt,
     return tf, tferr
 
 
-def get_transfer_dict(mean_pcls_mat_filt_dict,
-                      mean_pcls_mat_unfilt_dict,
-                      pcls_mat_dict,
-                      filtering_pairs):
+def get_transfer_dict(pcls_mat_filt, pcls_mat_unfilt):
     """
+    from SOOPERCOOL, modified
     """
-    tf_dict = {(ftag1, ftag2): {} for ftag1, ftag2 in filtering_pairs}
-    for ftag1, ftag2 in filtering_pairs:
+    mean_pcls_mat_filt = np.mean(pcls_mat_filt, axis=0)
+    mean_pcls_mat_unfilt = np.mean(pcls_mat_unfilt, axis=0)
 
-        mean_pcls_mat_filt = \
-            mean_pcls_mat_filt_dict[ftag1, ftag2]
-        mean_pcls_mat_unfilt = \
-            mean_pcls_mat_unfilt_dict[ftag1, ftag2]
-        pcls_mat_filt = \
-            pcls_mat_dict[ftag1, ftag2]["filtered"]
-
-        tf, tferr = get_transfer_with_error(mean_pcls_mat_filt,
-                                            mean_pcls_mat_unfilt,
-                                            pcls_mat_filt)
-        field_pairs = ["TT", "TE", "TB", "ET", "BT", "EE", "EB", "BE", "BB"]
-
-        for i, fp1 in enumerate(field_pairs):
-            for j, fp2 in enumerate(field_pairs):
-                tf_dict[ftag1, ftag2][f"{fp2}_to_{fp1}"] = tf[i, j]
-                tf_dict[ftag1, ftag2][f"{fp2}_to_{fp1}_std"] = tferr[i, j]
-        tf_dict[ftag1, ftag2]["full_tf"] = tf
+    tf, tferr = get_transfer_with_error(mean_pcls_mat_filt,
+                                        mean_pcls_mat_unfilt,
+                                        pcls_mat_filt)
+    field_pairs = ["TT", "TE", "TB", "ET", "BT", "EE", "EB", "BE", "BB"]
+    tf_dict = {}
+    for i, fp1 in enumerate(field_pairs):
+        for j, fp2 in enumerate(field_pairs):
+            tf_dict[f"{fp2}_to_{fp1}"] = tf[i, j]
+            tf_dict[f"{fp2}_to_{fp1}_std"] = tferr[i, j]
+    tf_dict["full_tf"] = tf
 
     return tf_dict
 
@@ -688,7 +689,7 @@ def plot_pcls_mat_transfer(pcls_mat_unfilt, pcls_mat_filt, lb, file_name,
                            lmax=None):
     """
     """
-    field_pairs = [f"{p}{q}" for (p, q) in product("TEB", "TEB")]
+    field_pairs = ["TT", "TE", "TB", "ET", "BT", "EE", "EB", "BE", "BB"]
     plt.figure(figsize=(25, 25))
     grid = plt.GridSpec(9, 9, hspace=0.3, wspace=0.3)
     msk = np.ones_like(lb).astype(bool)
