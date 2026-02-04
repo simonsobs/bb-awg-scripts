@@ -850,8 +850,8 @@ class Cfg:
 
         # Update bundle db
         patch_tag = "" if self.patch is None else self.patch
-        self.bundle_db_full = self.bundle_db.format(patch=patch_tag, seed=self.seed)
-        self.bundle_db_full = self.bundle_db_full.replace("__", "_")  # Hacky but remove any (presumed accidental) double underscores
+        bundle_db_full = [(bundle_db.format(patch=patch_tag, seed=self.seed)).replace("__", "_") for bundle_db in np.atleast_1d(self.bundle_db)]
+        self.bundle_db_full = bundle_db_full[0] if (type(self.bundle_db) is str) else bundle_db_full
 
     def update(self, **kwargs):
         for key in kwargs:

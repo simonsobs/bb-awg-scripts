@@ -185,9 +185,9 @@ class _Coadder:
         """
         info = self._get_bundle_info(bundle_id, map_dir, null_prop_val=null_prop_val, split_label=split_label)
         if not return_weights:
-            return info['filename']
+            return info['filename'].to_numpy()
         else:
-            return info['filename'], info['weight']
+            return info['filename'].to_numpy(), info['weight'].to_numpy()
 
 
 class Bundler(_Coadder):
@@ -288,11 +288,11 @@ class SignFlipper(_Coadder):
                          pix_type=pix_type, car_map_template=car_map_template)
 
         bundle_info = self._get_bundle_info(bundle_id, map_dir, null_prop_val=null_prop_val, split_label=split_label)
-        self.fnames = bundle_info['filename']
-        self.ws = bundle_info['weight']
-        self.full_abscal = utils.get_abscal(abscal, bundle_info)
-        self.ws *= self.full_abscal**-2  # ivar gets -2 powers of abscal
+        self.fnames = list(bundle_info['filename'])
+        self.ws = bundle_info['weight'].to_numpy()
 
+        self.full_abscal = utils.get_abscal(abscal, bundle_info['wafer'], bundle_info['freq_channel'])
+        self.ws *= self.full_abscal**-2  # ivar gets -2 powers of abscal
         self.wmaps = [utils.read_map(fname%'wmap',
                                      pix_type=self.pix_type,
                                      fields_hp=self.fields_hp)

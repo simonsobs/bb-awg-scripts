@@ -18,7 +18,7 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
     args = args.copy()  # Make sure we don't modify input
 
     # Read bundle.db
-    sat_bundle_dbs = np.atleast_1d(getattr(args, "bundle_db", []))
+    sat_bundle_dbs = np.atleast_1d(getattr(args, "bundle_db_full", []))
     sat_map_dirs = np.atleast_1d(args.map_dir)
 
     # Validate each bundle_db exists before proceeding
@@ -140,7 +140,7 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
             )
         )
         out_fname = out_fname.replace("__", "_")
-        out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{map_type}")
+        out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{}")
 
         # Skip existing maps if overwrite=False
         if (not args.overwrite) and os.path.exists(out_fname.format("map")):

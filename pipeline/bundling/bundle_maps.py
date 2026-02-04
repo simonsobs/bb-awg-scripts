@@ -56,7 +56,7 @@ def main(config_file, parallelizor, atomic_list=None, error=True):
 
                 # Science
                 if config_it.inter_obs_splits is None and config_it.intra_obs_splits is None:
-                    bundle_maps(config_it, config_it.intra_obs_pair, None, parallelizor, error=error)                
+                    bundle_maps(config_it, config_it.intra_obs_pair, None, parallelizor, error=error)
                 # Inter-obs
                 if config_it.inter_obs_splits is not None:
                     for inter_obs in np.atleast_1d(config_it.inter_obs_splits):
@@ -179,8 +179,8 @@ def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True
         print("Making full maps")
         savename = template.format(config.coadd_splits_name, "{}", "{}")
         try:
-            utils.make_full(template, config.coadd_split_pair, config.n_bundles,
-                                     config.pix_type, coadd_hits=True, coadd_fnames=coadd_fnames, savename=savename, return_maps=False)
+            utils.make_full(template, config.coadd_split_pair, config.n_bundles, config.pix_type,
+                            coadd_hits=True, coadd_fnames=coadd_fnames, savename=savename, return_maps=False)
         except FileNotFoundError as e:
             if error:
                 raise e
@@ -196,7 +196,7 @@ def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True
             savename = temp.format("!", "{}").replace("_bundle!", "")
             try:
                 coadd_map, _, coadd_hits = utils.coadd_bundles(temp, sum_vals, config.pix_type,
-                                                               coadd_hits=True, savename=savename)
+                                                               coadd_hits=True, coadd_fnames=coadd_fnames, savename=savename)
                 if config.make_plots:
                     savename_plot = savename[:savename.find(".fits")] + ".png"
                     utils.plot_map(savename_plot.format("hits"), config.pix_type, coadd_hits)
