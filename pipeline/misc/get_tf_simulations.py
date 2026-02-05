@@ -116,18 +116,20 @@ def main(args):
     """
     pix_type = args.pix_type
     n_sims = args.n_sims
-    id_sims_start = args.id_sims_start
+    id_start = args.sim_id_start
     smooth_fwhm = args.smooth_fwhm
     pols_keep = args.pols_keep
     nside = args.nside
+    car_template = args.car_template_map
+
     out_dir = args.out_dir
     if not os.path.isdir(out_dir):
         raise ValueError(f"Directory does not exist: {out_dir}")
 
     if pix_type == "car":
-        if args.car_template_map is not None:
-            print(f"Reading car_template_map: {args.car_template_map}")
-            geometry = enmap.read_map_geometry(args.car_template_map)
+        if car_template is not None:
+            print(f"Reading car_template_map: {car_template}")
+            geometry = enmap.read_map_geometry(car_template)
             wcs = geometry[1]
             res_arcmin = np.min(np.abs(wcs.wcs.cdelt))*60.
         elif args.res_arcmin is not None:
@@ -142,6 +144,9 @@ def main(args):
         template = enmap.zeros(new_shape, wcs)
         lmax = lmax_from_map(template, pix_type="car")
     else:
+        if nside is None:
+            raise ValueError("nside must be given.")
+
         lmax = 3 * nside - 1
 
     lmax_sim = lmax + 500
@@ -153,8 +158,8 @@ def main(args):
 
     pure_types = [f"pure{p}" for p in pols_keep]
 
-    for id_sim in range(id_sims_start, id_sims_start+n_sims):
-        print(f"sim {id_sim+1} / {id_sims_start + n_sims}")
+    for id_sim in range(id_start, id_start+n_sims):
+        print(f"sim {id_sim+1} / {id_start + n_sims}")
         np.random.seed(id_sim)
         alms = hp.synalm(ps, lmax=lmax_sim)
         alms = hp.almxfl(alms, fl)
@@ -200,12 +205,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--nside",
         type=int,
-        help="Healpix nside"
+        help="Healpix nside",
+        default=None
     )
     parser.add_argument(
         "--smooth_fwhm",
         type=float,
-        help="Smoothing scale FWHM in arcmin"
+        help="Smoothing scale FWHM in arcmin",
+        default=30
     )
     parser.add_argument(
         "--n_sims",
@@ -213,8 +220,9 @@ if __name__ == "__main__":
         help="Number of simulations"
     )
     parser.add_argument(
-        "--id_sims_start",
+        "--sim_id_start",
         type=int,
+        default=0,
         help="Simulation ID to start with"
     )
     parser.add_argument(
