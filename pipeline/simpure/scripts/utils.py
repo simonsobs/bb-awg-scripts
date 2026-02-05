@@ -12,6 +12,7 @@ from itertools import product
 # # Changelog:
 # * 2025/12/20: deproject only the QU part
 # * 2026/01/17: fix bug related to field pairs ordering in TF calculation
+# * 2026/02/03: fix bug confusing sigma and fwhm in get_theory_cls
 
 
 def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
@@ -32,7 +33,8 @@ def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
         cl_th[spec] = np.zeros_like(lth)
 
     if beam_fwhm is not None:
-        bl = np.exp(-0.5*lth*(lth+1)*np.radians(beam_fwhm/60.)**2)
+        sig = beam_fwhm / np.sqrt(8. * np.log(2)) /60. * np.pi/180.
+        bl = np.exp(-0.5*lth*(lth+1)*sig**2)
         cl_th = {spec: cl_th[spec]*bl**2 for spec in cl_th}
 
     return lth, cl_th

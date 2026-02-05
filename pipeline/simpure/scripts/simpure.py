@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 # * 2025/12/17: Open deprojection lmax parameter
 # * 2026/01/25: ported functions to simpure
 # * 2026/01/29: added flag tf_type to get_inv_coupling and compute_pspec
+# * 2026/02/05: adapted filtered map naming convention for CAR
 
 class SimPure:
     def __init__(self, pix_type, base_dir, out_dir, filter_setup,
@@ -88,12 +89,15 @@ class SimPure:
     def load_cmb_sim(self, sim_id, filtered=False, pols_keep="EB"):
         """
         """
-        sim_dir = f"filtered_cmb_sims/{self.filter_setup}"
+        # sim_dir = f"filtered_cmb_sims/{self.filter_setup}"  # nersc
+        sim_dir = f"filtered_cmb_sims/satp3/f090/{self.filter_setup}/coadded_sims"  # universe
         if not filtered:
             sim_dir = "cmb_sims"
-        # TODO: generalize
+            pix_str = "CAR"
+        else:
+            pix_str = "CAR_f090_science_filtered" if self.pix_type == "car" else "HP"
         res_str = "20arcmin" if self.pix_type == "car" else f"nside{self.nside}"  # noqa: E501
-        sim_fname = f"cmb{pols_keep}_{res_str}_fwhm{self.beam_fwhm:.1f}_sim{sim_id:04d}_{self.pix_type.upper()}.fits"  # noqa: E501
+        sim_fname = f"cmb{pols_keep}_{res_str}_fwhm{self.beam_fwhm:.1f}_sim{sim_id:04d}_{pix_str}.fits"  # noqa: E501
 
         map = ut.read_map(
             f"{self.base_dir}/{sim_dir}/{sim_fname}",
@@ -108,11 +112,15 @@ class SimPure:
         """
         """
         assert typ in [f"pure{p}" for p in "TEB"], "Invalid pure type"
-        sim_dir = f"filtered_pure_sims/{self.filter_setup}"
+        # sim_dir = f"filtered_pure_sims/{self.filter_setup}"  # nersc
+        sim_dir = f"filtered_pure_sims/satp3/f090/{self.filter_setup}/coadded_sims"  # universe
         if not filtered:
             sim_dir = "input_sims"
+            pix_str = "CAR" if self.pix_type == "car" else "HP"
+        else:
+            pix_str = "CAR_f090_science_filtered" if self.pix_type == "car" else "HP"  # noqa: E501
         res_str = "20.0arcmin" if self.pix_type == "car" else f"nside{self.nside}"  # noqa: E501
-        sim_fname = f"{typ}_{res_str}_fwhm{self.beam_fwhm:.1f}_sim{sim_id:04d}_{self.pix_type.upper()}.fits"  # noqa: E501
+        sim_fname = f"{typ}_{res_str}_fwhm{self.beam_fwhm:.1f}_sim{sim_id:04d}_{pix_str}.fits"  # noqa: E501
 
         map = ut.read_map(
             f"{self.base_dir}/{sim_dir}/{sim_fname}",
@@ -221,14 +229,18 @@ class SimPure:
                     car_template=self.car_template
                 )
             else:
-                # Load filtered pure-E sim
-                mp = self.load_purification_sim(i, filtered=True)
+                try:
+                    # Load filtered pure-E sim
+                    mp = self.load_purification_sim(i, filtered=True)
+                except FileNotFoundError:
+                    print(f"Error loading purification sim {i}. Skipping.")
+                    continue
                 # Mask-purify
                 mp_masked = self.get_masked_map(mp, nmt_purify=True,
                                                 binary=False)
                 # Extract B-modes and remap them
                 mp_masked_bonly = self.extract_pure_mode(
-                    mp_masked, 3*self.nside, "B")[-2:]
+                    mp_masked, self.lmax, "B")[-2:]
                 ut.write_map(fname, mp_masked_bonly, pix_type=pix_type)
             mp_sims.append(mp_masked_bonly)
         mp_sims = np.array(mp_sims)
@@ -301,13 +313,6 @@ class SimPure:
                         )
                         fields[typ] = f
                         fields2[typ] = f
-                        # DEBUG
-                        hp.write_map(
-                            f"{out_dir}/{typ}_map_unfilt_pure_isim{i}.fits",
-                            self.get_masked_map(mp, nmt_purify=True,
-                                                binary=False),
-                            overwrite=True, dtype=float
-                        )
                     elif fpd == (True, False, False):
                         mp = self.load_transfer_sim(i, filtered=True, typ=typ)
                         f = self.compute_pspec(
@@ -322,19 +327,9 @@ class SimPure:
                         mp = self.load_transfer_sim(i, filtered=True, typ=typ)
                         mp_masked = self.get_masked_map(mp, nmt_purify=True,
                                                         binary=False)
-                        # DEBUG
-                        hp.write_map(
-                            f"{out_dir}/{typ}_map_filt_pure_isim{i}.fits",
-                            mp_masked, overwrite=True, dtype=float
-                        )
                         mp_masked_dep, _ = ut.deproject_many(mp_masked,
                                                              mp_sims,
                                                              mat)
-                        # DEBUG
-                        hp.write_map(
-                            f"{out_dir}/{typ}_map_filt_dep_isim{i}.fits",
-                            mp_masked_dep, overwrite=True, dtype=float
-                        )
                         f = self.compute_pspec(
                             mp_masked_dep,
                             return_just_field=True,
