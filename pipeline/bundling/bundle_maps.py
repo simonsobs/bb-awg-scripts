@@ -80,6 +80,8 @@ def make_bundle_db(config):
         query_restrict=config.query_restrict_patch,
         atomic_list=config.atomic_list
     )
+    if os.path.dirname(config.bundle_db_full):
+        os.makedirs(os.path.dirname(config.bundle_db_full), exist_ok=True)
     bundle_coordinator.save_db(config.bundle_db_full)
 
 def _bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizor=None):
