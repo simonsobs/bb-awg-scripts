@@ -581,11 +581,16 @@ def load_atomic_list(atomic_list_fn):
     """Load an atomic list from .npy or .npz format."""
     if atomic_list_fn is None:
         return None
-    if '.npz' in atomic_list_fn:
-        atomic_list = np.load(atomic_list_fn)["atomic_list"]
+    ext = atomic_list_fn[-4:]
+    if ext == '.txt':
+        load_fn = lambda fn: np.loadtxt(fn, dtype=str)
+    elif ext == '.npy':
+        load_fn = np.load
+    elif ext == '.npz':
+        load_fn = lambda fn : np.load(fn)["atomic_list"]
     else:
-        atomic_list = np.load(atomic_list_fn)
-    return atomic_list
+        raise ValueError(f"Error in loading atomic list: file extension {ext} cannot be loaded.")
+    return load_fn(atomic_list_fn)
 
 ##############################################################################
 ## SQLite ##
