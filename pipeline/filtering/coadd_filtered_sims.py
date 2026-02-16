@@ -3,6 +3,7 @@ import argparse
 import sqlite3
 import os
 import sys
+import time
 import tracemalloc
 from itertools import product
 
@@ -29,41 +30,54 @@ def main(args):
     """
     if args.pix_type not in ["hp", "car"]:
         raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
-    if "{patch" not in args.bundle_db:
-        raise ValueError("bundle_db does not have \
-                         required placeholder 'patch'")
-    for required_tag in ["{sim_id", "{sim_type"]:
-        if required_tag not in args.sim_string_format:
-            raise ValueError(f"sim_string_format does not have \
-                             required placeholder '{required_tag}'")
-    for required_tag in ["{patch", "{freq_channel"]:
-        if required_tag not in args.output_dir:
-            raise ValueError(f"output_dir does not have \
-                             required placeholder '{required_tag}'")
-    for required_tag in ["sim_id", "{patch", "{freq_channel"]:
-        if required_tag not in args.atomic_sim_dir:
-            raise ValueError(f"atomic_sim_dir does not have \
-                             required placeholder '{required_tag}'")
+    # if "{patch" not in args.bundle_db:
+    #     raise ValueError("bundle_db does not have \
+    #                      required placeholder 'patch'")
+    # for required_tag in ["{sim_id", "{sim_type"]:
+    #     if required_tag not in args.sim_string_format:
+    #         raise ValueError(f"sim_string_format does not have \
+    #                          required placeholder '{required_tag}'")
+    # for required_tag in ["{patch", "{freq_channel"]:
+    #     if required_tag not in args.output_dir:
+    #         raise ValueError(f"output_dir does not have \
+    #                          required placeholder '{required_tag}'")
+    # for required_tag in ["sim_id", "{patch", "{freq_channel"]:
+    #     if required_tag not in args.atomic_sim_dir:
+    #         raise ValueError(f"atomic_sim_dir does not have \
+    #                          required placeholder '{required_tag}'")
 
     # MPI related initialization
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
     logger = pp_util.init_logger("benchmark", verbosity=3)
+    if rank == 0:
+        start = time.time()
 
     # Ensure that freq_channels for the metadata follow the "f090" convention.
     # We keep the original labels in a dict called freq_labels.
     freq_labels = {}
-    for f in args.freq_channels:  # If these don't contain the "f", add
-        freq_channel = f"f{f}" if "f" not in f else f
-        freq_labels[freq_channel] = f  # dict values are the original labels
-    freq_channels = list(freq_labels.keys())
+    if args.freq_channels is None:
+        logger.warning("No freq_channels considered. If this is by mistake, "
+                       "please ensure to add in the filtering yaml.")
+        freq_channels = [None]
+        freq_labels[None] = None
+    else:
+        for f in args.freq_channels:  # If these don't contain the "f", add
+            freq_channel = f"f{f}" if "f" not in f else f
+            freq_labels[freq_channel] = f  # dict values are the original labels
+        freq_channels = list(freq_labels.keys())
 
     # Input directory
     atomic_sim_dir = args.atomic_sim_dir
 
     # Output directories
-    patches = args.patches
+    if args.patches is None:
+        logger.warning("No patches considered. If this is by mistake, "
+                       "please ensure to add in the filtering yaml.")
+        patches = [None]
+    else:
+        patches = args.patches
     out_dirs = {
         (patch, freq_channel):
         args.output_dir.format(
@@ -80,16 +94,26 @@ def main(args):
         os.makedirs(plot_dirs[key], exist_ok=True)
 
     # Sim related arguments
-    sim_types = args.sim_types
+    if args.sim_types is None:
+        sim_types = [None]
+        logger.warning("No sim_types considered. If this is by mistake, "
+                       "please ensure to add in the filtering yaml.")
+    else:
+        sim_types = args.sim_types
     sim_string_format = args.sim_string_format
-    sim_ids = args.sim_ids
+    if args.sim_ids is None:
+        sim_ids = [None]
+        logger.warning("No sim_ids considered. If this is by mistake, "
+                       "please ensure to add in the filtering yaml.")
+    else:
+        sim_ids = args.sim_ids
     if isinstance(sim_ids, str):
         if "," in sim_ids:
             id_min, id_max = sim_ids.split(",")
             sim_ids = np.arange(int(id_min), int(id_max)+1)
         else:
             sim_ids = np.array([int(sim_ids)])
-    else:
+    elif sim_ids != [None]:
         raise ValueError("Argument 'sim_ids' has the wrong format")
     logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
@@ -127,24 +151,31 @@ def main(args):
     }
 
     # Gather all split labels of atomics to be coadded
-    intra_obs_splits = args.intra_obs_splits
-    intra_obs_pair = args.intra_obs_pair
-    if intra_obs_splits is not None:
+    if args.intra_obs_splits in [None, [], [None], "None"]:
+        intra_obs_splits = []
+    else:
+        intra_obs_splits = args.intra_obs_splits
+    if args.intra_obs_pair in [None, [], [None], "None"]:
+        intra_obs_pair = []
+    else:
+        intra_obs_pair = args.intra_obs_pair
+    if ((intra_obs_splits, intra_obs_pair) == ([], [])):
+        raise ValueError("You must pass at least one of the two: "
+                         "'intra_obs_pair' or 'intra_obs_splits'.")
+    if intra_obs_splits != []:
         if isinstance(intra_obs_splits, str):
             if "," not in intra_obs_splits:
                 intra_obs_splits = [intra_obs_splits]
             else:
                 intra_obs_splits = (intra_obs_splits).split(",")
-    if intra_obs_pair is not None:
+    if intra_obs_pair != []:
         if isinstance(intra_obs_pair, str):
             if "," not in intra_obs_pair:
                 raise ValueError("You must pass a comma-separated string list "
                                  "to 'intra_obs_pair'.")
             else:
                 intra_obs_pair = intra_obs_pair.split(",")
-    if ((intra_obs_splits, intra_obs_pair) == (None, None)):
-        raise ValueError("You must pass at least one of the two: "
-                         "'intra_obs_pair' or 'intra_obs_splits'.")
+    
 
     logger.info(f"Split labels to coadd individually: {intra_obs_splits}")
     logger.info(f"Split labels to coadd together: {intra_obs_pair}")
@@ -165,16 +196,15 @@ def main(args):
         )
 
     # Randomly split science ctimes into batches (optional)
-    nbatches = args.nbatch_atomics
-    if nbatches is not None:
-        nbatches_dict = {}
-        for patch in patches:
-            # Limit number of batches to one half the number of ctimes
-            if nbatches > len(ctimes[patch, "science", None]) // 2:
-                nbatches_dict[patch] = len(ctimes[patch, "science", None]) // 2
-            # Must have at least two batches
-            if nbatches < 2:
-                nbatches_dict[patch] = None
+    nbatches = 1 if args.nbatch_atomics is None else args.nbatch_atomics
+    nbatches_dict = {}
+    for patch in patches:
+        # Limit number of batches to one half the number of ctimes
+        if nbatches > len(ctimes[patch, "science", None]) // 2:
+            nbatches_dict[patch] = len(ctimes[patch, "science", None]) // 2
+        # Must have at least two batches
+        if nbatches < 2:
+            nbatches_dict[patch] = None
     batches = {}
     for patch in patches:
         batches[patch] = [None]
@@ -378,7 +408,10 @@ def main(args):
             plot_dirs[patch, freq_channel],
             pix_type=pix_type, do_plot=False
         )
-    comm.Barrier()
+        comm.Barrier()
+    if rank == 0:
+        end = time.time()
+        print(f"Coadding completed in (wall time) {int(end - start)}s.")
 
 
 if __name__ == "__main__":
@@ -387,7 +420,7 @@ if __name__ == "__main__":
         "--config_file", type=str, help="yaml file with configuration."
     )
     parser.add_argument(
-        "--sim_ids", type=str, default=0,
+        "--sim_ids", type=str, default=None,
         help="Simulations to be processed, in format [first],[last]."
              "Overwrites the yaml file configs."
     )

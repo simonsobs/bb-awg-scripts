@@ -11,6 +11,7 @@ import sotodlib.preprocess.preprocess_util as pp_util
 from sotodlib.core.metadata import loader
 from pixell import enmap
 
+
 # TODO: Make it an actual module
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'bundling'))
@@ -316,7 +317,17 @@ def main(args):
                 )
                 continue
 
+            if aman is None:
+                logger.warning(
+                    "No detectors left in this atomic."
+                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
+                )
+                continue
             if aman.dets.count <= 1:
+                logger.warning(
+                    "No detectors left in this atomic."
+                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
+                )
                 continue
 
             # Run the mapmaker
