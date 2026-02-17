@@ -42,27 +42,16 @@ def main(args):
     # Ensure that freq_channels for the metadata follow the "f090" convention.
     # We keep the original labels in a dict called freq_labels.
     freq_labels = {}
-    if args.freq_channels is None:
-        logger.warning("No freq_channels considered. If this is by mistake, "
-                       "please ensure to add in the filtering yaml.")
-        freq_channels = [None]
-        freq_labels[None] = None
-    else:
-        for f in args.freq_channels:  # If these don't contain the "f", add
-            freq_channel = f"f{f}" if "f" not in f else f
-            freq_labels[freq_channel] = f  # dict values are original labels
-        freq_channels = list(freq_labels.keys())
+    for f in args.freq_channels:  # If these don't contain the "f", add
+        freq_channel = f"f{f}" if "f" not in f else f
+        freq_labels[freq_channel] = f  # dict values are original labels
+    freq_channels = list(freq_labels.keys())
 
     # Input directory
     atomic_sim_dir = args.atomic_sim_dir
 
     # Output directories
-    if args.patches is None:
-        logger.warning("No patches considered. If this is by mistake, "
-                       "please ensure to add in the filtering yaml.")
-        patches = [None]
-    else:
-        patches = args.patches
+    patches = args.patches
     out_dirs = {
         (patch, freq_channel):
         args.output_dir.format(

@@ -211,7 +211,8 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
         elif hasattr(obs.preprocess.noiseQ_mapmaking, "white_noise"):
             inv_var = 1 / obs.preprocess.noiseQ_mapmaking.white_noise ** 2
         else:
-            raise ValueError("obs.preprocess.noiseQ_mapmaking does not have either a std or white_noise")
+            raise ValueError("obs.preprocess.noiseQ_mapmaking does not have "
+                             "either a std or white_noise")
     elif hasattr(obs.preprocess, "noiseQ_nofit"):  # ISO v1
         inv_var = 1 / obs.preprocess.noiseQ_nofit.white_noise ** 2
     else:
