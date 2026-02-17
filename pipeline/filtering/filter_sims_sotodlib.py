@@ -318,7 +318,17 @@ def main(args):
                 )
                 continue
 
+            if aman is None:
+                logger.warrning(
+                    "No detectors left in this atomic."
+                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
+                )
+                continue
             if aman.dets.count <= 1:
+                logger.warrning(
+                    "No detectors left in this atomic."
+                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
+                )
                 continue
 
             # Run the mapmaker

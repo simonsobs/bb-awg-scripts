@@ -22,10 +22,10 @@ def filter_string(rundir, outdir, bb_awg_scripts_dir,
 #SBATCH --nodes={nnodes}
 #SBATCH --ntasks={ntasks}
 #SBATCH --cpus-per-task=1
-#SBATCH --time=12:00:00
+#SBATCH --time=18:00:00
 #SBATCH --job-name={tel}-cov-sims-filter-{sim_string}
 #SBATCH --mail-user={user_email}
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=ALL
 
 set -e
 
@@ -33,9 +33,6 @@ set -e
 log="{outdir}/log_{tel}_cov_sims_filter_{sim_string}"
 
 export OMP_NUM_THREADS=1
-
-module use --append /scratch/gpfs/SIMONSOBS/modules
-module load soconda
 
 rundir={rundir}  ## YOUR RUNNING DIRECTORY
 outdir={outdir}  ## YOUR LOGGING DIRECTORY
@@ -79,10 +76,10 @@ def coadd_string(rundir, outdir, bb_awg_scripts_dir, id_sim_first, id_sim_last,
 #SBATCH --nodes={nnodes}
 #SBATCH --ntasks={ntasks}
 #SBATCH --cpus-per-task=14
-#SBATCH --time=06:00:00
+#SBATCH --time=10:00:00
 #SBATCH --job-name={tel}-cov-sims-coadd-{sim_string}
 #SBATCH --mail-user={user_email}
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=ALL
 
 set -e
 
@@ -90,9 +87,6 @@ set -e
 log="{outdir}/log_{tel}_cov_sims_coadd_{sim_string}"
 
 export OMP_NUM_THREADS=1
-
-module use --append /scratch/gpfs/SIMONSOBS/modules
-module load soconda
 
 rundir={rundir}  ## YOUR RUNNING DIRECTORY
 outdir={outdir}  ## YOUR LOGGING DIRECTORY
@@ -136,7 +130,7 @@ def delete_string(rundir, outdir, bb_awg_scripts_dir,
 #SBATCH --time=00:61:00
 #SBATCH --job-name={tel}-cov-sims-delete-{sim_string}
 #SBATCH --mail-user={user_email}
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=ALL
 
 set -e
 
