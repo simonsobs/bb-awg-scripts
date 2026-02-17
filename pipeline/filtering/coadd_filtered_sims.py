@@ -30,21 +30,6 @@ def main(args):
     """
     if args.pix_type not in ["hp", "car"]:
         raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
-    # if "{patch" not in args.bundle_db:
-    #     raise ValueError("bundle_db does not have \
-    #                      required placeholder 'patch'")
-    # for required_tag in ["{sim_id", "{sim_type"]:
-    #     if required_tag not in args.sim_string_format:
-    #         raise ValueError(f"sim_string_format does not have \
-    #                          required placeholder '{required_tag}'")
-    # for required_tag in ["{patch", "{freq_channel"]:
-    #     if required_tag not in args.output_dir:
-    #         raise ValueError(f"output_dir does not have \
-    #                          required placeholder '{required_tag}'")
-    # for required_tag in ["sim_id", "{patch", "{freq_channel"]:
-    #     if required_tag not in args.atomic_sim_dir:
-    #         raise ValueError(f"atomic_sim_dir does not have \
-    #                          required placeholder '{required_tag}'")
 
     # MPI related initialization
     rank, size, comm = mpi.init(True)
@@ -65,7 +50,7 @@ def main(args):
     else:
         for f in args.freq_channels:  # If these don't contain the "f", add
             freq_channel = f"f{f}" if "f" not in f else f
-            freq_labels[freq_channel] = f  # dict values are the original labels
+            freq_labels[freq_channel] = f  # dict values are original labels
         freq_channels = list(freq_labels.keys())
 
     # Input directory
@@ -175,7 +160,6 @@ def main(args):
                                  "to 'intra_obs_pair'.")
             else:
                 intra_obs_pair = intra_obs_pair.split(",")
-    
 
     logger.info(f"Split labels to coadd individually: {intra_obs_splits}")
     logger.info(f"Split labels to coadd together: {intra_obs_pair}")
