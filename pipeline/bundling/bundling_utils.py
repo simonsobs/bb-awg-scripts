@@ -740,6 +740,11 @@ class Cfg:
         Number of map bundles
     seed: int
         Random seed that determines the composition of bundles
+    bundle_duration: int
+        Width of the ctime bins that will be assigned bundles, in seconds.
+        Can also be the string 'obs' to bundle by obs_id instead.
+    bundle_t0: int
+        ctime of the lowest bin for bundle assignment. Sets phase of the binning.
     query_restrict: str
         SQL query to restrict obs from the atomic database
     only_make_db: bool
@@ -804,9 +809,11 @@ class Cfg:
         **Deprecated** This doesn't do anything but kept for config compatibility
     """
     bundle_db: str
-    atomic_db: str
     n_bundles: int
+    atomic_db: str = ""
     seed: int = 0
+    bundle_duration: int = 86400
+    bundle_t0: int = 1704121200
     query_restrict: str = ""
     only_make_db: bool = False
     patch: Optional[str] = None
