@@ -1,16 +1,18 @@
 #!/bin/bash -l
 
-#SBATCH --nodes=8
-#SBATCH --ntasks=1792
-#SBATCH --cpus-per-task=1
+#SBATCH --nodes=4
+#SBATCH --ntasks=448
+#SBATCH --cpus-per-task=2
 #SBATCH --time=24:00:00
-#SBATCH --job-name=simp-cmb-filter
+#SBATCH --job-name=cmb-filter
 #SBATCH --exclusive
+#SBATCH --mail-user=kevin.wolz@physics.ox.ac.uk
+#SBATCH --mail-type=ALL
 
 set -e
 
-nnodes=8
-ncores=224
+nnodes=4
+ncores=112
 natomics=876
 
 
@@ -31,7 +33,7 @@ module load soconda/20241017_3.10
 #=========== Run it ============
 echo "Launching pipeline at $(date)"
 
-launch_str="srun -n $(($nnodes * $ncores)) -c 1 --cpu_bind=cores"
+launch_str="srun -n $(($nnodes * $ncores)) -c 2 --cpu_bind=cores"
 python_str="python -u ${bb_awg_scripts_dir}/pipeline/filtering/filter_simple.py --config_file $filtering_config"
 echo "${launch_str} ${python_str}"
 $launch_str \
