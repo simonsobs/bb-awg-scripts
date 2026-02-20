@@ -1,6 +1,6 @@
 ext_data_directory: &ext_data_dir /scratch/gpfs/SIMONSOBS/external_data_e2e/
 iso_directory: &iso_dir /scratch/gpfs/SIMONSOBS/sat-iso/v4
-output_directory: &out_dir !path [*ext_data_dir, /v4/spectra/filtered_satp1_f150/south/20251216_full-dataset/science]
+output_directory: &out_dir !path [*ext_data_dir, /v4/spectra/filtered_satp1_f150_20260220/south/20251216_full-dataset/science]
 transfer_dir: &transfer_dir !path [*iso_dir, spectra/satp1/south/20251216_full-dataset/science]
 inputs_dir: &inputs_dir !path [*iso_dir, soopercool_inputs]
 signflip_dir: &sf_dir !path [*iso_dir, noise/satp1_20251216_full-dataset/signflip/south/]
@@ -13,17 +13,8 @@ map_sets:
     beam_file: "beam_unity.dat"
     n_bundles: 4          # Number of bundles
     freq_tag: 090         # Freq. tag (e.g. useful to coadd freqs)
-    exp_tag: "SATp1"      # Experiment tag (useful to get noise-bias free cross-split spectra)
+    exp_tag: "satp1"      # Experiment tag (useful to get noise-bias free cross-split spectra)
     filtering_tag: "SATp1_f090_south_science"
-  satp1_f150_south_science:
-    map_dir: !path [*iso_dir, bundling/satp1_20251216_full-dataset/south]
-    beam_dir: !path [*inputs_dir, beams]
-    map_template: "satp1_f150_science_bundle{id_bundle}_{map|hits}.fits"
-    beam_file: "beam_unity.dat"
-    n_bundles: 4
-    freq_tag: 150
-    exp_tag: "satp1"
-    filtering_tag: "SATp1_f150_south_science"
   wmap_f023_filtered_satp1_f150_south_science:
     map_dir: !path [*ext_data_dir, /v4/filtered_ext_data/wmap/fK/satp1/south/f150/coadded_maps]
     beam_dir: !path [*ext_data_dir, unfiltered_data/wmap/beams/]
@@ -87,7 +78,15 @@ map_sets:
     freq_tag: 353
     exp_tag: "planck"
     filtering_tag: "SATp1_f150_south_science"  # tag only used for couplings and transfer function
-  
+  satp1_f150_south_science:
+    map_dir: !path [*iso_dir, bundling/satp1_20251216_full-dataset/south]
+    beam_dir: !path [*inputs_dir, beams]
+    map_template: "satp1_f150_science_bundle{id_bundle}_{map|hits}.fits"
+    beam_file: "beam_unity.dat"
+    n_bundles: 4
+    freq_tag: 150
+    exp_tag: "satp1"
+    filtering_tag: "SATp1_f150_south_science"
 
 ####################
 # Masking metadata #

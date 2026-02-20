@@ -1,6 +1,6 @@
 ext_data_directory: &ext_data_dir /scratch/gpfs/SIMONSOBS/external_data_e2e/
 iso_directory: &iso_dir /scratch/gpfs/SIMONSOBS/sat-iso/v4
-output_directory: &out_dir !path [*ext_data_dir, /v4/spectra/filtered_satp1_f090/south/20251216_full-dataset/science]
+output_directory: &out_dir !path [*ext_data_dir, /v4/spectra/filtered_satp1_f090_20260220/south/20251216_full-dataset/science]
 transfer_dir: &transfer_dir !path [*iso_dir, spectra/satp1/south/20251216_full-dataset/science]
 inputs_dir: &inputs_dir !path [*iso_dir, soopercool_inputs]
 signflip_dir: &sf_dir !path [*iso_dir, noise/satp1_20251216_full-dataset/signflip/south/]
@@ -13,17 +13,8 @@ map_sets:
     beam_file: "beam_unity.dat"
     n_bundles: 4          # Number of bundles
     freq_tag: 090         # Freq. tag (e.g. useful to coadd freqs)
-    exp_tag: "SATp1"      # Experiment tag (useful to get noise-bias free cross-split spectra)
+    exp_tag: "satp1"      # Experiment tag (useful to get noise-bias free cross-split spectra)
     filtering_tag: "SATp1_f090_south_science"
-  satp1_f150_south_science:
-    map_dir: !path [*iso_dir, bundling/satp1_20251216_full-dataset/south]
-    beam_dir: !path [*inputs_dir, beams]
-    map_template: "satp1_f150_science_bundle{id_bundle}_{map|hits}.fits"
-    beam_file: "beam_unity.dat"
-    n_bundles: 4
-    freq_tag: 150
-    exp_tag: "satp1"
-    filtering_tag: "SATp1_f150_south_science"
   wmap_f023_filtered_satp1_f090_south_science:
     map_dir: !path [*ext_data_dir, /v4/filtered_ext_data/wmap/fK/satp1/south/f090/coadded_maps]
     beam_dir: !path [*ext_data_dir, unfiltered_data/wmap/beams/]
@@ -87,7 +78,16 @@ map_sets:
     freq_tag: 353
     exp_tag: "planck"
     filtering_tag: "SATp1_f090_south_science"  # tag only used for couplings and transfer function
-  
+  satp1_f150_south_science:
+    map_dir: !path [*iso_dir, bundling/satp1_20251216_full-dataset/south]
+    beam_dir: !path [*inputs_dir, beams]
+    map_template: "satp1_f150_science_bundle{id_bundle}_{map|hits}.fits"
+    beam_file: "beam_unity.dat"
+    n_bundles: 4
+    freq_tag: 150
+    exp_tag: "satp1"
+    filtering_tag: "SATp1_f150_south_science"
+
 
 ####################
 # Masking metadata #
@@ -139,32 +139,3 @@ transfer_settings:
   transfer_directory: !path [*transfer_dir, transfer_functions]
 
   external_couplings_dir: !path [*out_dir, couplings]
-  # # For estimation
-  # ## Number of sims for tf estimation and validation
-  # tf_est_num_sims: 10
-  # sim_id_start: 0
-  # ## Parameters of the PL sims used for TF estimation
-  # power_law_pars_tf_est:
-  #   amp: 1.0
-  #   delta_ell: 15
-  #   power_law_index: 2.
-  # ## Optional beams applied on PL sims
-  # # If true, beams will be applied only on the validation simulations. By default (false)
-  # # beam are applied to both the estimation and validation sims,
-  # # to account for potential effect of the beam on the TF (e.g. commutativity)
-  # do_not_beam_est_sims: True
-  # beams_list: []
-
-  # ## Path to the sims for TF estimation
-  # unfiltered_map_dir:
-  #   satp1_f090_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/v2/tf_sims
-  #   satp1_f150_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/v2/tf_sims
-  # unfiltered_map_template:
-  #   satp1_f090_south_science: "{pure_type}_4.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR.fits"
-  #   satp1_f150_south_science: "{pure_type}_4.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR.fits"
-  # filtered_map_dir:
-  #   satp1_f090_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/v3/transfer_function/satp1/south/f090/full-dataset/coadded_sims
-  #   satp1_f150_south_science: /scratch/gpfs/SIMONSOBS/sat-iso/v3/transfer_function/satp1/south/f150/full-dataset/coadded_sims
-  # filtered_map_template:
-  #   satp1_f090_south_science: "{pure_type}_1.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR_bundle0_f090_science_filtered.fits"
-  #   satp1_f150_south_science: "{pure_type}_1.0arcmin_fwhm30.0_sim{id_sim:04d}_CAR_bundle0_f150_science_filtered.fits"
