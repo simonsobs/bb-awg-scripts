@@ -274,7 +274,8 @@ def main(args):
             configs_proc,
             meta=meta,
             logger=logger,
-            stop_for_sims=True
+            stop_for_sims=True,
+            ignore_cfg_check=True
         )
 
         for sim_id, sim_type in product(sim_ids, args.sim_types):
@@ -309,6 +310,7 @@ def main(args):
                     sim_map=sim,
                     meta=meta,
                     logger=logger,
+                    ignore_cfg_check=True,
                     data_amans=data_aman
                 )
             except loader.LoaderError:
