@@ -211,7 +211,8 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
         elif hasattr(obs.preprocess.noiseQ_mapmaking, "white_noise"):
             inv_var = 1 / obs.preprocess.noiseQ_mapmaking.white_noise ** 2
         else:
-            raise ValueError("obs.preprocess.noiseQ_mapmaking does not have either a std or white_noise")
+            raise ValueError("obs.preprocess.noiseQ_mapmaking does not have "
+                             "either a std or white_noise")
     elif hasattr(obs.preprocess, "noiseQ_nofit"):  # ISO v1
         inv_var = 1 / obs.preprocess.noiseQ_nofit.white_noise ** 2
     else:
@@ -307,15 +308,15 @@ class Cfg:
     sim_dir: str
     atomic_sim_dir: str
     output_dir: str
-    sim_ids: list
     sim_string_format: str
-    sim_types: list
     freq_channels: list
     patches: list
-    intra_obs_splits: list
     query_restrict: Optional[str] = ""
     pix_type: Optional[str] = "car"
     bundle_id: Optional[int] = 0
+    intra_obs_splits: Optional[list] = None
+    sim_ids: Optional[list] = None
+    sim_types: Optional[list] = None
     intra_obs_pair: Optional[list] = None
     inter_obs_splits: Optional[list] = None
     car_map_template: Optional[str] = None
