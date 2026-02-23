@@ -511,7 +511,7 @@ def get_abscal(abscal_dict, wafers, freqs):
     Parameters
     ----------
     abscal_dict: dict
-        Nested dict in format {'ws0': {'f090': 1, 'f150': 1}, ...}.
+        Nested dict in format {'f090': {'ws0': 1, 'ws1': 1,...}, ...}.
         Maps will be multiplied by the abscal factor.
     wafers: list
         List of wafer identifiers as given in abscal_dict
@@ -524,7 +524,7 @@ def get_abscal(abscal_dict, wafers, freqs):
         Array of multiplicative abscal factors with the same shape as wafers/freqs
     """
     if abscal_dict:
-        abscal = np.array([abscal_dict[wafer][freq] for wafer, freq in zip(wafers, freqs)])
+        abscal = np.array([abscal_dict[freq][wafer] for wafer, freq in zip(wafers, freqs)])
     else:
         abscal = np.ones(len(wafers))
     return abscal
