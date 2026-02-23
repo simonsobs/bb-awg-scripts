@@ -1,16 +1,20 @@
 ## Required arguments ##
-bundle_db: 'bundles_{patch}_obs100_seed{seed}_v2.db' # Optional format fields {patch} and {seed}
+bundle_db: 'bundles_{patch}_obs100_seed{seed}.db' # Optional format fields {patch} and {seed}
 atomic_db: 'atomic_db.sqlite'
 
 n_bundles: 4
 seed: 10  # Only needed for make_bundle_db unless included in format for bundle_db
 
 ## Optional shared arguments ##
-query_restrict: "pwv < 2 AND median_weight_qu < 2e10 AND ((f_hwp > 1.9 AND f_hwp < 2.3) OR (f_hwp > -2.3 AND f_hwp < -1.9))"
-only_make_db: False
 patch: ["south"]  # Only needed for make_bundle_db unless included in format for bundle_db or map_string_format
 
 ## Optional for make_bundle_db ##
+query_restrict: "pwv < 2 AND median_weight_qu < 2e10 AND ((f_hwp > 1.9 AND f_hwp < 2.3) OR (f_hwp > -2.3 AND f_hwp < -1.9))"
+only_make_db: False
+
+bundle_duration: 'obs'
+bundle_t0: 1704121200
+
 inter_obs_props:
   pwv: "median"
   dpwv: "median"
@@ -38,8 +42,8 @@ overwrite: False
 
 ## Required for bundle_maps ##
 pix_type: 'car'
-map_dir: "/cephfs/soukdata/sat_analysis/iso_data/v1/mapmaking/satp1_20250108/atomic_maps/"
-output_dir: "out/v2/"
+map_dir: "/atomic_map_dir/"
+output_dir: "out/"
 freq_channel: ["f150"] # May be a single string or a list
 # Format fields {split}, {bundle_id}, {freq_channel} required. {patch}, {wafer} optional.
 map_string_format: "{patch}/satp1_{freq_channel}_{wafer}_{split}_bundle{bundle_id}_{map_type}.fits"
@@ -63,8 +67,7 @@ wafer: null  # null, string, or list of strings
 save_fnames: True
 
 atomic_list: null
-abscal: False
-tel: null
+abscal: null
 
 ## Coadding ##
 # Also uses: output_dir, map_string_format, patch, wafer, freq_channel, n_bundles, pix_type
