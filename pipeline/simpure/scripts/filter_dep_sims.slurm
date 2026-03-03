@@ -1,16 +1,18 @@
 #!/bin/bash -l
 
 #SBATCH --nodes=8
-#SBATCH --ntasks=1792
+#SBATCH --ntasks=896
 #SBATCH --cpus-per-task=1
 #SBATCH --time=24:00:00
-#SBATCH --job-name=simp-dep-filter
+#SBATCH --job-name=dep-filter
 #SBATCH --exclusive
+#SBATCH --mail-user=kevin.wolz@physics.ox.ac.uk
+#SBATCH --mail-type=ALL
 
 set -e
 
 nnodes=8
-ncores=224
+ncores=112
 natomics=876
 
 

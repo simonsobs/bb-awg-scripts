@@ -20,26 +20,28 @@ def main():
     pix_type = "car"
     nside = 128
     base_dir = "/cephfs/soukdata/user_data/kwolz/simpure"
-    filter_setup = "butter4_20251007"
+    filter_setup = "poly1_20260203"  # "butter4_20251007"
     car_template = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/band_car_fejer1_20arcmin.fits"  # noqa: E501
     beam_fwhm = 30
     nlb = 10  # number of multipoles per bin
 
     # general
-    nsims_purify = 800  # number of pure-E sims used for template deprojection
+    nsims_purify = 1000  # number of pure-E sims used for template deprojection
     nsims_cmb = 100  # number of validation sims
     nsims_transfer = 50  # number of pure (E,B sims used for transfer function
     id_sim_transfer_start = 0
     lmax_plot = 300
-    overwrite = False  # If True, always recompute products.
+    overwrite = True  # If True, always recompute products.
     overwrite_spectra = True  # If True, update everything downstream of couplings step.
     deproject_null = False  # Deproject null vector instead of pureB template.
     ignore_filtering = False  # If True, only check mask-based purification.
 
-    out_dir = f"/cephfs/soukdata/user_data/kwolz/simpure/purification/{filter_setup}_thresh20percent_20260203"  # noqa: E501
+    #out_dir = f"/cephfs/soukdata/user_data/kwolz/simpure/purification/{filter_setup}_thresh20percent_20260203"  # noqa: E501
+    out_dir = f"/cephfs/soukdata/user_data/kwolz/simpure/purification/{filter_setup}_20260203"  # noqa: E501
     plot_dir = f"{out_dir}/plots_ndep{nsims_purify}_20260203"
-    mask_file = f"/cephfs/soukdata/user_data/kwolz/simpure/filtered_pure_sims/satp3/f090/{filter_setup}/mask_thresh20percent/masks/analysis_mask_apo10_C1_car.fits"  # noqa
-
+    #mask_file = f"/cephfs/soukdata/user_data/kwolz/simpure/filtered_pure_sims/satp3/f090/{filter_setup}/mask_thresh20percent/masks/analysis_mask_apo10_C1_car.fits"  # noqa
+    mask_file = "/cephfs/soukdata/user_data/kwolz/simpure/filtered_pure_sims/satp3/f090/butter4_20251007/mask/masks/analysis_mask_apo10_C1_car.fits"
+    
     sp = SimPure(pix_type,
                  base_dir,
                  out_dir,
@@ -71,13 +73,12 @@ def main():
     if not ignore_filtering:
         print("  1. Make deprojection matrix")
         if not deproject_null:
-
             sim_dir = f"{out_dir}/sims_filt"
             sim_fn = "sim_pureE_alpha2_filt_pure_Bout_{id_sim:04d}.fits"
             mat_fn = f"{out_dir}/matcorr_alpha2_filt_pure_Bout_nsims{nsims_purify}.npz"  # noqa
             mat_plot_fn = f"{plot_dir}/M_deproject_eigvals_nsims{nsims_purify}.pdf"  # noqa
             mp_sims, mat = sp.make_deprojection_matrix(
-                sim_dir, sim_fn, mat_fn, nsims_purify, overwrite, mat_plot_fn)
+                sim_dir, sim_fn, mat_fn, nsims_purify, False, mat_plot_fn)  # DEBUG: overwrite -> False
         else:
             print("  1A. Null B-residuals to mock deproject")
             mp = sp.load_cmb_sim(0, filtered=True)
@@ -120,6 +121,8 @@ def main():
         print("  2F. TF w/ purification")
         transfer_pure = ut.get_transfer_dict(cls_tf_filtered_pure,
                                              cls_tf_unfiltered_pure)
+        np.save(f"{out_dir}/tf_pure.npy", transfer_pure["full_tf"])
+        print(f"Saved TF: {out_dir}/tf_pure.npy")
 
         print("  2G. TF w/o purification")
         transfer_nopure = ut.get_transfer_dict(cls_tf_filtered_nopure,
