@@ -3,6 +3,14 @@ import matplotlib.pyplot as plt
 import os
 import utils as ut
 from simpure import SimPure
+import sys
+
+# TODO: Make it an actual module
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
+)
+import mpi_utils as mpi
+
 
 # Changelog:
 # * 2025/12/19: added masked_on_input=True for deprojection spectra
@@ -11,6 +19,8 @@ from simpure import SimPure
 # * 2026/01/17: fixed bug in get_pcls_mat_transfer (wrong field pair ordering)
 # * 2026/01/25: ported functions to simpure
 # * 2026/01/29: added flag tf_type to get_inv_coupling and compute_pspec
+# * 2026/03/02: added MPI parallelization
+# * 2026/03/03: changed output directory naming convention
 
 
 def main():
@@ -18,25 +28,25 @@ def main():
     # pixelization
     pix_type = "hp"
     nside = 128
-    base_dir = "/pscratch/sd/k/kwolz/bbdev/simpure"
-    filter_setup = "obsmat_polyonly_apo_nside128"
+    base_dir = "/cephfs/soukdata/user_data/kwolz/simpure"
+    filter_setup = "toy_apo_nside128"
     car_template = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/band_car_fejer1_20arcmin.fits"  # noqa: E501
     beam_fwhm = 30
     nlb = 10  # number of multipoles per bin
 
     # general
-    nsims_purify = 1000  # number of pure-E sims used for template deprojection
-    nsims_cmb = 100  # number of validation sims
-    nsims_transfer = 50  # number of pure (E,B sims used for transfer function
+    nsims_purify = 2  # number of pure-E sims used for template deprojection
+    nsims_cmb = 2  # number of validation sims
+    nsims_transfer = 2  # number of pure (E,B sims used for transfer function
     id_sim_transfer_start = 0
     lmax_plot = 300
     overwrite = False  # If True, always recompute products.
     deproject_null = False  # Deproject null vector instead of pureB template.
     ignore_filtering = False  # If True, only check mask-based purification.
 
-    out_dir = f"/pscratch/sd/k/kwolz/bbdev/simpure/purification/{filter_setup}_20260129"  # noqa: E501
-    plot_dir = f"{out_dir}/plots_ndep{nsims_purify}_ntrf{nsims_transfer}_20260129"  # noqa: E501
-    mask_file = "/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside128.fits"  # noqa: E501
+    out_dir = f"/cephfs/soukdata/user_data/kwolz/simpure/purification/{filter_setup}_20260302/ndep{nsims_purify}_ntrf{nsims_transfer}_nval{nsims_cmb}"  # noqa: E501
+    plot_dir = f"{out_dir}/plots"  # noqa: E501
+    mask_file = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside128.fits"  # noqa: E501
 
     sp = SimPure(pix_type,
                  base_dir,
@@ -65,6 +75,7 @@ def main():
     ut.plot_map(sp.mask, file_name=f"{plot_dir}/mask", pix_type=pix_type)
     ut.plot_map(sp.mask_bin, file_name=f"{plot_dir}/mask_bin",
                 pix_type=pix_type)
+    print("size", sp.size)
 
     if not ignore_filtering:
         print("  1. Make deprojection matrix")
@@ -81,71 +92,220 @@ def main():
             mp = sp.load_cmb_sim(0, filtered=True)
             mp_sims = np.zeros((nsims_purify,) + mp.shape)
             mat = np.eye(nsims_purify)
+        sp.comm.barrier()
 
         print("  2. Transfer function computation")
-        print("  2A. TF sims unfiltered w/o purification")
-        kwargs = {"filtered": False, "purified": False, "deprojected": False}
-        cls_tf_unfiltered_nopure = sp.get_tf_sims(
-            out_dir, nsims_transfer, overwrite=overwrite,
-            id_sim_start=id_sim_transfer_start, **kwargs)
+        local_task_ids = mpi.distribute_tasks(sp.size, sp.rank, 5, id_start=0)
 
-        print("  2B. TF sims unfiltered w/ purification")
-        kwargs = {"filtered": False, "purified": True, "deprojected": False}
-        cls_tf_unfiltered_pure = sp.get_tf_sims(
-            out_dir, nsims_transfer, overwrite=overwrite,
-            id_sim_start=id_sim_transfer_start, **kwargs)
+        for id in local_task_ids:
+            if id == 0:
+                print("  2A. TF sims unfiltered w/o purification")
+                kwargs = {"filtered": False, "purified": False, "deprojected": False}
+                cls_tf_unfiltered_nopure = sp.get_tf_sims(
+                    out_dir, nsims_transfer, overwrite=overwrite,
+                    id_sim_start=id_sim_transfer_start, **kwargs)
+            if id == 1:
+                print("  2B. TF sims unfiltered w/ purification")
+                kwargs = {"filtered": False, "purified": True, "deprojected": False}
+                cls_tf_unfiltered_pure = sp.get_tf_sims(
+                    out_dir, nsims_transfer, overwrite=overwrite,
+                    id_sim_start=id_sim_transfer_start, **kwargs)
+            if id == 2:
+                print("  2C. TF sims filtered w/o purification")
+                kwargs = {"filtered": True, "purified": False, "deprojected": False}
+                cls_tf_filtered_nopure = sp.get_tf_sims(
+                    out_dir, nsims_transfer, overwrite=overwrite,
+                    id_sim_start=id_sim_transfer_start, **kwargs)
+            if id == 3:
+                print("  2D. TF sims filtered w/ purification")
+                kwargs = {"filtered": True, "purified": True, "deprojected": False}
+                cls_tf_filtered_pure = sp.get_tf_sims(
+                    out_dir, nsims_transfer, overwrite=overwrite, 
+                    id_sim_start=id_sim_transfer_start, **kwargs)
+            if id == 4:
+                print("  2E. TF sims filtered w/ purification & deprojection")
+                kwargs = {"filtered": True, "purified": True, "deprojected": True}
+                cls_tf_filtered_pure_dep = sp.get_tf_sims(
+                    out_dir, nsims_transfer, overwrite=overwrite,
+                    mp_sims=mp_sims, mat=mat,
+                    id_sim_start=id_sim_transfer_start, **kwargs
+                )
+        
+        sp.comm.barrier()
+        cls_tf_unfiltered_nopure = np.load(
+            f"{out_dir}/cls_tf_unfiltered_nopure_nsims{nsims_transfer}.npz",
+            allow_pickle=True
+        )["cls"]
+        cls_tf_unfiltered_pure = np.load(
+            f"{out_dir}/cls_tf_unfiltered_pure_nsims{nsims_transfer}.npz",
+            allow_pickle=True
+        )["cls"]
+        cls_tf_filtered_nopure = np.load(
+            f"{out_dir}/cls_tf_filtered_nopure_nsims{nsims_transfer}.npz",
+            allow_pickle=True
+        )["cls"]
+        cls_tf_filtered_pure = np.load(
+            f"{out_dir}/cls_tf_filtered_pure_nsims{nsims_transfer}.npz",
+            allow_pickle=True
+        )["cls"]
+        cls_tf_filtered_pure_dep = np.load(
+            f"{out_dir}/cls_tf_filtered_pure_dep_nsims{nsims_transfer}.npz",
+            allow_pickle=True
+        )["cls"]
 
-        print("  2C. TF sims filtered w/o purification")
-        kwargs = {"filtered": True, "purified": False, "deprojected": False}
-        cls_tf_filtered_nopure = sp.get_tf_sims(
-            out_dir, nsims_transfer, overwrite=overwrite,
-            id_sim_start=id_sim_transfer_start, **kwargs)
+        local_task_ids = mpi.distribute_tasks(sp.size, sp.rank, 3, id_start=0)
+        for id in local_task_ids:
+            if id == 0:
+                print("  2F. TF w/ purification")
+                transfer_pure = ut.get_transfer_dict(cls_tf_filtered_pure,
+                                                    cls_tf_unfiltered_pure)
+                np.savez(f"{out_dir}/transfer_pure.npz", **transfer_pure)
+            if id == 1:
+                print("  2G. TF w/o purification")
+                transfer_nopure = ut.get_transfer_dict(cls_tf_filtered_nopure,
+                                                    cls_tf_unfiltered_nopure)
+                np.savez(f"{out_dir}/transfer_nopure.npz", **transfer_nopure)
+            if id == 2:
+                print("  2H. TF with purification & deprojection")
+                transfer_pure_dep = ut.get_transfer_dict(cls_tf_filtered_pure_dep,
+                                                        cls_tf_unfiltered_pure)
+                np.savez(f"{out_dir}/transfer_pure_dep.npz", **transfer_pure_dep)
+        sp.comm.barrier()
 
-        print("  2D. TF sims filtered w/ purification")
-        kwargs = {"filtered": True, "purified": True, "deprojected": False}
-        cls_tf_filtered_pure = sp.get_tf_sims(
-            out_dir, nsims_transfer, overwrite=overwrite, 
-            id_sim_start=id_sim_transfer_start, **kwargs)
+        transfer_pure = np.load(f"{out_dir}/transfer_pure.npz", allow_pickle=True)
+        transfer_nopure = np.load(f"{out_dir}/transfer_nopure.npz", allow_pickle=True)
+        transfer_pure_dep = np.load(f"{out_dir}/transfer_pure_dep.npz", allow_pickle=True)
 
-        print("  2E. TF sims filtered w/ purification & deprojection")
-        kwargs = {"filtered": True, "purified": True, "deprojected": True}
-        cls_tf_filtered_pure_dep = sp.get_tf_sims(
-            out_dir, nsims_transfer, overwrite=overwrite,
-            mp_sims=mp_sims, mat=mat,
-            id_sim_start=id_sim_transfer_start, **kwargs
-        )
+        if sp.rank == 0:
+            field_pairs = ["EE", "EB", "BE", "BB"]
+            file_name = f"{plot_dir}/transfer_dep_nsims{nsims_purify}_tf_nsims{nsims_transfer}.pdf"  # noqa
+            tf_dict = {
+                "nopure": transfer_nopure, "pure": transfer_pure,
+                f"pure_dep (N={nsims_purify})": transfer_pure_dep
+            }
+            ut.plot_transfer_function(sp.leff, tf_dict, 0, lmax_plot, field_pairs,  # noqa
+                                      file_name=file_name)
+            ut.plot_transfer_function(sp.leff, tf_dict, 0, lmax_plot, ["BB"],
+                                      file_name=file_name.replace(".pdf", "_BB.pdf"))  # noqa
 
-        print("  2F. TF w/ purification")
-        transfer_pure = ut.get_transfer_dict(cls_tf_filtered_pure,
-                                             cls_tf_unfiltered_pure)
+    # Compute CLs
+    print("  3. Power spectrum computation")
+    sp.comm.barrier()
+    local_task_ids = mpi.distribute_tasks(sp.size, sp.rank, 11, id_start=0)
+    overwrite_cls = overwrite
+    for id in local_task_ids:
+        if id == 0:
+            print("  3A. Masked cmbEB without purification")
+            kwargs = {"noE": False, "filtered": False, "purified": False,
+                    "deprojected": False, "TFed": False}
+            cls_masked_nopure = sp.get_cmb_spectra(
+                out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir, **kwargs)
+        if id == 1:
+            print("  3B. Masked cmbEB with purification")
+            kwargs = {"noE": False, "filtered": False, "purified": True,
+                    "deprojected": False, "TFed": False}
+            cls_masked_pure = sp.get_cmb_spectra(
+                out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir, **kwargs)
+        if id == 2:
+            print("  3C. Masked cmbB (without purification)")
+            kwargs = {"noE": True, "filtered": False, "purified": False,
+                    "deprojected": False, "TFed": False}
+            cls_noe_masked = sp.get_cmb_spectra(
+                out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir, **kwargs)
+        if not ignore_filtering:
+            if id == 3:
+                print("  3D. Filtered cmbEB without purification")
+                kwargs = {"noE": False, "filtered": True, "purified": False,
+                        "deprojected": False, "TFed": False}
+                cls_filtered_nopure = sp.get_cmb_spectra(
+                    out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir,
+                    **kwargs
+                )
+            if id == 4:
+                print("  3E. Filtered cmbEB without purification, TFed")
+                kwargs = {"noE": False, "filtered": True, "purified": False,
+                        "deprojected": False, "TFed": True}
+                cls_filtered_nopure_tfed = sp.get_cmb_spectra(
+                    out_dir, nsims_cmb, overwrite=overwrite_cls,
+                    tf=transfer_nopure["full_tf"], plot_dir=plot_dir, **kwargs
+                )
+            if id == 5:
+                print("  3F. Filtered cmbEB with purification")
+                kwargs = {"noE": False, "filtered": True, "purified": True,
+                        "deprojected": False, "TFed": False}
+                cls_filtered_pure = sp.get_cmb_spectra(
+                    out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir,
+                    **kwargs
+                )
+            if id == 6:
+                print("  3G. Fitered cmbEB with purification, TFed")
+                kwargs = {"noE": False, "filtered": True, "purified": True,
+                        "deprojected": False, "TFed": True}
+                cls_filtered_pure_tfed = sp.get_cmb_spectra(
+                    out_dir, nsims_cmb, overwrite=overwrite_cls,
+                    tf=transfer_pure["full_tf"], plot_dir=plot_dir, **kwargs
+                )
+            if id == 7:
+                print("  3H. Filtered cmbB (without purification)")
+                kwargs = {"noE": True, "filtered": True, "purified": False,
+                        "deprojected": False, "TFed": False}
+                cls_noe_filtered = sp.get_cmb_spectra(
+                    out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir,
+                    **kwargs
+                )
+            if id == 8:
+                print("  3J. Filtered cmbB (without purification), TFed")
+                kwargs = {"noE": True, "filtered": True, "purified": False,
+                        "deprojected": False, "TFed": True}
+                cls_noe_filtered_tfed = sp.get_cmb_spectra(
+                    out_dir, nsims_cmb, overwrite=overwrite_cls,
+                    tf=transfer_nopure["full_tf"], plot_dir=plot_dir, **kwargs
+                )
+            if id == 9:
+                print("  3K. Filtered with purification and deprojection")
+                kwargs = {"noE": False, "filtered": True, "purified": True,
+                        "deprojected": True, "TFed": False}
+                cls_filtered_pure_dep = sp.get_cmb_spectra(
+                    out_dir, nsims_cmb, overwrite=overwrite_cls, mp_sims=mp_sims, mat=mat,
+                    plot_dir=plot_dir, **kwargs
+                )
+            if id == 10:
+                print("  3L. Filtered with purification and deprojection, TFed")
+                kwargs = {"noE": False, "filtered": True, "purified": True,
+                        "deprojected": True, "TFed": True}
+                cls_filtered_pure_dep_tfed = sp.get_cmb_spectra(
+                    out_dir, nsims_cmb, overwrite=overwrite_cls,
+                    tf=transfer_pure_dep["full_tf"], mp_sims=mp_sims, mat=mat,
+                    plot_dir=plot_dir, **kwargs
+                )
+    sp.comm.barrier()
 
-        print("  2G. TF w/o purification")
-        transfer_nopure = ut.get_transfer_dict(cls_tf_filtered_nopure,
-                                               cls_tf_unfiltered_nopure)
+    # Plotting
+    sp.comm.barrier()
+    if sp.rank != 0:
+        return
+    
+    print("  4. Plotting")
+    os.makedirs(f"{out_dir}/plots", exist_ok=True)
+    plot_dl = False
 
-        print("  2H. TF with purification & deprojection")
-        transfer_pure_dep = ut.get_transfer_dict(cls_tf_filtered_pure_dep,
-                                                 cls_tf_unfiltered_pure)
-        np.save(f"{out_dir}/tf_pure_dep.npy", transfer_pure_dep["full_tf"])
-        print(f"Saved TF: {out_dir}/tf_pure_dep.npy")
+    cls_masked_nopure = np.load(f"{out_dir}/cls_masked_nopure.npz", allow_pickle=True)["cls"]
+    cls_masked_pure = np.load(f"{out_dir}/cls_masked_pure.npz", allow_pickle=True)["cls"]
+    cls_noe_masked = np.load(f"{out_dir}/cls_noe_masked.npz", allow_pickle=True)["cls"]
+    cls_filtered_nopure = np.load(f"{out_dir}/cls_filtered_nopure.npz", allow_pickle=True)["cls"]
+    cls_filtered_nopure_tfed = np.load(f"{out_dir}/cls_filtered_nopure_tfed.npz", allow_pickle=True)["cls"]
+    cls_filtered_pure = np.load(f"{out_dir}/cls_filtered_pure.npz", allow_pickle=True)["cls"]
+    cls_filtered_pure_tfed = np.load(f"{out_dir}/cls_filtered_pure_tfed.npz", allow_pickle=True)["cls"]
+    cls_noe_filtered = np.load(f"{out_dir}/cls_noe_filtered.npz", allow_pickle=True)["cls"]
+    cls_noe_filtered_tfed = np.load(f"{out_dir}/cls_noe_filtered_tfed.npz", allow_pickle=True)["cls"]
+    cls_filtered_pure_dep = np.load(f"{out_dir}/cls_filtered_pure_dep.npz", allow_pickle=True)["cls"]
+    cls_filtered_pure_dep_tfed = np.load(f"{out_dir}/cls_filtered_pure_dep_tfed.npz", allow_pickle=True)["cls"]
 
-        field_pairs = ["EE", "EB", "BE", "BB"]
-        file_name = f"{plot_dir}/transfer_dep_nsims{nsims_purify}_tf_nsims{nsims_transfer}.pdf"  # noqa
-        tf_dict = {
-            "nopure": transfer_nopure, "pure": transfer_pure,
-            f"pure_dep (N={nsims_purify})": transfer_pure_dep
-        }
-        ut.plot_transfer_function(sp.leff, tf_dict, 0, lmax_plot, field_pairs,  # noqa
-                                  file_name=file_name)
-        ut.plot_transfer_function(sp.leff, tf_dict, 0, lmax_plot, ["BB"],
-                                  file_name=file_name.replace(".pdf", "_BB.pdf"))  # noqa
-
-    print("  3. Compute full couplings")
     _, bpw_msk_nopure = sp.get_inv_coupling(return_bp_win=True,
                                             overwrite=overwrite)
     _, bpw_msk_pure = sp.get_inv_coupling(nmt_purify=True,
-                                          return_bp_win=True,
-                                          overwrite=overwrite)
+                                        return_bp_win=True,
+                                        overwrite=overwrite)
     if not ignore_filtering:
         _, bpw_fil_nopure = sp.get_inv_coupling(
             transfer=transfer_nopure["full_tf"],
@@ -175,97 +335,6 @@ def main():
         clth_fil_nopure = ut.bin_theory_cls(clth, bpw_fil_nopure)
         clth_fil_pure = ut.bin_theory_cls(clth, bpw_fil_pure)
         clth_fil_pure_dep = ut.bin_theory_cls(clth, bpw_fil_pure_dep)
-
-    # Compute CLs
-    print("  4. Power spectrum computation")
-    print("  4A. Masked cmbEB without purification")
-    kwargs = {"noE": False, "filtered": False, "purified": False,
-              "deprojected": False, "TFed": False}
-    cls_masked_nopure = sp.get_cmb_spectra(
-        out_dir, nsims_cmb, overwrite=overwrite, plot_dir=plot_dir, **kwargs)
-
-    print("  4B. Masked cmbEB with purification")
-    kwargs = {"noE": False, "filtered": False, "purified": True,
-              "deprojected": False, "TFed": False}
-    cls_masked_pure = sp.get_cmb_spectra(
-        out_dir, nsims_cmb, overwrite=overwrite, plot_dir=plot_dir, **kwargs)
-
-    print("  4C. Masked cmbB (without purification)")
-    kwargs = {"noE": True, "filtered": False, "purified": False,
-              "deprojected": False, "TFed": False}
-    cls_noe_masked = sp.get_cmb_spectra(
-        out_dir, nsims_cmb, overwrite=overwrite, plot_dir=plot_dir, **kwargs)
-
-    if not ignore_filtering:
-        print("  4D. Filtered cmbEB without purification")
-        kwargs = {"noE": False, "filtered": True, "purified": False,
-                  "deprojected": False, "TFed": False}
-        cls_filtered_nopure = sp.get_cmb_spectra(
-            out_dir, nsims_cmb, overwrite=overwrite, plot_dir=plot_dir,
-            **kwargs
-        )
-
-        print("  4E. Filtered cmbEB without purification, TFed")
-        kwargs = {"noE": False, "filtered": True, "purified": False,
-                  "deprojected": False, "TFed": True}
-        cls_filtered_nopure_tfed = sp.get_cmb_spectra(
-            out_dir, nsims_cmb, overwrite=overwrite,
-            tf=transfer_nopure["full_tf"], plot_dir=plot_dir, **kwargs
-        )
-
-        print("  4F. Filtered cmbEB with purification")
-        kwargs = {"noE": False, "filtered": True, "purified": True,
-                  "deprojected": False, "TFed": False}
-        cls_filtered_pure = sp.get_cmb_spectra(
-            out_dir, nsims_cmb, overwrite=overwrite, plot_dir=plot_dir,
-            **kwargs
-        )
-
-        print("  4G. Fitered cmbEB with purification, TFed")
-        kwargs = {"noE": False, "filtered": True, "purified": True,
-                  "deprojected": False, "TFed": True}
-        cls_filtered_pure_tfed = sp.get_cmb_spectra(
-            out_dir, nsims_cmb, overwrite=overwrite,
-            tf=transfer_pure["full_tf"], plot_dir=plot_dir, **kwargs
-        )
-
-        print("  4H. Filtered cmbB (without purification)")
-        kwargs = {"noE": True, "filtered": True, "purified": False,
-                  "deprojected": False, "TFed": False}
-        cls_noe_filtered = sp.get_cmb_spectra(
-            out_dir, nsims_cmb, overwrite=overwrite, plot_dir=plot_dir,
-            **kwargs
-        )
-
-        print("  4J. Filtered cmbB (without purification), TFed")
-        kwargs = {"noE": True, "filtered": True, "purified": False,
-                  "deprojected": False, "TFed": True}
-        cls_noe_filtered_tfed = sp.get_cmb_spectra(
-            out_dir, nsims_cmb, overwrite=overwrite,
-            tf=transfer_nopure["full_tf"], plot_dir=plot_dir, **kwargs
-        )
-
-        print("  4K. Filtered with purification and deprojection")
-        kwargs = {"noE": False, "filtered": True, "purified": True,
-                  "deprojected": True, "TFed": False}
-        cls_filtered_pure_dep = sp.get_cmb_spectra(
-            out_dir, nsims_cmb, overwrite=overwrite, mp_sims=mp_sims, mat=mat,
-            plot_dir=plot_dir, **kwargs
-        )
-
-        print("  4L. Filtered with purification and deprojection, TFed")
-        kwargs = {"noE": False, "filtered": True, "purified": True,
-                  "deprojected": True, "TFed": True}
-        cls_filtered_pure_dep_tfed = sp.get_cmb_spectra(
-            out_dir, nsims_cmb, overwrite=overwrite,
-            tf=transfer_pure_dep["full_tf"], mp_sims=mp_sims, mat=mat,
-            plot_dir=plot_dir, **kwargs
-        )
-
-    # Plotting
-    print("  5. Plotting")
-    os.makedirs(f"{out_dir}/plots", exist_ok=True)
-    plot_dl = False
 
     plt.figure()
     plt.title('Cl, no filtering')
