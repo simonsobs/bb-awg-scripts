@@ -7,12 +7,157 @@ import pymaster as nmt
 from pixell import enmap, curvedsky, enplot
 from scipy.linalg import pinvh
 from itertools import product
+from scipy.special import eval_legendre
+import copy
 
 
 # # Changelog:
 # * 2025/12/20: deproject only the QU part
 # * 2026/01/17: fix bug related to field pairs ordering in TF calculation
 # * 2026/02/03: fix bug confusing sigma and fwhm in get_theory_cls
+# * 2026/02/20: add healpix toy filtering routines
+
+
+def get_npix_integer_factors(nside):
+    factors = [1, 3, 4, 12]
+    factors2 = []
+    for f in factors:
+        factors2 += [f*2**i for i in range(2*int(np.log2(nside)))]
+    return list(set(factors + factors2))
+
+
+def detrend_linear(tod, axis=1, dtype=float):
+    """
+    """
+    tod = np.swapaxes(tod, axis, -1)
+    x = np.linspace(0, 1, tod.shape[-1], dtype=dtype)
+    count = max(1, min(tod.shape[-1], tod.shape[-1] // 2))
+    slopes = (tod[..., -count:].mean(axis=-1, dtype=dtype)
+              - tod[..., :count].mean(axis=-1, dtype=dtype))
+    tod -= slopes[..., None] * x
+    tod -= np.mean(tod, axis=-1)[..., None]
+
+    return np.swapaxes(tod, axis, -1)
+
+
+def counter_1_over_f(freqs, fk=1., n=2):
+    """
+    Counter 1/f filter for noise w/ PSD that follows:
+    
+    w*(1 + (fk/f)**n) 
+    where w is the white noise level, fk is the knee frequency, and
+    n is the 1/f index.
+    You need the (fk, n) pair or noise_fit_stats to apply this filter.
+
+    Arguments
+    ---------
+        fk : float or nparray
+            The knee frequency of the noise.
+        n : float or nparray
+            The 1/f index of the noise.
+        noise_fit_stats : str
+            The name of the 1/f fit result that is wrapped in the tod.
+            This is an output of ``fft_ops.fit_noise_model``.
+    """
+    if (fk is None or n is None):
+        raise ValueError("You must input the (fk, n).")
+    elif np.isscalar(fk) and np.isscalar(n):
+        return 1/(1+(fk/freqs)**n)
+    else:
+        raise ValueError("The fk and n must be a float value or array-like with length of number of detectors")
+
+
+def subscan_polyfilter(tod, axis=1, nsamp_subscan=2048, degree=1):
+    """
+    Subscan polynomial filter using Legendre polynomials.
+    """
+    assert tod.shape[axis] / nsamp_subscan == tod.shape[axis] // nsamp_subscan
+    
+    tod = np.swapaxes(tod, axis, -1)
+    degree_corr = degree + 1
+    subscan_indices = np.arange(0, tod.shape[axis]+1, nsamp_subscan)
+
+    for start, end in zip(subscan_indices[:-1], subscan_indices[1:]):
+        ### Normalization constant of legendre function 
+        norm_vector = np.arange(degree_corr)
+        norm_vector = 2./(2.*norm_vector+1)
+        
+        # Get each subscan to be filtered
+        tod_mat = copy.deepcopy(tod[:, start:end])
+
+        # Scale time range into [-1,1]
+        x = np.linspace(-1, 1, tod_mat.shape[1])
+        dx = np.mean(np.diff(x))
+
+        # Generate legendre functions of each degree and store them in an array
+        arr_legendre = np.array([eval_legendre(deg, x) for deg in range(degree_corr)])
+        
+        means = np.mean(tod_mat, axis=1)[:, np.newaxis]
+        tod_mat -= means
+        
+        # Make model to be subtracted
+        coeffs = np.dot(arr_legendre, tod_mat.T)
+        model = np.dot((coeffs/norm_vector[:, np.newaxis]).T,arr_legendre)*dx
+
+        model += means
+        tod[:,start:end] -= model
+
+    return np.swapaxes(tod, axis, -1)
+
+
+def toy_filter_healpix(map_in,
+                       nside_samp=1024, Tsamp=0.05, Tthrow=3600,
+                       nsamp_buffer=2000, nsamp_subscan=2048, fknee_coof=0.1):
+    """
+    Toy filter a healpix map including detrending, subscan poly filter, and
+    counter-1/f filter.
+    """
+    # Upgrading
+    nside_in = hp.npix2nside(map_in.shape[-1])
+    map = hp.ud_grade(map_in.copy(), nside_samp)[-2:]
+    npix = hp.nside2npix(nside_samp)
+
+    # derived parameters
+    Nsamp_sky = npix
+    Tsamp_sky = Tsamp * Nsamp_sky
+    Nsamp_throw = int(Nsamp_sky // (Tsamp_sky / Tthrow))  # tile the sky in az throws
+    Nthrow = min(get_npix_integer_factors(nside_samp), key=lambda x: abs(x - Tsamp_sky/Tthrow))
+    Nsamp_throw = int(Nsamp_sky / Nthrow)
+    Tthrow = Tsamp_sky * Nsamp_throw / Nsamp_sky
+
+    tod = map.reshape((2, Nsamp_throw, -1))
+
+    # Subscan polyfilter
+    tod = subscan_polyfilter(tod, axis=1, nsamp_subscan=nsamp_subscan)
+
+    # Buffering
+    tod_buffered = np.zeros((2, 2*nsamp_buffer+Nsamp_throw, Nthrow))
+    for it in range(1, Nthrow):
+        tod_buffered[:, :nsamp_buffer, it] = tod[:, -nsamp_buffer:, it-1]
+    for it in range(0, Nthrow-1):
+        tod_buffered[:, -nsamp_buffer:, it] = tod[:, :nsamp_buffer, it+1]
+    for it in range(Nthrow):
+        tod_buffered[:, nsamp_buffer:-nsamp_buffer, it] = tod[:, :, it]
+
+    # Detrend
+    tod_buffered = detrend_linear(tod_buffered, axis=1)
+
+    # FFT filtering 
+    ftod_buffered = np.fft.rfft(tod_buffered, axis=1)
+    freq = np.fft.fftfreq(ftod_buffered[0,:,0].size, d=Tsamp)
+    ftod_buffered *= counter_1_over_f(freq, fk=fknee_coof, n=2)[None, :, None]
+
+    # TOD 2 SKY
+    tod_buffered_filtered = np.fft.irfft(ftod_buffered, axis=1)
+    tod_cut = tod_buffered_filtered[:, nsamp_buffer:-nsamp_buffer, :]
+    mapQU_out = tod_cut.reshape((2, -1))
+
+    # Downgrading
+    mapQU_out = hp.ud_grade(mapQU_out, nside_in)
+    map_out = copy.deepcopy(map_in)
+    map_out[-2:] = mapQU_out
+
+    return map_out
 
 
 def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
@@ -65,9 +210,9 @@ def plot_transfer_function(lb, tf_dict, lmin, lmax, field_pairs, file_name):
 
             for ic, case in enumerate(cases):
                 if case == "":
-                    tf = copy.deepcopy(tf_dict)
+                    tf = tf_dict
                 else:
-                    tf = copy.deepcopy(tf_dict[case])
+                    tf = tf_dict[case]
                 ax.plot(lb, tf[f"{f1}_to_{f2}"], color=colors[ic])
 
                 if id1 == npan-1:
@@ -98,7 +243,7 @@ def get_inv_coupling(coupling_fname, mask, nmt_bins,
     """
     """
     if os.path.isfile(coupling_fname) and not overwrite:
-        inv_coupling = np.load(coupling_fname)["inv_coupling"]
+        inv_coupling = np.load(coupling_fname, allow_pickle=True)["inv_coupling"]
         if not return_bp_win:
             return inv_coupling
         else:
