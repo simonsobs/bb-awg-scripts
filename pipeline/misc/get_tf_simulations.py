@@ -151,7 +151,7 @@ def main(args):
 
     lmax_sim = lmax + 500
     ells = np.arange(lmax_sim + 1)
-    beam = np.exp(-0.5*ells*(ells+1)*np.radians(smooth_fwhm/60.)**2)
+    beam = hp.gauss_beam(np.radians(smooth_fwhm/60.), lmax_sim)
 
     ps = 1 / (ells + 0.01)**2 * beam**2
     fl = bandlim_sine2(ells, 650, 50)
@@ -161,7 +161,7 @@ def main(args):
     for id_sim in range(id_start, id_start+n_sims):
         print(f"sim {id_sim+1} / {id_start + n_sims}")
         np.random.seed(id_sim)
-        alms = hp.synalm(ps, lmax=lmax_sim)
+        alms = hp.synalm(ps, lmax=lmax)  # TODO: check if CAR is biased
         alms = hp.almxfl(alms, fl)
 
         for tag in pure_types:
@@ -171,13 +171,14 @@ def main(args):
 
             if pix_type == "hp":
                 map = hp.alm2map(
-                    alms_list, nside, lmax=lmax_sim
+                    alms_list, nside, lmax=lmax
                 )
+                print(tag, [m.any() for m in map])
                 hp.write_map(
                     f"{out_dir}/{tag}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
                     map,
                     overwrite=True,
-                    dtype=float
+                    dtype=np.float64
                 )
             elif pix_type == "car":
                 map = curvedsky.alm2map(

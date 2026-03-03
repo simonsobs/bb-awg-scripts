@@ -120,7 +120,7 @@ def main(args):
        "r": 0.0,
     }
     ls, clth = get_theory_cls(cosmo, lmax=lmax_sims)
-    beam = np.exp(-0.5*ls*(ls+1)*np.radians(smooth_fwhm/60.)**2)
+    beam = hp.gauss_beam(np.deg2rad(smooth_fwhm/60.), lmax=lmax_sims)
     pairs_keep = {
         "TEB": ["TT", "TE", "EE", "BB"],
         "EB": ["EE", "BB"],
@@ -142,15 +142,15 @@ def main(args):
         print(f"sim {id_sim+1} / {id_start + n_sims}")
         alms = hp.synalm(
             [clth["TT"], clth["TE"], clth["EE"], clth["BB"]],
-            lmax=lmax_sims
+            lmax=lmax  # TODO: check if CAR is biased
         )
         if args.pix_type == "hp":
-            map = hp.alm2map(alms, nside=nside)
+            map = hp.alm2map(alms, nside=nside, lmax=lmax)
             hp.write_map(
                 f"{out_dir}/cmb{pols_keep}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
                 map,
                 overwrite=True,
-                dtype=float
+                dtype=np.float64
             )
         elif args.pix_type == "car":
             map = curvedsky.alm2map(alms, template, copy=True)
