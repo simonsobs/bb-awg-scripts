@@ -39,7 +39,7 @@ def main(args):
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=1)
+    logger = pp_util.init_logger("benchmark", verbosity=2)
     if rank == 0:
         start = time.time()
 
@@ -254,29 +254,20 @@ def main(args):
             ]
             meta.restrict("dets", thinned)
 
-        # Process data here to have t2p leakage template
-        # Only need to run it once for all simulations
-        # and only the pre-demodulation part.
-        # if args.t2p_template:
-        #     data_aman = pp_util.multilayer_load_and_preprocess(
-        #         obs_id,
-        #         configs_init,
-        #         configs_proc,
-        #         meta=meta,
-        #         logger=logger,
-        #         init_only=True,
-        #     )
-        # else:
-        #     data_aman = None
-        data_aman = pp_util.multilayer_load_and_preprocess(
-            obs_id,
-            configs_init,
-            configs_proc,
-            meta=meta,
-            logger=logger,
-            stop_for_sims=True,
-            ignore_cfg_check=True
-        )
+        try:
+            data_aman = pp_util.multilayer_load_and_preprocess(
+                obs_id,
+                configs_init,
+                configs_proc,
+                meta=meta,
+                logger=logger,
+                stop_for_sims=True,
+                ignore_cfg_check=True,
+            )
+        except loader.LoaderError:
+            logger.warning(f"NO METADATA IN DATA_AMAN: "
+                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            continue
 
         for sim_id, sim_type in product(sim_ids, args.sim_types):
 
