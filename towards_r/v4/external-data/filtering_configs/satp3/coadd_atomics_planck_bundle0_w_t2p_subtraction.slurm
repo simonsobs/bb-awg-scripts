@@ -1,0 +1,32 @@
+#!/bin/bash -l
+
+#SBATCH --account=simonsobs
+#SBATCH --nodes=4
+#SBATCH --ntasks=16
+#SBATCH --cpus-per-task=28
+#SBATCH --time=8:00:00
+#SBATCH --job-name=planck-0-satp3-ext-coadd
+
+set -e
+
+export PYTHONPATH="${PYTHONPATH}:/home/ar3186/software/sotodlib_forks/"
+
+# Log file
+tel_ext_data="planck"  # planck # wmap
+tel_filter="satp3"
+bundle="0"   # 0 # 1
+log="./logs/log_${tel_ext_data}_${bundle}_${tel_filter}_ext_coadd_w_t2p_subtraction"
+
+export OMP_NUM_THREADS=28
+
+bb_awg_scripts_dir=/home/ar3186/awg-clean/bb-awg-scripts ## YOUR bb_awg_scripts DIRECTORY
+
+filtering_config=${bb_awg_scripts_dir}/towards_r/v4/external-data/filtering_configs/${tel_filter}/filtering_config_${tel_ext_data}_bundle${bundle}_w_t2p_subtraction.yaml
+
+echo "Launching pipeline at $(date)"
+
+srun -n 16 -c 28 --cpu_bind=cores \
+     python -u ${bb_awg_scripts_dir}/pipeline/filtering/coadd_filtered_ext.py --config_file $filtering_config \
+     > ${log} 2>&1
+
+echo "Ending batch script at $(date)"
