@@ -11,7 +11,6 @@ import sys
 import time
 from itertools import product
 
-sys.path.insert(0, "/home/ar3186/.local/soconda_v0.6.15/lib/python3.12/site-packages")
 
 import sotodlib.preprocess.preprocess_util as pp_util
 from sotodlib.core.metadata import loader
@@ -45,7 +44,7 @@ def main(args):
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=3)
+    logger = pp_util.init_logger("benchmark", verbosity=2)
     if rank == 0:
         start = time.time()
 
@@ -249,20 +248,21 @@ def main(args):
             ]
             meta.restrict("dets", thinned)
 
-        # Process data here to have t2p leakage template
-        # Only need to run it once for all simulations
-        # and only the pre-demodulation part.
-        if args.t2p_template:
+        try:
+            print(pp_util.__file__)
             data_aman = pp_util.multilayer_load_and_preprocess(
                 obs_id,
                 configs_init,
                 configs_proc,
                 meta=meta,
                 logger=logger,
-                init_only=True,
+                stop_for_sims=True,
+                ignore_cfg_check=True,
             )
-        else:
-            data_aman = None
+        except loader.LoaderError:
+            logger.warning(f"NO METADATA IN DATA_AMAN: "
+                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            continue
 
         for isim_type, sim_type in enumerate(args.sim_types):
 
@@ -294,7 +294,8 @@ def main(args):
                     sim_map=sim,
                     meta=meta,
                     logger=logger,
-                    t2ptemplate_aman=data_aman
+                    ignore_cfg_check=True,
+                    data_amans=data_aman
                 )
             except loader.LoaderError:
                 logger.warning(

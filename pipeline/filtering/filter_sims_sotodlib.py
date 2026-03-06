@@ -39,7 +39,7 @@ def main(args):
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=1)
+    logger = pp_util.init_logger("benchmark", verbosity=2)
     if rank == 0:
         start = time.time()
 
@@ -52,7 +52,8 @@ def main(args):
     preprocess_config_init = args.preprocess_config_init
     preprocess_config_proc = args.preprocess_config_proc
 
-    logger.debug(f"Using atomic DB from {atom_db}")
+    if rank == 0:
+        logger.debug(f"Using atomic DB from {atom_db}")
 
     # Sim related arguments
     sim_dir = args.sim_dir
@@ -66,7 +67,8 @@ def main(args):
             sim_ids = np.array([int(sim_ids)])
     else:
         raise ValueError("Argument 'sim_ids' has the wrong format")
-    logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
+    if rank == 0:
+        logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Ensure that freq_channels for the metadata follow the "f090" convention.
     # We keep the original labels in a dict called freq_labels.
@@ -120,7 +122,8 @@ def main(args):
     ctimes = {patch: None for patch in args.patches}
     for patch in args.patches:
         if os.path.isfile(bundle_dbs[patch]):
-            logger.info(f"Loading from {bundle_dbs[patch]}.")
+            if rank == 0:
+                logger.info(f"Loading from {bundle_dbs[patch]}.")
             bundle_coordinator = coord.BundleCoordinator.from_dbfile(
                 bundle_dbs[patch], bundle_id=bundle_id
             )
@@ -130,7 +133,6 @@ def main(args):
         # Extract all ctimes for the given bundle_id
         ctimes[patch] = bundle_coordinator.get_ctimes(bundle_id=bundle_id)
 
-    # TODO: check if query_restrict is channel- or patch-specific
     query_restrict = args.query_restrict
     queries = {
         (patch, freq_channel): fu.get_query_atomics(
@@ -164,10 +166,11 @@ def main(args):
                     atomic_metadata[split_label] += [
                         (patch, freq_channel, obs_id, wafer)
                     ]
-        logger.info(
-            f"{patch}, {freq_channel}, 'science': "
-            f"{len(res_science)} atomic maps to filter."
-        )
+        if rank == 0:
+            logger.info(
+                f"{patch}, {freq_channel}, 'science': "
+                f"{len(res_science)} atomic maps to filter."
+            )
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
@@ -254,20 +257,20 @@ def main(args):
             ]
             meta.restrict("dets", thinned)
 
-        # Process data here to have t2p leakage template
-        # Only need to run it once for all simulations
-        # and only the pre-demodulation part.
-        if args.t2p_template:
+        try:
             data_aman = pp_util.multilayer_load_and_preprocess(
                 obs_id,
                 configs_init,
                 configs_proc,
                 meta=meta,
                 logger=logger,
-                init_only=True,
+                stop_for_sims=True,
+                ignore_cfg_check=True,
             )
-        else:
-            data_aman = None
+        except loader.LoaderError:
+            logger.warning(f"NO METADATA IN DATA_AMAN: "
+                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            continue
 
         for sim_id, sim_type in product(sim_ids, args.sim_types):
 
@@ -301,7 +304,8 @@ def main(args):
                     sim_map=sim,
                     meta=meta,
                     logger=logger,
-                    t2ptemplate_aman=None,
+                    ignore_cfg_check=True,
+                    data_amans=data_aman
                 )
             except loader.LoaderError:
                 logger.warning(
@@ -319,13 +323,13 @@ def main(args):
                 continue
 
             if aman is None:
-                logger.warrning(
+                logger.warning(
                     "No detectors left in this atomic."
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
                 )
                 continue
             if aman.dets.count <= 1:
-                logger.warrning(
+                logger.warning(
                     "No detectors left in this atomic."
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
                 )
