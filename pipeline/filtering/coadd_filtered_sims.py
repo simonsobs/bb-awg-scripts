@@ -369,6 +369,15 @@ def main(args):
             ".fits",
             f"_bundle{bundle_id}_{freq_channel}_{split_label}{batch_label}_filtered.fits"  # noqa
         )
+        
+        out_map_path = os.path.join(coadded_dirs[patch, freq_channel], out_fname)
+        out_wgt_path = os.path.join(coadded_dirs[patch, freq_channel],
+                                    out_fname.replace(".fits", "_weights.fits"))
+
+        if os.path.exists(out_map_path) and os.path.exists(out_wgt_path):
+            logger.info(f"Skipping existing outputs: {out_fname}")
+            continue
+        
         fu.save_and_plot_map(
             map_filtered, out_fname,
             coadded_dirs[patch, freq_channel],
