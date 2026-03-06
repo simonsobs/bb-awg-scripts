@@ -52,7 +52,8 @@ def main(args):
     preprocess_config_init = args.preprocess_config_init
     preprocess_config_proc = args.preprocess_config_proc
 
-    logger.debug(f"Using atomic DB from {atom_db}")
+    if rank == 0:
+        logger.debug(f"Using atomic DB from {atom_db}")
 
     # Sim related arguments
     sim_dir = args.sim_dir
@@ -66,7 +67,8 @@ def main(args):
             sim_ids = np.array([int(sim_ids)])
     else:
         raise ValueError("Argument 'sim_ids' has the wrong format")
-    logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
+    if rank == 0:
+        logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Ensure that freq_channels for the metadata follow the "f090" convention.
     # We keep the original labels in a dict called freq_labels.
@@ -120,7 +122,8 @@ def main(args):
     ctimes = {patch: None for patch in args.patches}
     for patch in args.patches:
         if os.path.isfile(bundle_dbs[patch]):
-            logger.info(f"Loading from {bundle_dbs[patch]}.")
+            if rank == 0:
+                logger.info(f"Loading from {bundle_dbs[patch]}.")
             bundle_coordinator = coord.BundleCoordinator.from_dbfile(
                 bundle_dbs[patch], bundle_id=bundle_id
             )
@@ -130,7 +133,6 @@ def main(args):
         # Extract all ctimes for the given bundle_id
         ctimes[patch] = bundle_coordinator.get_ctimes(bundle_id=bundle_id)
 
-    # TODO: check if query_restrict is channel- or patch-specific
     query_restrict = args.query_restrict
     queries = {
         (patch, freq_channel): fu.get_query_atomics(
@@ -164,10 +166,11 @@ def main(args):
                     atomic_metadata[split_label] += [
                         (patch, freq_channel, obs_id, wafer)
                     ]
-        logger.info(
-            f"{patch}, {freq_channel}, 'science': "
-            f"{len(res_science)} atomic maps to filter."
-        )
+        if rank == 0:
+            logger.info(
+                f"{patch}, {freq_channel}, 'science': "
+                f"{len(res_science)} atomic maps to filter."
+            )
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
@@ -320,13 +323,13 @@ def main(args):
                 continue
 
             if aman is None:
-                logger.warrning(
+                logger.warning(
                     "No detectors left in this atomic."
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
                 )
                 continue
             if aman.dets.count <= 1:
-                logger.warrning(
+                logger.warning(
                     "No detectors left in this atomic."
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
                 )
