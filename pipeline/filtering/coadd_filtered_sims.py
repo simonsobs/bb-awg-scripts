@@ -399,7 +399,7 @@ def main(args):
                 plot_dirs[patch, freq_channel],
                 pix_type=pix_type, do_plot=False
             )
-        comm.Barrier()
+        #comm.Barrier()
     if rank == 0:
         end = time.time()
         print(f"Coadding completed in (wall time) {int(end - start)}s.")

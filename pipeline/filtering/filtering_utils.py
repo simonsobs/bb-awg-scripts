@@ -93,12 +93,22 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
             num_real += 1
 
         if not file_stats_only:
-            if pix_type == "car":
-                wmap = enmap.read_map(fname_wmap)
-                w = enmap.read_map(fname_w)
-            elif pix_type == "hp":
-                wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
-                w = hp.read_map(fname_w, field=range(3), nest=True)
+            try:
+                if pix_type == "car":
+                    wmap = enmap.read_map(fname_wmap)
+                    w = enmap.read_map(fname_w)
+                elif pix_type == "hp":
+                    wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
+                    w = hp.read_map(fname_w, field=range(3), nest=True)
+            except Exception as e:
+                if logger is not None:
+                    logger.error(
+                        f"Failed to read atomic files; skipping.\n"
+                        f"  wmap: {fname_wmap}\n"
+                        f"  w   : {fname_w}\n"
+                        f"  err : {repr(e)}"
+                    )
+                continue
 
             if np.isnan(wmap).any() or np.isnan(w).any():
                 logger.debug(f"Atomic has NANs. Skipping {fname_wmap}")
