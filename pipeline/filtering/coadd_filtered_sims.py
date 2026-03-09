@@ -305,91 +305,100 @@ def main(args):
             sim_id=sim_id
         )
         assert os.path.isdir(map_dir), map_dir
-        tracemalloc.start()
 
-        if not ib:
-            logger.info(f"Loading atomics for ({patch}, {freq_channel}, "
-                        f"{split_label})"
-                        f" to filter {sim_type}, {split_label}, sim {sim_id}")
-
-        w_list, wmap_list = ([], [])
-
-        if split_label == "science":
-            for coadd in intra_obs_pair:
-                wmap_l, w_l = fu.get_atomics_maps_list(
-                    sim_id, sim_type,
-                    atomic_metadata[patch, freq_channel, coadd, ib],
-                    freq_labels[freq_channel], map_dir, coadd,
-                    sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                    logger=logger
-                )
-                wmap_list += wmap_l
-                w_list += w_l
-            current_gb, peak_gb = [1024**(-3) * c
-                                   for c in tracemalloc.get_traced_memory()]
-            logger.info("Traced Memory for 'science' (Current, Peak): "
-                        f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
-        elif split_label in inter_obs_splits:
-            for coadd in intra_obs_pair:
-                wmap_l, w_l = fu.get_atomics_maps_list(
-                    sim_id, sim_type,
-                    atomic_metadata[patch, freq_channel, split_label, coadd, ib],  # noqa
-                    freq_channel, map_dir, coadd,
-                    sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                    logger=logger
-                )
-                wmap_list += wmap_l
-                w_list += w_l
-        else:
-            wmap_list, w_list = fu.get_atomics_maps_list(
-                sim_id, sim_type,
-                atomic_metadata[patch, freq_channel, split_label, ib],
-                freq_channel, map_dir, split_label,
-                sim_string_format, mfmt=mfmt, pix_type=pix_type,
-                logger=logger
-            )
-
-        if not ib:
-            logger.info(f"Coadding atomics for ({patch}, {freq_channel}, "
-                        f"{split_label})"
-                        f" to filter {sim_type}, sim {sim_id}")
-
-        map_filtered, weights = bu.coadd_maps(
-            wmap_list, w_list, pix_type=pix_type,
-            car_template_map=car_map_template
-        )
         out_fname = sim_string_format.format(
             sim_id=sim_id,
             sim_type=sim_type,
             freq_channel=freq_labels[freq_channel]
         ).split("/")[-1]
+
         batch_label = "" if ib is None else f"_batch{ib}of{nbatches}"
         out_fname = out_fname.replace(
             ".fits",
-            f"_bundle{bundle_id}_{freq_channel}_{split_label}{batch_label}_filtered.fits"  # noqa
+            f"_bundle{bundle_id}_{freq_channel}_{split_label}{batch_label}_filtered.fits"
         )
-        
-        out_map_path = os.path.join(coadded_dirs[patch, freq_channel], out_fname)
-        out_wgt_path = os.path.join(coadded_dirs[patch, freq_channel],
-                                    out_fname.replace(".fits", "_weights.fits"))
+        weight_fname = out_fname.replace(".fits", "_weights.fits")
 
-        if os.path.exists(out_map_path) and os.path.exists(out_wgt_path):
-            logger.info(f"Skipping existing outputs: {out_fname}")
-            continue
-        
-        fu.save_and_plot_map(
-            map_filtered, out_fname,
-            coadded_dirs[patch, freq_channel],
-            plot_dirs[patch, freq_channel],
-            pix_type=pix_type
+        out_map_path = os.path.join(coadded_dirs[patch, freq_channel], out_fname)
+        out_weight_path = os.path.join(coadded_dirs[patch, freq_channel], weight_fname)
+
+        skip_this = (
+            os.path.isfile(out_map_path) and
+            os.path.isfile(out_weight_path)
         )
-        fu.save_and_plot_map(
-            weights, out_fname.replace(".fits", "_weights.fits"),
-            coadded_dirs[patch, freq_channel],
-            plot_dirs[patch, freq_channel],
-            pix_type=pix_type, do_plot=False
-        )
-        tracemalloc.stop()
+
+        if skip_this:
+            logger.info(
+                f"Skipping existing coadd for "
+                f"({patch}, {freq_channel}, {split_label}, sim {sim_id}, {sim_type}, ib={ib})"
+            )
+        else:
+            if ib is None:
+                logger.info(f"Loading atomics for ({patch}, {freq_channel}, "
+                            f"{split_label})"
+                            f" to filter {sim_type}, {split_label}, sim {sim_id}")
+
+            w_list, wmap_list = ([], [])
+
+            if split_label == "science":
+                tracemalloc.start()
+                for coadd in intra_obs_pair:
+                    wmap_l, w_l = fu.get_atomics_maps_list(
+                        sim_id, sim_type,
+                        atomic_metadata[patch, freq_channel, coadd, ib],
+                        freq_labels[freq_channel], map_dir, coadd,
+                        sim_string_format, mfmt=mfmt, pix_type=pix_type,
+                        logger=logger
+                    )
+                    wmap_list += wmap_l
+                    w_list += w_l
+                current_gb, peak_gb = [1024**(-3) * c
+                                       for c in tracemalloc.get_traced_memory()]
+                logger.info("Traced Memory for 'science' (Current, Peak): "
+                            f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
+                tracemalloc.stop()
+            elif split_label in inter_obs_splits:
+                for coadd in intra_obs_pair:
+                    wmap_l, w_l = fu.get_atomics_maps_list(
+                        sim_id, sim_type,
+                        atomic_metadata[patch, freq_channel, split_label, coadd, ib],
+                        freq_channel, map_dir, coadd,
+                        sim_string_format, mfmt=mfmt, pix_type=pix_type,
+                        logger=logger
+                    )
+                    wmap_list += wmap_l
+                    w_list += w_l
+            else:
+                wmap_list, w_list = fu.get_atomics_maps_list(
+                    sim_id, sim_type,
+                    atomic_metadata[patch, freq_channel, split_label, ib],
+                    freq_channel, map_dir, split_label,
+                    sim_string_format, mfmt=mfmt, pix_type=pix_type,
+                    logger=logger
+                )
+
+            if ib is None:
+                logger.info(f"Coadding atomics for ({patch}, {freq_channel}, "
+                            f"{split_label})"
+                            f" to filter {sim_type}, sim {sim_id}")
+
+            map_filtered, weights = bu.coadd_maps(
+                wmap_list, w_list, pix_type=pix_type,
+                car_template_map=car_map_template
+            )
+
+            fu.save_and_plot_map(
+                map_filtered, out_fname,
+                coadded_dirs[patch, freq_channel],
+                plot_dirs[patch, freq_channel],
+                pix_type=pix_type
+            )
+            fu.save_and_plot_map(
+                weights, weight_fname,
+                coadded_dirs[patch, freq_channel],
+                plot_dirs[patch, freq_channel],
+                pix_type=pix_type, do_plot=False
+            )
         comm.Barrier()
     if rank == 0:
         end = time.time()
