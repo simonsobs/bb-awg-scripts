@@ -1,0 +1,422 @@
+context_file: 'use_this_local_260115.yaml'
+plot_dir: '/scratch/gpfs/SIMONSOBS/external_data_e2e/v4/preprocessing/satp1_20251216_init/preprocess_plots'
+jobdb: '/scratch/gpfs/SIMONSOBS/sat-iso/v4/preprocessing/satp1_20251216_jobs.db'
+
+subobs:
+  use: ['wafer_slot', 'wafer.bandpass']
+  label: wafer_slot
+  
+archive:
+  index: '/scratch/gpfs/SIMONSOBS/sat-iso/v4/preprocessing/satp1_20251216_init/process_archive.sqlite'
+  policy:
+    type: 'simple'
+    filename: '/scratch/gpfs/SIMONSOBS/sat-iso/v4/preprocessing/satp1_20251216_init/preprocess_archive.h5'
+
+process_pipe:
+    - name: "move"
+      skip_on_sim: True 
+      process:
+        name: "det_info.wiregrid_cal.gamma"
+        new_name: "focal_plane.gamma"
+
+    - name: "pointing_model"
+      skip_on_sim: True
+      process: True
+
+    - name: "hwp_angle_model"
+      skip_on_sim: True
+      process: True
+      calc:
+        on_sign_ambiguous: 'fail'
+      save: True
+
+    - name: "correct_iir_params"
+      skip_on_sim: False
+      process: True
+  
+    - name: "smurfgaps_flags"
+      skip_on_sim: True
+      calc:
+        buffer: 200
+        name: "smurfgaps"
+        merge: True
+      save: True
+
+    - name: "dark_dets"
+      skip_on_sim: False
+      signal: "signal"
+      calc: True
+      save: True
+      select: True
+
+    - name : "fp_flags"
+      skip_on_sim: False
+      calc:
+        merge: False
+      save: True
+      select: True
+
+    - name: "detcal_nan_cuts"
+      skip_on_sim: False
+      select:
+        fields: ['tau_eff', 'phase_to_pW', 'r_n', 'r_frac', 'p_sat']
+
+    - name: "flag_turnarounds"
+      skip_on_sim: False
+      process: 
+        method: "scanspeed"
+        t_buffer: 4.
+      calc:
+        method: "scanspeed"
+        t_buffer: 4.
+      save: True
+      
+    - name: "det_bias_flags"
+      skip_on_sim: False
+      calc: 
+        rfrac_range: [0.05, 0.95]
+        psat_range: [1.0e-6, 20.0]
+        rn_range: [0.0, 0.1]
+        si_range: [-1.0e+9, -1.0e+1]
+      save: True
+      select: True
+
+    - name: "trends"
+      skip_on_sim: False
+      calc:
+        max_trend: 2.5
+        t_piece: 10
+      save: True
+      select:
+        kind: "any"
+
+    - name: "jumps"
+      skip_on_sim: False
+      calc:
+        function: "slow_jumps"
+        jump_configs:
+          win_size: 800
+          thresh: 20.0
+      save:
+        jumps_name: "jumps_slow"
+      select:
+        max_n_jumps: 5
+
+    - name: "fix_jumps"
+      skip_on_sim: True
+      process:
+        jumps_aman: "jumps_slow"
+
+    - name: "glitchfill"
+      skip_on_sim: True
+      flags: "jumps_slow.jump_flag"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"    
+
+    - name: "jumps"
+      skip_on_sim: False
+      calc:
+        function: "twopi_jumps"
+        jump_configs:
+          win_size: 30
+          nsigma: 10.0
+      save:
+        jumps_name: "jumps_2pi"
+      select:
+        max_n_jumps: 20
+
+    - name: "fix_jumps"
+      skip_on_sim: True
+      process:
+        jumps_aman: "jumps_2pi"
+        nbuf: 10
+        use_pca: False
+        modes: 1
+
+    - name: "glitchfill"
+      skip_on_sim: True
+      flags: "jumps_2pi.jump_flag"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"
+
+    - name: "detrend"
+      skip_on_sim: False
+      process:
+        method: "median"
+
+    - name: "glitches"
+      skip_on_sim: False
+      glitch_name: "glitches_pre_hwpss"
+      calc:
+        t_glitch: 0.007
+        buffer: 100
+        hp_fc: 6.0
+        n_sig: 30
+        subscan: True
+      save: True
+      select:
+        max_n_glitch: 1000
+        sig_glitch: 30
+
+    - name : "source_flags"
+      skip_on_sim: False
+      calc:
+        mask: {'shape': 'circle',
+               'xyr': [0, 0, 20.]}
+        center_on: ['moon'] # list of str
+        res: 20 # arcmin
+        max_pix: 4000000 # max number of allowed pixels in map
+        distance: 20 # max distance of footprint from source in degrees
+      save: True
+      select: True # optional
+
+    - name: "combine_flags"
+      skip_on_sim: False
+      process:
+        flag_labels: ['jumps_2pi.jump_flag', 'glitches_pre_hwpss.glitch_flags', 'jumps_slow.jump_flag',
+                      'source_flags.moon', 'turnaround_flags.turnarounds','smurfgaps.smurfgaps']
+        total_flags_label: 'pre_hwpss_flags'
+        method: 'union'
+
+    - name: "combine_flags"
+      skip_on_sim: False
+      process:
+        flag_labels: ['glitches_pre_hwpss.glitch_flags', 'source_flags.moon']
+        total_flags_label: 'pre_glitchfill'
+        method: 'union'
+
+    - name: "calibrate"
+      skip_on_sim: True
+      process:
+        kind: "array"
+        cal_array: "det_cal.phase_to_pW"
+
+    - name: "estimate_hwpss"
+      skip_on_sim: True
+      calc:
+        hwpss_stats_name: "pre_hwpss_stats"
+        flags: "flags.pre_hwpss_flags"
+      save: True
+
+    - name: "subtract_hwpss"
+      skip_on_sim: False
+      hwpss_stats: "pre_hwpss_stats"
+      process:
+        subtract_name: "signal"
+
+    - name: "glitchfill"
+      skip_on_sim: True
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"
+        glitch_flags: "pre_glitchfill"
+
+    - name: "glitches"
+      skip_on_sim: False
+      glitch_name: "glitches_post_hwpss"
+      calc:
+        t_glitch: 0.007
+        buffer: 100
+        hp_fc: 6.0
+        n_sig: 30
+        subscan: True
+      save: True
+      select:
+        max_n_glitch: 100
+        sig_glitch: 30
+
+    - name: "combine_flags"
+      skip_on_sim: False
+      process:
+        flag_labels: ['jumps_2pi.jump_flag', 'glitches_pre_hwpss.glitch_flags', 'jumps_slow.jump_flag',
+                      'glitches_post_hwpss.glitch_flags', 'source_flags.moon', 'turnaround_flags.turnarounds','smurfgaps.smurfgaps']
+        total_flags_label: 'glitch_flags'
+        method: 'union'
+
+    - name: "estimate_hwpss"
+      skip_on_sim: True
+      calc:
+        hwpss_stats_name: "post_hwpss_stats"
+        flags: "flags.glitch_flags"
+      save: True
+
+    - name: "subtract_hwpss"
+      skip_on_sim: False
+      hwpss_stats: "post_hwpss_stats"
+      process:
+        subtract_name: "signal"
+
+    - name: "glitchfill"
+      skip_on_sim: True
+      flags: "glitches_post_hwpss.glitch_flags"
+      process:
+        nbuf: 10
+        use_pca: False
+        modes: 1
+        wrap: "signal"
+
+    - name: "detrend"
+      skip_on_sim: False
+      process:
+        method: "median"
+
+    - name : "ptp_flags"
+      skip_on_sim: False
+      calc:
+        signal_name: "signal"
+        kurtosis_threshold: 1
+      save: True
+      select: True
+
+    - name: "psd"
+      skip_on_sim: True
+      signal: "signal"
+      wrap: "Pxx_raw"
+      process:
+        max_samples: 524288 #2**19
+        merge: False
+        nperseg: 65536 #2**16
+        noverlap: 0
+        full_output: True
+
+    - name: "noise"
+      skip_on_sim: False  # Don't skip for cuts.
+      fit: True
+      subscan: False
+      psd: "Pxx_raw"
+      calc:
+        fwhite: [5, 20]
+        lowf: 0.3
+        f_max: 50
+        mask: True
+        fixed_param: 'wn'
+        binning: True
+        fknee_est: 1.5
+        alpha_est: 3.0
+        merge_name: 'noise_fit_statsT'
+        bounds:
+          - [0.3, 20.0] # lower bound fknee, alpha
+          - [1.0, 6.0] # upper bound fknee, alpha
+      save:
+        wrap_name: "noiseT"
+      select:
+        min_noise: 18.0e-6
+        max_noise: 125.0e-6
+        max_fknee: 7.0
+
+    - name: "cut_bad_dist"
+      select:
+        param_name: "noiseT.white_noise"
+
+    - name: "calibrate"
+      skip_on_sim: True
+      process:
+        kind: "array"
+        cal_array: "relcal.rel_factor"
+      select:
+        cut_array: "relcal.missing_factor"
+
+    - name: "fourier_filter"
+      skip_on_sim: True
+      process:
+        filt_function: "iir_filter"
+        filter_params:
+          invert: True
+
+    - name: "fourier_filter"
+      skip_on_sim: True
+      process:
+        filt_function: "timeconst_filter"
+        filter_params:
+          timeconst: "det_cal.tau_eff"
+          invert: True
+
+    - name: "calibrate"
+      skip_on_sim: True
+      signal: "signal"
+      process:
+        kind: "array"
+        cal_array: "abscal.abscal_cmb"
+
+    - name: "apodize"
+      skip_on_sim: False
+      process:
+        apodize_samps: 2000
+    
+    - name: "demodulate"
+      skip_on_sim: False
+      process:
+        trim_samps: 6000
+        demod_cfgs:
+          bpf_cfg: {'type': 'sine2', 'center': '4*f_HWP', 'width': '3.8*f_HWP', 'trans_width': 0.1}
+          lpf_cfg: {'type': 'sine2', 'cutoff': '1.9*f_HWP', 'trans_width': 0.1}
+
+    - name : "tod_stats"
+      skip_on_sim: True
+      signal: "dsT"
+      wrap: "tod_stats_T"
+      calc:
+        stat_names: ["std", "ptp"]
+        split_subscans: True
+      save: True
+
+    - name : "tod_stats"
+      skip_on_sim: True
+      signal: "demodQ"
+      wrap: "tod_stats_Q"
+      calc:
+        stat_names: ["median", "std", "skew", "kurtosis", "ptp"]
+        split_subscans: True
+      save: True
+
+    - name : "tod_stats"
+      skip_on_sim: True
+      signal: "demodU"
+      wrap: "tod_stats_U"
+      calc:
+        stat_names: ["median", "std", "skew", "kurtosis", "ptp"]
+        split_subscans: True
+      save: True
+
+    - name : "noisy_subscan_flags"
+      skip_on_sim: False  # Keeping flags for sims
+      stats_name: tod_stats
+      calc:
+        subscan_stats: ["demodQ", "demodU", "dsT"]
+        nstd_lim: 3.0
+        ptp_lim: 0.8
+        kurt_lim: 0.5
+        skew_lim: 0.5
+        noisy_detector_lim: 0.5
+        merge: False
+      save: True
+      select: True
+
+    - name: "combine_flags"
+      skip_on_sim: False
+      process:
+        flag_labels: ['turnaround_flags.left_scan', 'jumps_2pi.jump_flag', 'glitches_pre_hwpss.glitch_flags', 'jumps_slow.jump_flag', 'glitches_post_hwpss.glitch_flags','smurfgaps.smurfgaps', 'turnaround_flags.turnarounds', 'source_flags.moon', 'noisy_subscan_flags.valid_subscans']
+        total_flags_label: 'glitch_flags_right'
+        method: 'union'
+
+    - name: "combine_flags"
+      skip_on_sim: False
+      process:
+        flag_labels: ['turnaround_flags.right_scan', 'jumps_2pi.jump_flag', 'glitches_pre_hwpss.glitch_flags', 'jumps_slow.jump_flag', 'glitches_post_hwpss.glitch_flags','smurfgaps.smurfgaps', 'turnaround_flags.turnarounds', 'source_flags.moon', 'noisy_subscan_flags.valid_subscans']
+        total_flags_label: 'glitch_flags_left'
+        method: 'union'
+
+    - name: "combine_flags"
+      skip_on_sim: False
+      process:
+        flag_labels: ['turnaround_flags.turnarounds', 'jumps_2pi.jump_flag', 'glitches_pre_hwpss.glitch_flags', 'jumps_slow.jump_flag', 'glitches_post_hwpss.glitch_flags', 'source_flags.moon','smurfgaps.smurfgaps', 'noisy_subscan_flags.valid_subscans']
+        total_flags_label: 'glitch_flags'
+        method: 'union'

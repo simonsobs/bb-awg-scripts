@@ -25,7 +25,7 @@ def calc_science(atomic_path, rows, shape, wcs, i_ctime, col_dict):
         for waf in ['ws0','ws1','ws2','ws3','ws4','ws5','ws6']:
             list_of_avail_splits = []
             for spl in ['det_left','det_right','det_in','det_out','det_upper','det_lower','scan_left','scan_right']:
-                if os.path.isfile(atomic_path + '%s/atomic_%i_%s_%s_%s_weights.fits'%(str(ctime)[0:5],ctime,waf,freq,spl)):
+                if os.path.isfile(os.path.join(atomic_path, '%s/atomic_%i_%s_%s_%s_weights.fits'%(str(ctime)[0:5],ctime,waf,freq,spl))):
                     list_of_avail_splits.append(spl)
             Nsplits = len(list_of_avail_splits)
             if Nsplits > 0:
@@ -33,7 +33,7 @@ def calc_science(atomic_path, rows, shape, wcs, i_ctime, col_dict):
                 div_stack = enmap.zeros((3,)+shape,wcs=wcs)
                 try:
                     for spl in ['scan_left','scan_right']:
-                        div = enmap.read_map(atomic_path + '%s/atomic_%i_%s_%s_%s_weights.fits'%(str(ctime)[0:5],ctime,waf,freq,spl))
+                        div = enmap.read_map(os.path.join(atomic_path, '%s/atomic_%i_%s_%s_%s_weights.fits'%(str(ctime)[0:5],ctime,waf,freq,spl)))
                         div = enmap.extract(div, shape, wcs)
                         div_stack += div
                 except FileNotFoundError:
@@ -49,7 +49,7 @@ def calc_science(atomic_path, rows, shape, wcs, i_ctime, col_dict):
 
                 # we prepare the list to insert. This will have all of the info for the obs, but with a random freq, wafer, split
                 list_to_insert = row.copy()
-                    
+
                 list_to_insert[col_dict["freq_channel"]] = freq
                 list_to_insert[col_dict["wafer"]] = waf
                 list_to_insert[col_dict["split_label"]] = 'science'
@@ -63,6 +63,10 @@ def calc_science(atomic_path, rows, shape, wcs, i_ctime, col_dict):
                 #print(list_to_insert)
                 tuple_ = tuple(list_to_insert)
                 out.append(tuple_)
+            else:
+                nmissing_sub += 1
+                continue
+
     return out, nmissing_sub
 def main(executor, as_completed_callable):
     shape, wcs = enmap.read_map_geometry("/scratch/gpfs/SIMONSOBS/so/science-readiness/footprint/v20250306/so_geometry_v20250306_sat_f090.fits")
@@ -85,7 +89,7 @@ def main(executor, as_completed_callable):
     col_dict = {}
     for ii, col_name in enumerate(col_names):
         col_dict[col_name] = ii
-        
+
     print(len(indices))
     nmissing=0
     ncomplete = 0

@@ -3,6 +3,7 @@ import argparse
 import shutil
 import os
 import sys
+import time
 from itertools import product
 
 import sotodlib.preprocess.preprocess_util as pp_util
@@ -43,6 +44,7 @@ def main(args):
 
     # Initialize the logger
     logger = pp_util.init_logger("benchmark", verbosity=3)
+    start = time.time()
 
     if args.nbatch_atomics > 1:
         raise NotImplementedError("Only nbatch_atomics=1 is supported.")
@@ -122,6 +124,9 @@ def main(args):
                                        or args.force_delete):
             shutil.rmtree(map_dir)
             logger.info(f"Deleting {map_dir}")
+
+    end = time.time()
+    print(f"Deletion of atomics completed in (wall time) {int(end - start)}s.")
 
 
 if __name__ == "__main__":

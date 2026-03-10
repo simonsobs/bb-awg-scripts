@@ -6,20 +6,26 @@ import os
 def filter_string(rundir, outdir, bb_awg_scripts_dir,
                   id_sim_first, id_sim_last, tel,
                   email):
+    """
+    This makes a slurm script that is optimised to filtering atomic maps with
+    sotodlib on tiger3 using MPI parallelization.
+    """
     if id_sim_last == id_sim_first:
         sim_string = str(id_sim_last)
     else:
         sim_string = f"{id_sim_first},{id_sim_last}"
+    nnodes = 50
+    ntasks = int(112*nnodes)
     string = """#!/bin/bash -l
 
 #SBATCH --account=simonsobs
-#SBATCH --nodes=20
-#SBATCH --ntasks=560
-#SBATCH --cpus-per-task=4
-#SBATCH --time=06:00:00
+#SBATCH --nodes={nnodes}
+#SBATCH --ntasks={ntasks}
+#SBATCH --cpus-per-task=1
+#SBATCH --time=18:00:00
 #SBATCH --job-name={tel}-cov-sims-filter-{sim_string}
 #SBATCH --mail-user={user_email}
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=ALL
 
 set -e
 
@@ -27,9 +33,6 @@ set -e
 log="{outdir}/log_{tel}_cov_sims_filter_{sim_string}"
 
 export OMP_NUM_THREADS=1
-
-module use --append /scratch/gpfs/SIMONSOBS/modules
-module load soconda
 
 rundir={rundir}  ## YOUR RUNNING DIRECTORY
 outdir={outdir}  ## YOUR LOGGING DIRECTORY
@@ -40,7 +43,7 @@ filtering_config="${{outdir}}/filtering_config_covar_{tel}_full.yaml"
 
 # This produces filtered atomics
 NOW=$( date '+%F_%H:%M:%S' )
-srun -n 560 -c 4 --cpu_bind=cores \\
+srun -n {ntasks} -c 1 --cpu_bind=cores \\
 python -u \\
     ${{bb_awg_scripts_dir}}/pipeline/filtering/filter_sims_sotodlib.py \\
     --config_file $filtering_config --sim_ids {sim_string} \\
@@ -49,26 +52,34 @@ python -u \\
 echo "Ending batch script at $(date)"
     """.format(rundir=rundir, outdir=outdir,
                bb_awg_scripts_dir=bb_awg_scripts_dir,
-               sim_string=sim_string, tel=tel, user_email=email)
+               sim_string=sim_string, tel=tel, user_email=email,
+               nnodes=nnodes, ntasks=ntasks)
     return string
 
 
 def coadd_string(rundir, outdir, bb_awg_scripts_dir, id_sim_first, id_sim_last,
                  tel, email):
+    """
+    This makes a slurm script that is optimised to coadding filtered atomic
+    maps with sotodlib on tiger3 usin MPI parallelization, meant to be
+    executed after running the filtering script.
+    """
     if id_sim_last == id_sim_first:
         sim_string = str(id_sim_last)
     else:
         sim_string = f"{id_sim_first},{id_sim_last}"
+    nnodes = 20
+    ntasks = int(112*nnodes/14)
     string = """#!/bin/bash -l
 
 #SBATCH --account=simonsobs
-#SBATCH --nodes=20
-#SBATCH --ntasks=80
-#SBATCH --cpus-per-task=28
-#SBATCH --time=03:00:00
+#SBATCH --nodes={nnodes}
+#SBATCH --ntasks={ntasks}
+#SBATCH --cpus-per-task=14
+#SBATCH --time=10:00:00
 #SBATCH --job-name={tel}-cov-sims-coadd-{sim_string}
 #SBATCH --mail-user={user_email}
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=ALL
 
 set -e
 
@@ -76,9 +87,6 @@ set -e
 log="{outdir}/log_{tel}_cov_sims_coadd_{sim_string}"
 
 export OMP_NUM_THREADS=1
-
-module use --append /scratch/gpfs/SIMONSOBS/modules
-module load soconda
 
 rundir={rundir}  ## YOUR RUNNING DIRECTORY
 outdir={outdir}  ## YOUR LOGGING DIRECTORY
@@ -89,7 +97,7 @@ filtering_config="${{outdir}}/filtering_config_covar_{tel}_full.yaml"
 
 # This coadds them into bundles
 NOW=$( date '+%F_%H:%M:%S' )
-srun -n 80 -c 28 --cpu_bind=cores \\
+srun -n {ntasks} -c 14 --cpu_bind=cores \\
 python -u \\
     ${{bb_awg_scripts_dir}}/pipeline/filtering/coadd_filtered_sims.py \\
     --config_file $filtering_config --sim_ids {sim_string} \\
@@ -98,12 +106,17 @@ python -u \\
 echo "Ending batch script at $(date)"
     """.format(rundir=rundir, outdir=outdir,
                bb_awg_scripts_dir=bb_awg_scripts_dir,
-               sim_string=sim_string, tel=tel, user_email=email)
+               sim_string=sim_string, tel=tel, user_email=email,
+               nnodes=nnodes, ntasks=ntasks)
     return string
 
 
 def delete_string(rundir, outdir, bb_awg_scripts_dir,
                   id_sim_first, id_sim_last, tel, email):
+    """
+    This makes a slurm script that serially deletes from disk all filtered
+    atomic maps, meant to be executed after coadding them into bundles.
+    """
     if id_sim_last == id_sim_first:
         sim_string = str(id_sim_last)
     else:
@@ -117,7 +130,7 @@ def delete_string(rundir, outdir, bb_awg_scripts_dir,
 #SBATCH --time=00:61:00
 #SBATCH --job-name={tel}-cov-sims-delete-{sim_string}
 #SBATCH --mail-user={user_email}
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=ALL
 
 set -e
 
