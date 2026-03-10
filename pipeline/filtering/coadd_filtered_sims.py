@@ -53,13 +53,14 @@ def main(args):
     # Output directories
     patches = args.patches
     out_dirs = {
-        (patch, freq_channel):
+        (patch, freq_channel, sim_type):
         args.output_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel]
+            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
         )
-        for patch, freq_channel in product(patches, freq_channels)
+        for patch, freq_channel, sim_type in product(patches, freq_channels, sim_types)
     }
-    coadded_dirs = {key: f"{out_dir}/coadded_sims"
+    coadded_dirs = {key: args.coadded_dirs.format(
+                    patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type)
                     for key, out_dir in out_dirs.items()}
     plot_dirs = {key: f"{out_dir}/plots" for key, out_dir in out_dirs.items()}
 
@@ -87,7 +88,7 @@ def main(args):
             sim_ids = np.arange(int(id_min), int(id_max)+1)
         else:
             sim_ids = np.array([int(sim_ids)])
-    elif sim_ids != [None]:
+    elif not isinstance(sim_ids, list):
         raise ValueError("Argument 'sim_ids' has the wrong format")
     logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 

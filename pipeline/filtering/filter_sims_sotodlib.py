@@ -70,7 +70,7 @@ def main(args):
             sim_ids = np.arange(int(id_min), int(id_max)+1)
         else:
             sim_ids = np.array([int(sim_ids)])
-    else:
+    elif not isinstance(sim_ids, list):
         raise ValueError("Argument 'sim_ids' has the wrong format")
     logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
@@ -84,13 +84,18 @@ def main(args):
 
     # Create output directories
     atomics_dir = {}
-    for freq_channel, patch in product(freq_channels, args.patches):
+    for freq_channel, patch, sim_type in product(freq_channels, args.patches, sim_types):
         atomics_dir[(patch, freq_channel)] = {}
         out_dir = args.output_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel]
+            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
+        )
+        atomic_sim_dir = args.atomic_sim_dir.format(
+            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
         )
         for sim_id in sim_ids:
-            atomics_dir[patch, freq_channel][sim_id] = f"{out_dir}/atomic_sims/{sim_id:04d}"  # noqa
+            atomics_dir[patch, freq_channel][sim_id] = f"{atomic_sim_dir}"  # noqa
+            if sim_id is not None:
+                atomics_dir[patch, freq_channel][sim_id] += f"/{sim_id:04d}"  # noqa
             os.makedirs(atomics_dir[patch, freq_channel][sim_id],
                         exist_ok=True)
 
