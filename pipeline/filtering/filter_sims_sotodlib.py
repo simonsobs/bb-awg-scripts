@@ -11,6 +11,7 @@ import sotodlib.preprocess.preprocess_util as pp_util
 from sotodlib.core.metadata import loader
 from pixell import enmap
 
+
 # TODO: Make it an actual module
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'bundling'))
@@ -27,13 +28,7 @@ def main(args):
     """
     """
     if args.pix_type not in ["hp", "car"]:
-        raise ValueError(
-            "Unknown pixel type, must be 'car' or 'hp'."
-        )
-    for required_tag in ["{sim_id", "{sim_type"]:
-        if required_tag not in args.sim_string_format:
-            raise ValueError(f"sim_string_format does not have \
-                             required placeholder {required_tag}")
+        raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
 
     # MPI related initialization
     rank, size, comm = mpi.init(True)
@@ -55,16 +50,27 @@ def main(args):
     logger.debug(f"Using atomic DB from {atom_db}")
 
     # Sim related arguments
+    if args.sim_types is None:
+        sim_types = [None]
+        logger.warning("No sim_types considered. If this is by mistake, "
+                       "please ensure to add in the filtering yaml.")
+    else:
+        sim_types = args.sim_types
     sim_dir = args.sim_dir
     sim_string_format = args.sim_string_format
-    sim_ids = args.sim_ids
+    if args.sim_ids is None:
+        sim_ids = [None]
+        logger.warning("No sim_ids considered. If this is by mistake, "
+                       "please ensure to add in the filtering yaml.")
+    else:
+        sim_ids = args.sim_ids
     if isinstance(sim_ids, str):
         if "," in sim_ids:
             id_min, id_max = sim_ids.split(",")
             sim_ids = np.arange(int(id_min), int(id_max)+1)
         else:
             sim_ids = np.array([int(sim_ids)])
-    else:
+    elif not isinstance(sim_ids, list):
         raise ValueError("Argument 'sim_ids' has the wrong format")
     logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
@@ -78,13 +84,18 @@ def main(args):
 
     # Create output directories
     atomics_dir = {}
-    for freq_channel, patch in product(freq_channels, args.patches):
+    for freq_channel, patch, sim_type in product(freq_channels, args.patches, sim_types):
         atomics_dir[(patch, freq_channel)] = {}
         out_dir = args.output_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel]
+            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
+        )
+        atomic_sim_dir = args.atomic_sim_dir.format(
+            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
         )
         for sim_id in sim_ids:
-            atomics_dir[patch, freq_channel][sim_id] = f"{out_dir}/atomic_sims/{sim_id:04d}"  # noqa
+            atomics_dir[patch, freq_channel][sim_id] = f"{atomic_sim_dir}"  # noqa
+            if sim_id is not None:
+                atomics_dir[patch, freq_channel][sim_id] += f"/{sim_id:04d}"  # noqa
             os.makedirs(atomics_dir[patch, freq_channel][sim_id],
                         exist_ok=True)
 
@@ -197,7 +208,7 @@ def main(args):
 
         # First, check if atomic maps already exist.
         maps_exist = True
-        for sim_id, sim_type in product(sim_ids, args.sim_types):
+        for sim_id, sim_type in product(sim_ids, sim_types):
             # Path to unfiltered simulation
             map_fname = sim_string_format.format(
                 sim_id=sim_id,
@@ -227,7 +238,7 @@ def main(args):
         if maps_exist and not args.overwrite_atomics:
             logger.info(
                 f"Map exists: ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                f" to filter sims {sim_ids}, {args.sim_types}"
+                f" to filter sims {sim_ids}, {sim_types}"
             )
             continue
 
@@ -269,7 +280,7 @@ def main(args):
         else:
             data_aman = None
 
-        for sim_id, sim_type in product(sim_ids, args.sim_types):
+        for sim_id, sim_type in product(sim_ids, sim_types):
 
             # Path to unfiltered simulation
             map_fname = sim_string_format.format(
@@ -319,13 +330,13 @@ def main(args):
                 continue
 
             if aman is None:
-                logger.warrning(
+                logger.warning(
                     "No detectors left in this atomic."
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
                 )
                 continue
             if aman.dets.count <= 1:
-                logger.warrning(
+                logger.warning(
                     "No detectors left in this atomic."
                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
                 )
@@ -386,7 +397,7 @@ if __name__ == "__main__":
         "--config_file", type=str, help="yaml file with configuration."
     )
     parser.add_argument(
-        "--sim_ids", type=str, default="0",
+        "--sim_ids", type=str, default=None,
         help="Simulations to be processed, in format [first],[last]."
              "Overwrites the yaml file configs."
     )
