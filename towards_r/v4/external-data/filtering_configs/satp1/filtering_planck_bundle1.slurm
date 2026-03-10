@@ -5,13 +5,13 @@
 #SBATCH --ntasks=1120
 #SBATCH --cpus-per-task=2
 #SBATCH --time=10:00:00
-#SBATCH --job-name=wmap-satp1-ext-filtering-bundle1
+#SBATCH --job-name=planck-satp1-ext-filtering-bundle1
 #SBATCH --mail-user arianna.rizzieri@physics.ox.ac.uk
 
 set -e
 
 # Log file
-tel_ext_data="wmap"  # planck # wmap
+tel_ext_data="planck"  # planck # wmap
 tel_filter="satp1"
 bundle="1"   # 0 # 1
 log="./logs/log_${tel_ext_data}_${bundle}_${tel_filter}_ext_filtering"
