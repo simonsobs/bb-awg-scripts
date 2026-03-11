@@ -6,6 +6,8 @@ n_bundles: 4
 seed: 10  # Only needed for make_bundle_db unless included in format for bundle_db
 
 ## Optional shared arguments ##
+query_restrict: "pwv < 2 AND median_weight_qu < 2e10 AND ((f_hwp > 1.9 AND f_hwp < 2.3) OR (f_hwp > -2.3 AND f_hwp < -1.9))"
+only_make_db: False
 patch: ["south"]  # Only needed for make_bundle_db unless included in format for bundle_db or map_string_format
 
 ## Optional for make_bundle_db ##
