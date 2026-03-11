@@ -78,7 +78,8 @@ def make_bundle_db(config):
         config.atomic_db, n_bundles=config.n_bundles,
         seed=config.seed, null_props=config.inter_obs_props,
         query_restrict=config.query_restrict_patch,
-        atomic_list=config.atomic_list
+        atomic_list=config.atomic_list, bundle_duration=config.bundle_duration,
+        bundle_t0=config.bundle_t0
     )
     if os.path.dirname(config.bundle_db_full):
         os.makedirs(os.path.dirname(config.bundle_db_full), exist_ok=True)
