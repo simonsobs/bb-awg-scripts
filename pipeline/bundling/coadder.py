@@ -42,6 +42,9 @@ class _Coadder:
         self.bundle_info = None
         self.info_meta = None
 
+        if not isinstance(freq_channel, str):
+            raise TypeError(f"Coadder arg freq_channel should be a string. It is {type(freq_channel)}: {freq_channel}")
+
     def _get_obs_ids(self, bundle_id, null_prop_val=None):
         """
         Infer all obs_ids from the bundle_db given a bundle_id and a set of
@@ -250,7 +253,7 @@ class SignFlipper(_Coadder):
     """
     def __init__(self, bundle_db, freq_channel, car_map_template, map_dir,
                  split_label=None, wafer=None, abscal=None,
-                 bundle_id=None, null_prop_val=None, pix_type="hp"):
+                 bundle_id=None, null_prop_val=None, pix_type="hp", atomic_list=None):
         """
         Constructor for the SignFlipper class. Creates a SignFlipper object,
         given map and bundling information from bundle_db.
@@ -283,9 +286,12 @@ class SignFlipper(_Coadder):
             indicating the null split that observations belong to.
         pix_type : str
             Pixelization type. Admissible values are "hp", "car.
+        atomic_list: list
+            External list of string tuples (obs_id, wafer, freq_channel) of
+            atomic maps that are to be used for the bundling.
         """
         super().__init__(bundle_db, freq_channel, wafer,
-                         pix_type=pix_type, car_map_template=car_map_template)
+                         pix_type=pix_type, car_map_template=car_map_template, atomic_list=atomic_list)
 
         bundle_info = self._get_bundle_info(bundle_id, map_dir, null_prop_val=null_prop_val, split_label=split_label)
         self.fnames = list(bundle_info['filename'])

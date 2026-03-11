@@ -14,7 +14,7 @@ patch: ["south"]  # Only needed for make_bundle_db unless included in format for
 query_restrict: "pwv < 2 AND median_weight_qu < 2e10 AND ((f_hwp > 1.9 AND f_hwp < 2.3) OR (f_hwp > -2.3 AND f_hwp < -1.9))"
 only_make_db: False
 
-bundle_duration: 'obs'
+bundle_duration: 86400
 bundle_t0: 1704121200
 
 inter_obs_props:
