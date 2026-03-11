@@ -42,6 +42,9 @@ class _Coadder:
         self.bundle_info = None
         self.info_meta = None
 
+        if not isinstance(freq_channel, str):
+            raise TypeError(f"Coadder arg freq_channel should be a string. It is {type(freq_channel)}: {freq_channel}")
+
     def _get_obs_ids(self, bundle_id, null_prop_val=None):
         """
         Infer all obs_ids from the bundle_db given a bundle_id and a set of

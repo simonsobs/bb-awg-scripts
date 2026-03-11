@@ -95,7 +95,7 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
                 car_map_template=args.car_map_template,
                 split_label=split_intra_obs,
                 map_dir=map_dir_i,
-                atomic_list=atomic_list
+                atomic_list=args.atomic_list
             )
 
             print(len(signflipper.fnames))
@@ -180,26 +180,22 @@ def main(args):
     rank, size, comm = mpi.init(True)
 
     for patch in np.atleast_1d(patch_list):
-        if config.only_make_db:
-            config_db = utils.child_config(config, patch=patch)
-            make_signflip(config_db, size, rank, comm)
-        else:
-            for it in itertools.product(*its):
-                config_it = utils.child_config(config, patch=patch, freq_channel=it[0], wafer=it[1])
-                intra_pair = config_it.intra_obs_pair
+        for it in itertools.product(*its):
+            config_it = utils.child_config(config, patch=patch, freq_channel=it[0], wafer=it[1])
+            intra_pair = config_it.intra_obs_pair
 
-                # --- science/full run: coadd the pair, no inter-obs null ---
-                make_signflip(config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=None)
+            # --- science/full run: coadd the pair, no inter-obs null ---
+            make_signflip(config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=None)
 
-                # Inter-obs splits
-                if config_it.inter_obs_splits is not None:
-                    for null_prop_val in config_it.inter_obs_splits:
-                        make_signflip(config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=null_prop_val)
+            # Inter-obs splits
+            if config_it.inter_obs_splits is not None:
+                for null_prop_val in config_it.inter_obs_splits:
+                    make_signflip(config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=null_prop_val)
 
-                # Intra-obs splits
-                if config_it.intra_obs_splits is not None:
-                    for split_val in config_it.intra_obs_splits:
-                        make_signflip(config_it, size, rank, comm, split_intra_obs=split_val, split_inter_obs=None)
+            # Intra-obs splits
+            if config_it.intra_obs_splits is not None:
+                for split_val in config_it.intra_obs_splits:
+                    make_signflip(config_it, size, rank, comm, split_intra_obs=split_val, split_inter_obs=None)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled noise maps.")
