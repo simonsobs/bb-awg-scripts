@@ -7,7 +7,8 @@ import os
 class BundleCoordinator:
     def __init__(self, atomic_db=None, n_bundles=None, seed=None,
                  null_props=None, query_restrict="", atomic_list=None,
-                 weight='median_weight_qu'):
+                 weight='median_weight_qu', bundle_duration=None,
+                 bundle_t0=None):
         """
         Constructor for the BundleCoordinator class.
         If no atomic database path is provided, the
@@ -43,6 +44,11 @@ class BundleCoordinator:
             All other atomics in atomic_db will be left out.
         weight: str
             Column name in the atomic_db of the atomic map weight you want to use
+        bundle_duration: int
+            Width of the ctime bins that will be assigned bundles, in seconds.
+            Can also be the string 'obs' to bundle by obs_id instead.
+        bundle_t0: int
+            ctime of the lowest bin for bundle assignment. Sets phase of the binning.
        """
         if atomic_db is None:
             return
@@ -109,6 +115,8 @@ class BundleCoordinator:
 
         self.n_bundles = n_bundles
         self.seed = seed
+        self.bundle_duration = bundle_duration
+        self.bundle_t0 = bundle_t0
 
         self.gen_bundles()
         self.bundle_db['bundle_id'] = self.bundle_id
@@ -183,13 +191,15 @@ class BundleCoordinator:
     def gen_bundles(self):
         """
         Assign bundle ids for each obs_id and store in self.bundle_id.
-        bundle_ids are generated then randomly assigned to obs, enforcing
-        equal size bundles.
+        bundle_ids are generated then randomly assigned to obs or ctime chunks, depending on self.bundle_duration.
         """
-        gen = np.random.default_rng(seed=self.seed)
-        bundle_id = np.arange(self.bundle_db.shape[0]) % self.n_bundles
-        self.bundle_id = gen.permutation(bundle_id)
-        return self.bundle_id
+        if self.bundle_duration == 'obs':
+            bundle_id = _gen_bundles(self.bundle_db.shape[0], self.n_bundles, self.seed)
+        else:
+            ctimes = np.array(self.bundle_db.timestamp)
+            bundle_id = gen_bundles_time(ctimes, self.bundle_duration, self.bundle_t0, self.n_bundles, self.seed)
+        self.bundle_id = bundle_id
+        return bundle_id
 
     def get_ctimes(self, bundle_id, null_prop_val=None):
         """
@@ -327,3 +337,31 @@ def _update_null_props(null_props, conn, query_restrict="", atomic_list=None):
                     "names": all_vals
                 }
     return out_null_props
+
+def gen_bundles_time(ctimes, period, t0, n_bundles, seed=None):
+    """Assign bundles by bins of ctime.
+
+    Parameters
+    ----------
+    ctime: np.array
+        Array of ctimes that will be assigned the bundle_id of their bin.
+    period: int
+        Width of the ctime bins, in seconds.
+    t0: int
+        ctime of the lowest bin. Sets phase of the binning. In seconds.
+    """
+    TEND = 2366841600  # 1 Jan 2045
+    if np.max(ctimes) >= TEND:
+        raise ValueError(f"Max ctime {np.max(ctimes)} > max allowed time {TEND}")
+    if np.min(ctimes) < t0:
+        raise ValueError(f"Min ctime {np.min(ctimes)} < min allowed time {t0}")
+    tbins = np.arange(t0, TEND, period)
+    index = np.digitize(ctimes, tbins)  # Index of right bin edge. Bins are left-edge-inclusive.
+    bundle_id_bins = _gen_bundles(tbins.size, n_bundles, seed)
+    return bundle_id_bins[index]
+
+def _gen_bundles(size, n_bundles, seed=None):
+    """Generate a 1d array of len size with equal numbers of each integer [0, n_bundles), randomly ordered."""
+    gen = np.random.default_rng(seed=seed)
+    bundle_id = np.arange(size) % n_bundles
+    return gen.permutation(bundle_id)
