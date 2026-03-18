@@ -89,12 +89,13 @@ def main(args):
         out_dir = args.output_dir.format(
             patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
         )
-        atomic_sim_dir = args.atomic_sim_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
-        )
         for sim_id in sim_ids:
-            atomics_dir[patch, freq_channel][sim_id] = f"{atomic_sim_dir}"  # noqa
-            if sim_id is not None:
+            atomic_sim_dir = args.atomic_sim_dir.format(
+                patch=patch, freq_channel=freq_labels[freq_channel],
+                sim_type=sim_type, sim_id=sim_id
+            )
+            atomics_dir[patch, freq_channel][sim_id] = atomic_sim_dir  # noqa
+            if sim_id is not None and "{sim_id" not in args.atomic_sim_dir:
                 atomics_dir[patch, freq_channel][sim_id] += f"/{sim_id:04d}"  # noqa
             os.makedirs(atomics_dir[patch, freq_channel][sim_id],
                         exist_ok=True)
