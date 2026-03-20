@@ -47,27 +47,6 @@ def main(args):
         freq_labels[freq_channel] = f  # dict values are original labels
     freq_channels = list(freq_labels.keys())
 
-    # Input directory
-    atomic_sim_dir = args.atomic_sim_dir
-
-    # Output directories
-    patches = args.patches
-    out_dirs = {
-        (patch, freq_channel, sim_type):
-        args.output_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
-        )
-        for patch, freq_channel, sim_type in product(patches, freq_channels, sim_types)
-    }
-    coadded_dirs = {key: args.coadded_dirs.format(
-                    patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type)
-                    for key, out_dir in out_dirs.items()}
-    plot_dirs = {key: f"{out_dir}/plots" for key, out_dir in out_dirs.items()}
-
-    for key in out_dirs:
-        os.makedirs(coadded_dirs[key], exist_ok=True)
-        os.makedirs(plot_dirs[key], exist_ok=True)
-
     # Sim related arguments
     if args.sim_types is None:
         sim_types = [None]
@@ -91,6 +70,28 @@ def main(args):
     elif not isinstance(sim_ids, list):
         raise ValueError("Argument 'sim_ids' has the wrong format")
     logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
+
+    # Input directory
+    atomic_sim_dir = args.atomic_sim_dir
+
+    # Output directories
+    patches = args.patches
+    out_dirs = {
+        (patch, freq_channel, sim_type):
+        args.output_dir.format(
+            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
+        )
+        for patch, freq_channel, sim_type in product(patches, freq_channels, sim_types)
+    }
+    # here patch is index 0 in the key, sim_type is index 2, freq_channel is index 1
+    coadded_dirs = {key: args.coadded_dirs.format(
+                    patch=key[0], freq_channel=freq_labels[key[1]], sim_type=key[2])
+                    for key, out_dir in out_dirs.items()}
+    plot_dirs = {key: f"{out_dir}/plots" for key, out_dir in out_dirs.items()}
+
+    for key in out_dirs:
+        os.makedirs(coadded_dirs[key], exist_ok=True)
+        os.makedirs(plot_dirs[key], exist_ok=True)
 
     # Pixelization arguments
     pix_type = args.pix_type

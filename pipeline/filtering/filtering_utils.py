@@ -308,6 +308,7 @@ class Cfg:
     sim_dir: str
     atomic_sim_dir: str
     output_dir: str
+    coadded_dirs: str
     sim_string_format: str
     freq_channels: list
     patches: list
