@@ -373,13 +373,13 @@ def main(args):
         )
         fu.save_and_plot_map(
             map_filtered, out_fname,
-            coadded_dirs[patch, freq_channel],
+            coadded_dirs[(patch, freq_channel, sim_type)],
             plot_dirs[patch, freq_channel],
             pix_type=pix_type
         )
         fu.save_and_plot_map(
             weights, out_fname.replace(".fits", "_weights.fits"),
-            coadded_dirs[patch, freq_channel],
+            coadded_dirs[(patch, freq_channel, sim_type)],
             plot_dirs[patch, freq_channel],
             pix_type=pix_type, do_plot=False
         )
