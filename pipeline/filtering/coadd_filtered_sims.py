@@ -83,10 +83,16 @@ def main(args):
         )
         for patch, freq_channel, sim_type in product(patches, freq_channels, sim_types)
     }
-    # here patch is index 0 in the key, sim_type is index 2, freq_channel is index 1
-    coadded_dirs = {key: args.coadded_dirs.format(
-                    patch=key[0], freq_channel=freq_labels[key[1]], sim_type=key[2])
-                    for key, out_dir in out_dirs.items()}
+    if args.coadded_dirs is None:
+        coadded_dir = f"{args.output_dir}/coadded_sims"
+    else:
+        coadded_dir = args.coadded_dirs
+    coadded_dirs = {
+        key: coadded_dir.format(patch=key[0],
+                                 freq_channel=freq_labels[key[1]],
+                                 sim_type=key[2])
+        for key in out_dirs
+    }
     plot_dirs = {key: f"{out_dir}/plots" for key, out_dir in out_dirs.items()}
 
     for key in out_dirs:
