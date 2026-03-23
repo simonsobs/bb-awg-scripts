@@ -298,7 +298,7 @@ class SignFlipper(_Coadder):
         self.ws = bundle_info['weight'].to_numpy()
 
         self.full_abscal = utils.get_abscal(abscal, bundle_info['wafer'], bundle_info['freq_channel'])
-        #self.ws *= self.full_abscal**-2  # ivar gets -2 powers of abscal
+        self.ws *= self.full_abscal**-2  # ivar gets -2 powers of abscal
         self.wmaps = [utils.read_map(fname%'wmap',
                                      pix_type=self.pix_type,
                                      fields_hp=self.fields_hp)
