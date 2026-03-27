@@ -267,19 +267,19 @@ def main(args):
             meta.restrict("dets", thinned)
 
         # Process data here to have t2p leakage template
-        # Only need to run it once for all simulations
-        # and only the pre-demodulation part.
-        if args.t2p_template:
-            data_aman = pp_util.multilayer_load_and_preprocess(
-                obs_id,
-                configs_init,
-                configs_proc,
-                meta=meta,
-                logger=logger,
-                init_only=True,
-            )
-        else:
-            data_aman = None
+        # It will stop before each step with the
+        # use_data_aman flag in the preprocess config
+        # files and store the AxisManager in the data_aman
+        # dict.
+        data_aman = pp_util.multilayer_load_and_preprocess(
+            obs_id,
+            configs_init,
+            configs_proc,
+            meta=meta,
+            logger=logger,
+            stop_for_sims=True,
+            ignore_cfg_check=True
+        )
 
         for sim_id, sim_type in product(sim_ids, sim_types):
 
@@ -313,7 +313,8 @@ def main(args):
                     sim_map=sim,
                     meta=meta,
                     logger=logger,
-                    t2ptemplate_aman=data_aman
+                    ignore_cfg_check=True,
+                    data_amans=data_aman
                 )
             except loader.LoaderError:
                 logger.warning(
