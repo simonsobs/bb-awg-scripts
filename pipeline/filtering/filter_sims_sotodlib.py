@@ -271,15 +271,24 @@ def main(args):
         # use_data_aman flag in the preprocess config
         # files and store the AxisManager in the data_aman
         # dict.
-        data_aman = pp_util.multilayer_load_and_preprocess(
-            obs_id,
-            configs_init,
-            configs_proc,
-            meta=meta,
-            logger=logger,
-            stop_for_sims=True,
-            ignore_cfg_check=True
-        )
+        try:
+            data_aman = pp_util.multilayer_load_and_preprocess(
+                obs_id,
+                configs_init,
+                configs_proc,
+                meta=meta,
+                logger=logger,
+                stop_for_sims=True,
+                ignore_cfg_check=True
+            )
+        except loader.LoaderError:
+            logger.warning(f"NO METADATA: "
+                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            continue
+        except OSError as err:
+            logger.warning(f"{err}: "
+                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            continue
 
         for sim_id, sim_type in product(sim_ids, sim_types):
 
