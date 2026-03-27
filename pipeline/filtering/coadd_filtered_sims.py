@@ -47,27 +47,6 @@ def main(args):
         freq_labels[freq_channel] = f  # dict values are original labels
     freq_channels = list(freq_labels.keys())
 
-    # Input directory
-    atomic_sim_dir = args.atomic_sim_dir
-
-    # Output directories
-    patches = args.patches
-    out_dirs = {
-        (patch, freq_channel, sim_type):
-        args.output_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
-        )
-        for patch, freq_channel, sim_type in product(patches, freq_channels, sim_types)
-    }
-    coadded_dirs = {key: args.coadded_dirs.format(
-                    patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type)
-                    for key, out_dir in out_dirs.items()}
-    plot_dirs = {key: f"{out_dir}/plots" for key, out_dir in out_dirs.items()}
-
-    for key in out_dirs:
-        os.makedirs(coadded_dirs[key], exist_ok=True)
-        os.makedirs(plot_dirs[key], exist_ok=True)
-
     # Sim related arguments
     if args.sim_types is None:
         sim_types = [None]
@@ -91,6 +70,37 @@ def main(args):
     elif not isinstance(sim_ids, list):
         raise ValueError("Argument 'sim_ids' has the wrong format")
     logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
+
+    # Input directory
+    atomic_sim_dir = args.atomic_sim_dir
+
+    # Output directories
+    patches = args.patches
+    out_dirs = {
+        (patch, freq_channel, sim_type):
+        args.output_dir.format(
+            patch=patch, freq_channel=freq_labels[freq_channel],
+            sim_type=sim_type
+        )
+        for patch, freq_channel, sim_type in product(patches,
+                                                     freq_channels,
+                                                     sim_types)
+    }
+    if args.coadded_dirs is None:
+        coadded_dir = f"{args.output_dir}/coadded_sims"
+    else:
+        coadded_dir = args.coadded_dirs
+    coadded_dirs = {
+        key: coadded_dir.format(patch=key[0],
+                                freq_channel=freq_labels[key[1]],
+                                sim_type=key[2])
+        for key in out_dirs
+    }
+    plot_dirs = {key: f"{out_dir}/plots" for key, out_dir in out_dirs.items()}
+
+    for key in out_dirs:
+        os.makedirs(coadded_dirs[key], exist_ok=True)
+        os.makedirs(plot_dirs[key], exist_ok=True)
 
     # Pixelization arguments
     pix_type = args.pix_type
@@ -372,14 +382,14 @@ def main(args):
         )
         fu.save_and_plot_map(
             map_filtered, out_fname,
-            coadded_dirs[patch, freq_channel],
-            plot_dirs[patch, freq_channel],
+            coadded_dirs[(patch, freq_channel, sim_type)],
+            plot_dirs[(patch, freq_channel, sim_type)],
             pix_type=pix_type
         )
         fu.save_and_plot_map(
             weights, out_fname.replace(".fits", "_weights.fits"),
-            coadded_dirs[patch, freq_channel],
-            plot_dirs[patch, freq_channel],
+            coadded_dirs[(patch, freq_channel, sim_type)],
+            plot_dirs[(patch, freq_channel, sim_type)],
             pix_type=pix_type, do_plot=False
         )
         comm.Barrier()

@@ -60,7 +60,7 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
             out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{map_type}")
             out_fname = out_fname.replace("__", "_")
             if not os.path.exists(out_fname.format(map_type="map")) or args.overwrite:
-                print(f"{sim_id:04d}") #{out_fname}")
+                #print(f"sim_num={sim_id:04d} out_fname={out_fname}")
                 missing_tasks.append((bundle_id, sim_id))
     # --------------------------------------------
 
@@ -150,14 +150,14 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
             continue
 
         # Save maps
-        print(out_fname)
+        print('writing maps: '+out_fname)
         utils.write_maps(out_fname, args.pix_type, combined_map, combined_weight, dtype=np.float32)
 
         # Quickplots
-        if sim_id % (n_sims // 3) == 0:
-            savename_plot = out_fname[:out_fname.find(".fits")] + ".png"
-            utils.plot_map(savename_plot.format("Q"), args.pix_type, combined_map[1], unit_fac=1e6, vrange=50)
-            utils.plot_map(savename_plot.format("U"), args.pix_type, combined_map[2], unit_fac=1e6, vrange=50)
+        #if sim_id % (n_sims // 3) == 0:
+        #    savename_plot = out_fname[:out_fname.find(".fits")] + ".png"
+        #    utils.plot_map(savename_plot.format("Q"), args.pix_type, combined_map[1], unit_fac=1e6, vrange=50)
+        #    utils.plot_map(savename_plot.format("U"), args.pix_type, combined_map[2], unit_fac=1e6, vrange=50)
 
     comm.Barrier()
 
