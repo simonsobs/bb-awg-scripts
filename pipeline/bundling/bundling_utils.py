@@ -808,6 +808,7 @@ class Cfg:
     nproc: int
         **Deprecated** This doesn't do anything but kept for config compatibility
     """
+    base_dir: str
     bundle_db: str
     n_bundles: int
     atomic_db: str = ""
@@ -873,11 +874,20 @@ class Cfg:
     @classmethod
     def from_yaml(cls, path) -> "Cfg":
         with open(path, "r") as f:
-            d = yaml.safe_load(f)
+            d = _yaml_loader(f)
             return cls(**d)
 
     def copy(self):
         return deepcopy(self)
+
+def _yaml_loader(config):
+    """
+    Custom yaml loader to load the configuration file.
+    """
+    def path_constructor(loader, node):
+        return "/".join(loader.construct_sequence(node))
+    yaml.SafeLoader.add_constructor("!path", path_constructor)
+    return yaml.load(config, Loader=yaml.SafeLoader)
 
 def child_config(config, **kwargs):
     """Add key-value pairs in **kwargs to a copied config object and return."""
