@@ -732,6 +732,8 @@ class Cfg:
 
     Args
     --------
+    base_dir: str
+        Optionally used at yaml level to reduce repetition in paths. Not used here.
     bundle_db: str
         Path to bundling database
     atomic_db: str
@@ -808,7 +810,7 @@ class Cfg:
     nproc: int
         **Deprecated** This doesn't do anything but kept for config compatibility
     """
-    base_dir: str
+    base_dir: Optional[str] = ""
     bundle_db: str
     n_bundles: int
     atomic_db: str = ""
