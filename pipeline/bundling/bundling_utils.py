@@ -732,8 +732,6 @@ class Cfg:
 
     Args
     --------
-    base_dir: str
-        Optionally used at yaml level to reduce repetition in paths. Not used here.
     bundle_db: str
         Path to bundling database
     atomic_db: str
@@ -751,6 +749,8 @@ class Cfg:
         SQL query to restrict obs from the atomic database
     only_make_db: bool
         Only make bundling database and do not bundle maps
+    base_dir: str
+        Optionally used at yaml level to reduce repetition in paths. Not used here.
     patch: str
         'north', 'south', or None. May be a list of strings.
     inter_obs_props: dict
@@ -810,7 +810,6 @@ class Cfg:
     nproc: int
         **Deprecated** This doesn't do anything but kept for config compatibility
     """
-    base_dir: Optional[str] = ""
     bundle_db: str
     n_bundles: int
     atomic_db: str = ""
@@ -819,6 +818,7 @@ class Cfg:
     bundle_t0: int = 1704121200
     query_restrict: str = ""
     only_make_db: bool = False
+    base_dir: Optional[str] = ""
     patch: Optional[str] = None
     inter_obs_props: Optional[dict] = None
     overwrite: bool = False
