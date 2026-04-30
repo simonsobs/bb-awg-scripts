@@ -16,6 +16,70 @@ import copy
 # * 2026/01/17: fix bug related to field pairs ordering in TF calculation
 # * 2026/02/03: fix bug confusing sigma and fwhm in get_theory_cls
 # * 2026/02/20: add healpix toy filtering routines
+# * 2026/04/29: add class MatrixPurification
+
+
+class MatrixPurification:
+    def __init__(self, mask_apo, eigspec_fn, thresh_lo=0.25, thresh_hi=0.75):
+        """
+        Removes E/B-ambiguous modes from an observed and masked map.
+
+        Parameters:
+        mask_apo: np.array, shape (3, npix)
+            Apodized mask used to construct eigenspectrum.
+        eigspec_fn: str
+            Npz file path pointing to the eigenspectrum computed with scripts
+            in https://github.com/Magwos/matrix-based_b-purification_for_sat/tree/main
+        thresh_lo: float
+            Lower eigenvalue threshold selecting pure-E modes, in percent of
+            the total number of eigenmodes.
+        thresh_hi: float
+            Upper eigenvalue threshold selecting pure-B modes, in percent of
+            the total number of eigenmodes.
+        """
+        self.obsmat = None
+        self.mask_apo = mask_apo
+        self.mask_bool = mask_apo > 0
+
+        eigspec = np.load(eigspec_fn)
+        norm_eigvecs = eigspec['norm_eigvecs']
+        num_e = int(norm_eigvecs.shape[0]*thresh_lo)
+        num_b = int(norm_eigvecs.shape[0]*thresh_hi) 
+        v = np.hstack(
+            (norm_eigvecs[:,num_b:],  # from thresh_hi to 1
+            norm_eigvecs[:,:num_e]))  # from 0 to thresh_hi
+        self.pmat = np.tensordot(v, v, axes=((1,),(1,)))
+    
+    def observe_map(self, map, obsmat_fn, apply_mask=True):
+        """
+        Apply observation matrix, and optionally multiply by apodized mask.
+        """
+        if map.shape[0] != 3 or map.ndim != 2:
+            raise ValueError("Map must by TQU healpix map.")
+        msk = self.mask_bool
+        if self.obsmat is None:
+            print("  Loading observation matrix")
+            Npix = len(map[0])
+            obsmat = toast.ObsMat(obsmat_fn).matrix
+            idx_n2r = hp.ring2nest(hp.npix2nside(Npix), np.arange(Npix)[msk])
+            mask3 = np.hstack((idx_n2r + Npix, idx_n2r + 2*Npix))
+            self.obsmat = obsmat[mask3][:, mask3]
+        Rm = np.zeros_like(map)
+        Rm[1:,msk] = (self.obsmat @ map.copy()[1:,msk].ravel()).reshape((2,-1))
+        if not apply_mask:
+            return Rm
+        return Rm * self.mask_apo[None, :]
+
+    def purify_observed_map(self, map):
+        """
+        Apply matrix-based purification to observed and masked map.
+        """
+        if map.shape[0] != 3 or map.ndim != 2:
+            raise ValueError("Map must by TQU healpix map.")
+        pRm = np.zeros_like(map)
+        msk = self.mask_bool
+        pRm[1:, msk] = (self.pmat @ map.copy()[1:, msk].ravel()).reshape((2, -1))
+        return pRm
 
 
 def get_npix_integer_factors(nside):
