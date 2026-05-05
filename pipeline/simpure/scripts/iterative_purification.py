@@ -7,7 +7,7 @@ import sys
 
 # TODO: Make it an actual module
 sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', 'misc'))
 )
 import mpi_utils as mpi
 
@@ -21,6 +21,8 @@ import mpi_utils as mpi
 # * 2026/01/29: added flag tf_type to get_inv_coupling and compute_pspec
 # * 2026/03/02: added MPI parallelization
 # * 2026/03/03: changed output directory naming convention
+# * 2026/03/04: added power-law simulation validation
+# * 2026/05/05: tested power-law simulation validation
 
 
 def main():
@@ -28,24 +30,33 @@ def main():
     # pixelization
     pix_type = "hp"
     nside = 128
-    base_dir = "/cephfs/soukdata/user_data/kwolz/simpure"
-    filter_setup = "toy_apo_nside128"
     car_template = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/band_car_fejer1_20arcmin.fits"  # noqa: E501
     beam_fwhm = 30
     nlb = 10  # number of multipoles per bin
 
+    # Computing cluster
+    # base_dir = "/cephfs/soukdata/user_data/kwolz/simpure"  # SO:UK
+    base_dir = "/pscratch/sd/k/kwolz/bbdev/simpure"  # NERSC
+
+    # Filtering choice
+    filter_setup = "toy_apo_nside128"  # Toy filter
+    # filter_setup = f"obsmat_polyonly_apo_nside{nside}"  # Simple poly filter
+    # filter_setup = f"obsmat_apo_nside{nside}"  # BBMASTER paper
+
+
     # general
-    nsims_purify = 2  # number of pure-E sims used for template deprojection
-    nsims_cmb = 2  # number of validation sims
-    nsims_transfer = 2  # number of pure (E,B sims used for transfer function
+    nsims_purify = 100  # number of pure-E sims used for template deprojection
+    nsims_val = 10  # number of validation sims
+    nsims_transfer = 10  # number of pure (E,B sims used for transfer function
     id_sim_transfer_start = 0
     lmax_plot = 300
-    overwrite = False  # If True, always recompute products.
+    overwrite = True  # If True, always recompute products.
     deproject_null = False  # Deproject null vector instead of pureB template.
     ignore_filtering = False  # If True, only check mask-based purification.
+    plot_dl = False  # Plot D_ells or C_ells?
 
-    out_dir = f"/cephfs/soukdata/user_data/kwolz/simpure/purification/{filter_setup}_20260302/ndep{nsims_purify}_ntrf{nsims_transfer}_nval{nsims_cmb}"  # noqa: E501
-    plot_dir = f"{out_dir}/plots"  # noqa: E501
+    out_dir = f"/cephfs/soukdata/user_data/kwolz/simpure/purification/{filter_setup}_20260505/ndep{nsims_purify}_ntrf{nsims_transfer}_nval{nsims_val}"  # noqa: E501
+    plot_dir = f"{out_dir}/plots"
     mask_file = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside128.fits"  # noqa: E501
 
     sp = SimPure(pix_type,
@@ -69,13 +80,16 @@ def main():
         "tau": 0.0544,
         "r": 0.0,
     }
-    _, clth = ut.get_theory_cls(cosmo, lmax=sp.lmax+500, beam_fwhm=beam_fwhm)
+    ls = np.arange(sp.lmax+1)
+    cl2dl = ls*(ls+1)/2./np.pi if plot_dl else 1.
+    _, cl_cmb = ut.get_theory_cls(cosmo, lmax=sp.lmax+500, beam_fwhm=beam_fwhm)
+    _, cl_plaw = ut.get_plaw_cls(sp.lmax+500, beam_fwhm=beam_fwhm)
+    clth_dict = {"cmb": cl_cmb, "plaw": cl_plaw}    
 
     os.makedirs(plot_dir, exist_ok=True)
     ut.plot_map(sp.mask, file_name=f"{plot_dir}/mask", pix_type=pix_type)
     ut.plot_map(sp.mask_bin, file_name=f"{plot_dir}/mask_bin",
                 pix_type=pix_type)
-    print("size", sp.size)
 
     if not ignore_filtering:
         print("  1. Make deprojection matrix")
@@ -83,8 +97,8 @@ def main():
 
             sim_dir = f"{out_dir}/sims_filt"
             sim_fn = "sim_pureE_alpha2_filt_pure_Bout_{id_sim:04d}.fits"
-            mat_fn = f"{out_dir}/matcorr_alpha2_filt_pure_Bout_nsims{nsims_purify}.npz"  # noqa
-            mat_plot_fn = f"{plot_dir}/M_deproject_eigvals_nsims{nsims_purify}.pdf"  # noqa
+            mat_fn = f"{out_dir}/matcorr_alpha2_filt_pure_Bout_nsims{nsims_purify}.npz"  # noqa: E501
+            mat_plot_fn = f"{plot_dir}/M_deproject_eigvals_nsims{nsims_purify}.pdf"  # noqa: E501
             mp_sims, mat = sp.make_deprojection_matrix(
                 sim_dir, sim_fn, mat_fn, nsims_purify, overwrite, mat_plot_fn)
         else:
@@ -100,31 +114,31 @@ def main():
         for id in local_task_ids:
             if id == 0:
                 print("  2A. TF sims unfiltered w/o purification")
-                kwargs = {"filtered": False, "purified": False, "deprojected": False}
+                kwargs = {"filtered": False, "purified": False, "deprojected": False}  # noqa: E501
                 cls_tf_unfiltered_nopure = sp.get_tf_sims(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 1:
                 print("  2B. TF sims unfiltered w/ purification")
-                kwargs = {"filtered": False, "purified": True, "deprojected": False}
+                kwargs = {"filtered": False, "purified": True, "deprojected": False}  # noqa: E501
                 cls_tf_unfiltered_pure = sp.get_tf_sims(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 2:
                 print("  2C. TF sims filtered w/o purification")
-                kwargs = {"filtered": True, "purified": False, "deprojected": False}
+                kwargs = {"filtered": True, "purified": False, "deprojected": False}  # noqa: E501
                 cls_tf_filtered_nopure = sp.get_tf_sims(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 3:
                 print("  2D. TF sims filtered w/ purification")
-                kwargs = {"filtered": True, "purified": True, "deprojected": False}
+                kwargs = {"filtered": True, "purified": True, "deprojected": False}  # noqa: E501
                 cls_tf_filtered_pure = sp.get_tf_sims(
                     out_dir, nsims_transfer, overwrite=overwrite, 
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 4:
                 print("  2E. TF sims filtered w/ purification & deprojection")
-                kwargs = {"filtered": True, "purified": True, "deprojected": True}
+                kwargs = {"filtered": True, "purified": True, "deprojected": True}  # noqa: E501
                 cls_tf_filtered_pure_dep = sp.get_tf_sims(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     mp_sims=mp_sims, mat=mat,
@@ -167,118 +181,86 @@ def main():
                 np.savez(f"{out_dir}/transfer_nopure.npz", **transfer_nopure)
             if id == 2:
                 print("  2H. TF with purification & deprojection")
-                transfer_pure_dep = ut.get_transfer_dict(cls_tf_filtered_pure_dep,
-                                                        cls_tf_unfiltered_pure)
-                np.savez(f"{out_dir}/transfer_pure_dep.npz", **transfer_pure_dep)
+                transfer_pure_dep = ut.get_transfer_dict(
+                    cls_tf_filtered_pure_dep, cls_tf_unfiltered_pure)
+                np.savez(f"{out_dir}/transfer_pure_dep.npz",
+                         **transfer_pure_dep)
         sp.comm.barrier()
 
-        transfer_pure = np.load(f"{out_dir}/transfer_pure.npz", allow_pickle=True)
-        transfer_nopure = np.load(f"{out_dir}/transfer_nopure.npz", allow_pickle=True)
-        transfer_pure_dep = np.load(f"{out_dir}/transfer_pure_dep.npz", allow_pickle=True)
+        transfer_pure = np.load(f"{out_dir}/transfer_pure.npz", allow_pickle=True)  # noqa: E501
+        transfer_nopure = np.load(f"{out_dir}/transfer_nopure.npz", allow_pickle=True)  # noqa: E501
+        transfer_pure_dep = np.load(f"{out_dir}/transfer_pure_dep.npz", allow_pickle=True)  # noqa: E501
 
         if sp.rank == 0:
             field_pairs = ["EE", "EB", "BE", "BB"]
-            file_name = f"{plot_dir}/transfer_dep_nsims{nsims_purify}_tf_nsims{nsims_transfer}.pdf"  # noqa
+            file_name = f"{plot_dir}/transfer_dep_nsims{nsims_purify}_tf_nsims{nsims_transfer}.pdf"  # noqa: E501
             tf_dict = {
                 "nopure": transfer_nopure, "pure": transfer_pure,
                 f"pure_dep (N={nsims_purify})": transfer_pure_dep
             }
-            ut.plot_transfer_function(sp.leff, tf_dict, 0, lmax_plot, field_pairs,  # noqa
-                                      file_name=file_name)
-            ut.plot_transfer_function(sp.leff, tf_dict, 0, lmax_plot, ["BB"],
-                                      file_name=file_name.replace(".pdf", "_BB.pdf"))  # noqa
+            ut.plot_transfer_function(sp.leff, tf_dict, 0, lmax_plot,
+                                      field_pairs, file_name=file_name)
+            ut.plot_transfer_function(
+                sp.leff, tf_dict, 0, lmax_plot, ["BB"],
+                file_name=file_name.replace(".pdf", "_BB.pdf"))
+            
+            # Precompute couplings
+            coupling_cases = {"nopure", "pure", "pure_dep"}
+            for cc in coupling_cases:
+                tf = {"nopure": transfer_nopure,
+                      "pure": transfer_pure,
+                      "pure_dep": transfer_pure_dep}[cc]
+                purify = {"nopure": False, "pure": True, "pure_dep": True}[cc]
+                _ = sp.get_inv_coupling(transfer=tf,
+                                        tf_type=cc,
+                                        nmt_purify=purify)
+            for purify in [True, False]:
+                _ = sp.get_inv_coupling(nmt_purify=purify)
+
 
     # Compute CLs
     print("  3. Power spectrum computation")
     sp.comm.barrier()
-    local_task_ids = mpi.distribute_tasks(sp.size, sp.rank, 11, id_start=0)
+    cases = [{"noE": True, "filtered": False, "map": m, "purified": False, "deprojected": False, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
+    cases += [{"noE": False, "filtered": False, "map": m, "purified": True, "deprojected": False, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
+    cases += [{"noE": False, "filtered": False, "map": m, "purified": False, "deprojected": False, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
+    if not ignore_filtering:
+        cases += [{"noE": True, "filtered": True, "map": m, "purified": False, "deprojected": False, "TFed": tfed} for m in ["cmb", "plaw"] for tfed in [False, True]]  # noqa: E501
+        cases += [{"noE": False, "filtered": True, "map": m, "purified": True, "deprojected": d, "TFed": t} for m in ["cmb", "plaw"] for d in [False, True] for t in [False, True]]  # noqa: E501
+        cases += [{"noE": False, "filtered": True, "map": m, "purified": False, "deprojected": False, "TFed": t} for m in ["cmb", "plaw"] for t in [False, True]]  # noqa: E501
+
+    def case_label(case):
+        lab = ""
+        lab += "Filtered " if case["filtered"] else "Masked "
+        lab += case["map"]
+        lab += "B " if case["noE"] else "EB "
+        lab += "with purification" if case["purified"] else "without purification"  # noqa: E501
+        lab += " and deprojection" if case["deprojected"] else ""
+        lab += ", TFed" if case["TFed"] else ""
+        return lab
+    
+    if sp.rank == 0:
+        print("Coupling computation")
+
+    nranks = len(cases)
+    local_task_ids = mpi.distribute_tasks(sp.size, sp.rank, nranks, id_start=0)
     overwrite_cls = overwrite
     for id in local_task_ids:
-        if id == 0:
-            print("  3A. Masked cmbEB without purification")
-            kwargs = {"noE": False, "filtered": False, "purified": False,
-                    "deprojected": False, "TFed": False}
-            cls_masked_nopure = sp.get_cmb_spectra(
-                out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir, **kwargs)
-        if id == 1:
-            print("  3B. Masked cmbEB with purification")
-            kwargs = {"noE": False, "filtered": False, "purified": True,
-                    "deprojected": False, "TFed": False}
-            cls_masked_pure = sp.get_cmb_spectra(
-                out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir, **kwargs)
-        if id == 2:
-            print("  3C. Masked cmbB (without purification)")
-            kwargs = {"noE": True, "filtered": False, "purified": False,
-                    "deprojected": False, "TFed": False}
-            cls_noe_masked = sp.get_cmb_spectra(
-                out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir, **kwargs)
-        if not ignore_filtering:
-            if id == 3:
-                print("  3D. Filtered cmbEB without purification")
-                kwargs = {"noE": False, "filtered": True, "purified": False,
-                        "deprojected": False, "TFed": False}
-                cls_filtered_nopure = sp.get_cmb_spectra(
-                    out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir,
-                    **kwargs
-                )
-            if id == 4:
-                print("  3E. Filtered cmbEB without purification, TFed")
-                kwargs = {"noE": False, "filtered": True, "purified": False,
-                        "deprojected": False, "TFed": True}
-                cls_filtered_nopure_tfed = sp.get_cmb_spectra(
-                    out_dir, nsims_cmb, overwrite=overwrite_cls,
-                    tf=transfer_nopure["full_tf"], plot_dir=plot_dir, **kwargs
-                )
-            if id == 5:
-                print("  3F. Filtered cmbEB with purification")
-                kwargs = {"noE": False, "filtered": True, "purified": True,
-                        "deprojected": False, "TFed": False}
-                cls_filtered_pure = sp.get_cmb_spectra(
-                    out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir,
-                    **kwargs
-                )
-            if id == 6:
-                print("  3G. Fitered cmbEB with purification, TFed")
-                kwargs = {"noE": False, "filtered": True, "purified": True,
-                        "deprojected": False, "TFed": True}
-                cls_filtered_pure_tfed = sp.get_cmb_spectra(
-                    out_dir, nsims_cmb, overwrite=overwrite_cls,
-                    tf=transfer_pure["full_tf"], plot_dir=plot_dir, **kwargs
-                )
-            if id == 7:
-                print("  3H. Filtered cmbB (without purification)")
-                kwargs = {"noE": True, "filtered": True, "purified": False,
-                        "deprojected": False, "TFed": False}
-                cls_noe_filtered = sp.get_cmb_spectra(
-                    out_dir, nsims_cmb, overwrite=overwrite_cls, plot_dir=plot_dir,
-                    **kwargs
-                )
-            if id == 8:
-                print("  3J. Filtered cmbB (without purification), TFed")
-                kwargs = {"noE": True, "filtered": True, "purified": False,
-                        "deprojected": False, "TFed": True}
-                cls_noe_filtered_tfed = sp.get_cmb_spectra(
-                    out_dir, nsims_cmb, overwrite=overwrite_cls,
-                    tf=transfer_nopure["full_tf"], plot_dir=plot_dir, **kwargs
-                )
-            if id == 9:
-                print("  3K. Filtered with purification and deprojection")
-                kwargs = {"noE": False, "filtered": True, "purified": True,
-                        "deprojected": True, "TFed": False}
-                cls_filtered_pure_dep = sp.get_cmb_spectra(
-                    out_dir, nsims_cmb, overwrite=overwrite_cls, mp_sims=mp_sims, mat=mat,
-                    plot_dir=plot_dir, **kwargs
-                )
-            if id == 10:
-                print("  3L. Filtered with purification and deprojection, TFed")
-                kwargs = {"noE": False, "filtered": True, "purified": True,
-                        "deprojected": True, "TFed": True}
-                cls_filtered_pure_dep_tfed = sp.get_cmb_spectra(
-                    out_dir, nsims_cmb, overwrite=overwrite_cls,
-                    tf=transfer_pure_dep["full_tf"], mp_sims=mp_sims, mat=mat,
-                    plot_dir=plot_dir, **kwargs
-                )
-    sp.comm.barrier()
+        print(f" 3 ({id+1}/{nranks})  {case_label(cases[id])}")
+        kwargs = cases[id]
+        if kwargs["TFed"]:
+            if kwargs["purified"] and kwargs["deprojected"]:
+                tf = transfer_pure_dep["full_tf"]
+            elif kwargs["purified"] and not kwargs["deprojected"]:
+                tf = transfer_pure["full_tf"]
+            else:
+                tf = transfer_nopure["full_tf"]
+        else:
+            tf = None
+        _ = sp.get_val_spectra(
+            out_dir, nsims_val, overwrite=overwrite_cls, plot_dir=plot_dir,
+            **kwargs, tf=tf
+        )
 
     # Plotting
     sp.comm.barrier()
@@ -287,19 +269,6 @@ def main():
     
     print("  4. Plotting")
     os.makedirs(f"{out_dir}/plots", exist_ok=True)
-    plot_dl = False
-
-    cls_masked_nopure = np.load(f"{out_dir}/cls_masked_nopure.npz", allow_pickle=True)["cls"]
-    cls_masked_pure = np.load(f"{out_dir}/cls_masked_pure.npz", allow_pickle=True)["cls"]
-    cls_noe_masked = np.load(f"{out_dir}/cls_noe_masked.npz", allow_pickle=True)["cls"]
-    cls_filtered_nopure = np.load(f"{out_dir}/cls_filtered_nopure.npz", allow_pickle=True)["cls"]
-    cls_filtered_nopure_tfed = np.load(f"{out_dir}/cls_filtered_nopure_tfed.npz", allow_pickle=True)["cls"]
-    cls_filtered_pure = np.load(f"{out_dir}/cls_filtered_pure.npz", allow_pickle=True)["cls"]
-    cls_filtered_pure_tfed = np.load(f"{out_dir}/cls_filtered_pure_tfed.npz", allow_pickle=True)["cls"]
-    cls_noe_filtered = np.load(f"{out_dir}/cls_noe_filtered.npz", allow_pickle=True)["cls"]
-    cls_noe_filtered_tfed = np.load(f"{out_dir}/cls_noe_filtered_tfed.npz", allow_pickle=True)["cls"]
-    cls_filtered_pure_dep = np.load(f"{out_dir}/cls_filtered_pure_dep.npz", allow_pickle=True)["cls"]
-    cls_filtered_pure_dep_tfed = np.load(f"{out_dir}/cls_filtered_pure_dep_tfed.npz", allow_pickle=True)["cls"]
 
     _, bpw_msk_nopure = sp.get_inv_coupling(return_bp_win=True,
                                             overwrite=overwrite)
@@ -329,306 +298,264 @@ def main():
             overwrite=True
         )
 
-    clth_msk_nopure = ut.bin_theory_cls(clth, bpw_msk_nopure)
-    clth_msk_pure = ut.bin_theory_cls(clth, bpw_msk_pure)
-    if not ignore_filtering:
-        clth_fil_nopure = ut.bin_theory_cls(clth, bpw_fil_nopure)
-        clth_fil_pure = ut.bin_theory_cls(clth, bpw_fil_pure)
-        clth_fil_pure_dep = ut.bin_theory_cls(clth, bpw_fil_pure_dep)
+    for mtyp in ["plaw", "cmb"]:
+        clth = clth_dict[mtyp]
+        clth_msk_nopure = ut.bin_theory_cls(clth_dict[mtyp], bpw_msk_nopure)
+        clth_msk_pure = ut.bin_theory_cls(clth_dict[mtyp], bpw_msk_pure)
+        cls_masked_nopure = np.load(f"{out_dir}/cls_{mtyp}_masked_nopure.npz", allow_pickle=True)["cls"]  # noqa: E501
+        cls_masked_pure = np.load(f"{out_dir}/cls_{mtyp}_masked_pure.npz", allow_pickle=True)["cls"]  # noqa: E501
+        cls_noe_masked = np.load(f"{out_dir}/cls_{mtyp}_noe_masked.npz", allow_pickle=True)["cls"]  # noqa: E501
 
-    plt.figure()
-    plt.title('Cl, no filtering')
+        plt.figure()
+        plt.title('Cl, no filtering')
+        y = np.mean(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa: E501
+        yerr = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa: E501
+        plt.plot(sp.leff, y, color='b', ls="-", label=f"Masked {mtyp}, B only")
+        plt.fill_between(sp.leff, y-yerr, y+yerr, color='b', alpha=0.2)
 
-    cl2dl = sp.leff*(sp.leff+1)/2./np.pi if plot_dl else 1.
-    y = np.mean(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl
-    yerr = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa
-    plt.plot(sp.leff, y, color='b', ls="-", label="Masked CMB, B only")
-    plt.fill_between(sp.leff, y-yerr, y+yerr, color='b', alpha=0.2)
+        y = np.mean(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)*cl2dl  # noqa: E501
+        yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)*cl2dl  # noqa: E501
+        plt.plot(sp.leff, y, color='k', ls="-", label=f"Masked {mtyp}, no purification")  # noqa: E501
+        plt.fill_between(sp.leff, y-yerr, y+yerr, color='k', alpha=0.2)
 
-    y = np.mean(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)*cl2dl  # noqa
-    yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)*cl2dl  # noqa: E501
-    plt.plot(sp.leff, y, color='k', ls="-", label="Masked CMB, no purification")  # noqa: E501
-    plt.fill_between(sp.leff, y-yerr, y+yerr, color='k', alpha=0.2)
+        y = np.mean(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)*cl2dl  # noqa: E501
+        yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)*cl2dl  # noqa: E501
+        plt.plot(sp.leff, y, color='y', ls="-", label=f"Masked {mtyp}, purified")  # noqa: E501
+        plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
+        plt.plot(clth["BB"][:sp.lmax+1]*cl2dl, 'r--', alpha=0.5, label="Theory")  # noqa: E501
 
-    y = np.mean(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)*cl2dl
-    yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)*cl2dl
-    plt.plot(sp.leff, y, color='y', ls="-", label="Masked CMB, purified")
-    plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
-    ls = np.arange(sp.lmax+1)
-    clth2dl = ls*(ls+1)/2./np.pi if plot_dl else 1.
-    plt.plot(clth["BB"][:sp.lmax+1]*clth2dl, 'r--', alpha=0.5, label="Theory")
+        plt.xlim([2, lmax_plot])
+        ylim = (1e-6, 2e-3) if plot_dl else (1e-8, 1e-5)
+        # plt.ylim(ylim)
+        plt.xlabel(r"$\ell$", fontsize=14)
+        ylab = r"$D_\ell^{BB}$" if plot_dl else r"$C_\ell^{BB}$"
+        plt.ylabel(ylab, fontsize=14)
+        plt.yscale('log')
+        plt.legend()
+        print(f"  PLOT SAVED {plot_dir}/cl_{mtyp}_masked_BB.pdf")
+        plt.savefig(f"{plot_dir}/cl_{mtyp}_masked_BB.pdf", bbox_inches="tight")
+        plt.close()
 
-    plt.xlim([2, lmax_plot])
-    ylim = (1e-6, 2e-3) if plot_dl else (1e-8, 1e-5)
-    plt.ylim(ylim)
-    plt.xlabel(r"$\ell$", fontsize=14)
-    ylab = r"$D_\ell^{BB}$" if plot_dl else r"$C_\ell^{BB}$"
-    plt.ylabel(ylab, fontsize=14)
-    plt.yscale('log')
-    plt.legend()
-    print(f"  PLOT SAVED {plot_dir}/cl_masked_BB.pdf")
-    plt.savefig(f"{plot_dir}/cl_masked_BB.pdf", bbox_inches="tight")
-    plt.close()
+        thbb = sp.bins.bin_cell(clth["BB"][:sp.bins.lmax+1])
+        y = np.mean(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl
+        yerr = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa: E501
+        plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'b-', alpha=0.5, label=f"Masked {mtyp}, B only")  # noqa: E501
 
-    thbb = sp.bins.bin_cell(clth["BB"][:sp.bins.lmax+1])
-    y = np.mean(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl
-    yerr = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa
-    plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'b-', alpha=0.5, label="Masked CMB, B only")  # noqa: E501
+        thbb = clth_msk_nopure["BB"]
+        y = np.mean(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)*cl2dl  # noqa: E501
+        yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)*cl2dl  # noqa: E501
+        plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'k-', alpha=0.5, label=f"Masked {mtyp}, no purification")  # noqa: E501
 
-    thbb = clth_msk_nopure["BB"]
-    y = np.mean(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)*cl2dl  # noqa
-    yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)*cl2dl  # noqa: E501
-    plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'k-', alpha=0.5, label="Masked CMB, no purification")  # noqa: E501
+        thbb = clth_msk_pure["BB"]
+        y = np.mean(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)*cl2dl  # noqa: E501
+        yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)*cl2dl  # noqa: E501
+        plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'y-', alpha=0.5, label=f"Masked {mtyp}, purified")  # noqa: E501
+        plt.axhline(0, color="r", ls="--")
 
-    thbb = clth_msk_pure["BB"]
-    y = np.mean(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)*cl2dl
-    yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)*cl2dl
-    plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'y-', alpha=0.5, label="Masked CMB, purified")  # noqa: E501
-    plt.axhline(0, color="r", ls="--")
+        plt.xlim([2, lmax_plot])
+        plt.ylim((-20, 20))
+        plt.xlabel(r"$\ell$", fontsize=14)
+        plt.ylabel(r"$(\hat{C}_\ell^{BB} - C_\ell^{BB,\, th})/(\sigma(C_\ell^{BB})/\sqrt{N_{\rm sims}})$", fontsize=14)  # noqa: E501
+        plt.legend()
+        print(f"    PLOT SAVED {plot_dir}/bias_{mtyp}_masked_BB.pdf")
+        plt.savefig(f"{plot_dir}/bias_{mtyp}_masked_BB.pdf", bbox_inches="tight")  # noqa: E501
+        plt.close()
 
-    plt.xlim([2, lmax_plot])
-    plt.ylim((-20, 20))
-    plt.xlabel(r"$\ell$", fontsize=14)
-    plt.ylabel(r"$(\hat{C}_\ell^{BB} - C_\ell^{BB,\, th})/(\sigma(C_\ell^{BB})/\sqrt{N_{\rm sims}})$", fontsize=14)  # noqa: E501
-    plt.legend()
-    print(f"    PLOT SAVED {plot_dir}/bias_masked_BB.pdf")
-    plt.savefig(f"{plot_dir}/bias_masked_BB.pdf", bbox_inches="tight")
-    plt.close()
+        yerr_ref = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)  # noqa: E501
+        yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)
+        plt.plot(sp.leff, yerr/yerr_ref, 'b-', alpha=0.5, label=f"Masked {mtyp}, purified")  # noqa: E501
+        sigma_masked = yerr/yerr_ref
+        yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)
+        plt.plot(sp.leff, yerr/yerr_ref, 'k-', alpha=0.5, label=f"Masked {mtyp}, no purification")  # noqa: E501
+        plt.axhline(1, color="k", ls="--")
 
-    yerr_ref = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)
-    yerr = np.std(np.array([cl["BB"] for cl in cls_masked_pure]), axis=0)
-    plt.plot(sp.leff, yerr/yerr_ref, 'b-', alpha=0.5, label="Masked CMB, purified")  # noqa: E501
-    sigma_masked = yerr/yerr_ref
-
-    yerr = np.std(np.array([cl["BB"] for cl in cls_masked_nopure]), axis=0)
-    plt.plot(sp.leff, yerr/yerr_ref, 'k-', alpha=0.5, label="Masked CMB, no purification")  # noqa: E501
-    plt.axhline(1, color="k", ls="--")
-
-    plt.xlim([2, lmax_plot])
-    plt.ylim((0.5, 1000))
-    plt.xlabel(r"$\ell$", fontsize=14)
-    plt.ylabel(r"$\sigma(C_\ell^{BB, X})/\sigma(C_\ell^{BB,\,\rm{B only}})$", fontsize=14)  # noqa: E501
-    plt.yscale('log')
-    plt.legend()
-    print(f"    PLOT SAVED {plot_dir}/error_masked_BB.pdf")
-    plt.savefig(f"{plot_dir}/error_masked_BB.pdf", bbox_inches="tight")
-    plt.close()
+        plt.xlim([2, lmax_plot])
+        plt.ylim((0.5, 1000))
+        plt.xlabel(r"$\ell$", fontsize=14)
+        plt.ylabel(r"$\sigma(C_\ell^{BB, X})/\sigma(C_\ell^{BB,\,\rm{B only}})$", fontsize=14)  # noqa: E501
+        plt.yscale('log')
+        plt.legend()
+        print(f"    PLOT SAVED {plot_dir}/error_{mtyp}_masked_BB.pdf")
+        plt.savefig(f"{plot_dir}/error_{mtyp}_masked_BB.pdf", bbox_inches="tight")  # noqa: E501
+        plt.close()
 
     if not ignore_filtering:
-        for pols in ["EE", "EB", "BB"]:
-            plt.title('Cl, w/ filtering, TFed')
+        for mtyp in ["plaw", "cmb"]:
+            clth = clth_dict[mtyp]
+            clth_fil_nopure = ut.bin_theory_cls(clth_dict[mtyp], bpw_fil_nopure)  # noqa: E501
+            clth_fil_pure = ut.bin_theory_cls(clth_dict[mtyp], bpw_fil_pure)
+            clth_fil_pure_dep = ut.bin_theory_cls(clth_dict[mtyp], bpw_fil_pure_dep)  # noqa: E501
 
-            y = np.mean(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)*cl2dl  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, y, color='b', ls="-", label="Filtered CMB, B only")  # noqa: E501
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='b', alpha=0.2)
+            cls_filtered_nopure_tfed = np.load(f"{out_dir}/cls_{mtyp}_filtered_nopure_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_filtered_nopure = np.load(f"{out_dir}/cls_{mtyp}_filtered_nopure.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_filtered_pure_dep_tfed = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure_dep_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_filtered_pure_dep = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure_dep.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_filtered_pure_tfed = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_filtered_pure = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_noe_filtered_tfed = np.load(f"{out_dir}/cls_{mtyp}_noe_filtered_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_noe_filtered = np.load(f"{out_dir}/cls_{mtyp}_noe_filtered.npz", allow_pickle=True)["cls"]  # noqa: E501
 
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)*cl2dl  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, y, color='k', ls="-", label="Filtered CMB, no purification")  # noqa: E501
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='k', alpha=0.2)
+            for pols in ["EE", "EB", "BB"]:
+                plt.title('Cl w/ filtering, TFed')
+                y = np.mean(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='b', ls="-", label=f"Filtered {mtyp}, B only")  # noqa: E501
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='b', alpha=0.2)
 
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)*cl2dl  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, y, color='y', ls="-", label="Filtered CMB, purified")  # noqa: E501
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='k', ls="-", label=f"Filtered {mtyp}, no purification")  # noqa: E501
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='k', alpha=0.2)
 
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, y, color='g', ls="-", label="fCMB, purified & deproj.")  # noqa: E501
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='g', alpha=0.2)
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='y', ls="-", label=f"Filtered {mtyp}, purified")  # noqa: E501
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
 
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
-            plt.plot(clth[pols][:sp.lmax+1]*clth2dl, 'r--', alpha=0.5, label="Theory")  # noqa: E501
-            plt.plot(sp.leff, clth_fil_pure_dep[pols], 'r-.', alpha=0.5, label="Theory dep.")  # noqa: E501
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='g', ls="-", label=f"f{mtyp}, purified & deproj.")  # noqa: E501
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='g', alpha=0.2)
 
-            plt.xlim([2, lmax_plot])
-            plt.xlabel(r"$\ell$", fontsize=14)
-            ylab = fr"$D_\ell^{{{pols}}}$" if plot_dl else fr"$C_\ell^{{{pols}}}$"  # noqa: E501
-            plt.ylabel(ylab, fontsize=14)
-            if pols == "BB":
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
+                plt.plot(clth[pols][:sp.lmax+1]*cl2dl, 'r--', alpha=0.5, label="Theory")  # noqa: E501
+                plt.plot(sp.leff, clth_fil_pure_dep[pols], 'r-.', alpha=0.5, label="Theory dep.")  # noqa: E501
+
+                plt.xlim([2, lmax_plot])
+                plt.xlabel(r"$\ell$", fontsize=14)
+                ylab = fr"$D_\ell^{{{pols}}}$" if plot_dl else fr"$C_\ell^{{{pols}}}$"  # noqa: E501
+                plt.ylabel(ylab, fontsize=14)
+                if pols == "BB":
+                    plt.yscale('log')
+                    ylim = (1e-6, 2e-3) if plot_dl else (1e-8, 1e-5)
+                    #plt.ylim(ylim)
+                elif pols == "EE":
+                    plt.yscale('log')
+                    ylim = (1e-4, 1e0) if plot_dl else (1e-6, 1e-2)
+                    #plt.ylim(ylim)
+                plt.legend()
+                print(f"    PLOT SAVED {plot_dir}/cl_{mtyp}_filtered_tfed_{pols}.pdf")
+                plt.savefig(f"{plot_dir}/cl_{mtyp}_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
+                plt.close()
+
+            for pols in ["EE", "EB", "BB"]:
+                plt.title('Cl w/ filtering, TFed')
+                thbb = sp.bins.bin_cell(clth[pols][:sp.bins.lmax+1])
+                y = np.mean(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'b-', alpha=0.5, label=f"Filtered {mtyp}, B only")  # noqa: E501
+
+                thbb = clth_fil_nopure[pols]
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'k-', alpha=0.5, label=f"Filtered {mtyp}, no purification")  # noqa: E501
+
+                thbb = clth_fil_pure[pols]
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'y-', alpha=0.5, label=f"Filtered {mtyp}, purified")  # noqa: E501
+
+                thbb = clth_fil_pure_dep[pols]
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'g-', alpha=0.5, label=f"f{mtyp}, purif. & deproj. (N={nsims_purify})")  # noqa: E501
+                plt.axhline(0, color="r", ls="--")
+
+                plt.xlim([2, lmax_plot])
+                plt.ylim((-20, 20))
+                plt.xlabel(r"$\ell$", fontsize=14)
+                plt.ylabel(fr"$(\hat{{C}}_\ell^{{{pols}}} - C_\ell^{{{pols},\, th}})/(\sigma(C_\ell^{{{pols}}})/\sqrt{{N_{{\rm sims}}}})$", fontsize=14)  # noqa: E501
+                plt.legend()
+                print(f"    PLOT SAVED {plot_dir}/bias_{mtyp}_filtered_tfed_{pols}.pdf")  # noqa: E501
+                plt.savefig(f"{plot_dir}/bias_{mtyp}_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
+                plt.close()
+
+            for pols in ["EE", "EB", "BB"]:
+                yerr_ref = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, sigma_masked, 'm-', alpha=0.5, label=f"Masked {mtyp}, purified")  # noqa: E501
+                plt.plot(sp.leff, yerr/yerr_ref, 'k-', alpha=0.5, label=f"Filtered {mtyp}, no purification")  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, yerr/yerr_ref, 'y-', alpha=0.5, label=f"Filtered {mtyp}, purified")  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, yerr/yerr_ref, 'g-', alpha=0.5, label=f"f{mtyp}, purified & deproj.")  # noqa: E501
+                plt.axhline(1, color="b", linestyle="--", alpha=0.5, label=f"Filtered {mtyp}, B only")  # noqa: E501
+
+                plt.xlim([2, lmax_plot])
+                plt.ylim((0.5, 1000))
+                plt.xlabel(r"$\ell$", fontsize=14)
+                plt.ylabel(fr"$\sigma(C_\ell^{{{pols}, X}})/\sigma(C_\ell^{{{pols}}},\,\rm{{B only}})$", fontsize=14)  # noqa: E501
                 plt.yscale('log')
-                ylim = (1e-6, 2e-3) if plot_dl else (1e-8, 1e-5)
-                plt.ylim(ylim)
-            elif pols == "EE":
+                plt.legend()
+                print(f"    PLOT SAVED {plot_dir}/error_{mtyp}_filtered_tfed_{pols}.pdf")  # noqa: E501
+                plt.savefig(f"{plot_dir}/error_{mtyp}_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
+                plt.close()
+
+            for pols in ["EE", "EB", "BB"]:
+                yerr = np.std(np.array([cl[pols] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, yerr, 'm--', alpha=0.5, label=f"Masked {mtyp}, B only")  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, yerr, 'b--', alpha=0.5, label=f"Filtered {mtyp}, B only")  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, yerr, 'k-', alpha=0.5, label=f"Filtered {mtyp}, no purification")  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, yerr, 'y-', alpha=0.5, label=f"Filtered {mtyp}, purified")  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, yerr, 'g-', alpha=0.5, label=f"f{mtyp}, purified & deproj.")  # noqa: E501
+
+                plt.xlim([2, lmax_plot])
+                plt.yscale("log")
+                plt.xlabel(r"$\ell$", fontsize=14)
+                lab = "D" if plot_dl else "C"
+                plt.ylabel(ylab, fontsize=14)
+                plt.ylabel(fr"$\sigma({{{lab}}}_\ell^{{{pols}, X}})$", fontsize=14)  # noqa: E501
                 plt.yscale('log')
-                ylim = (1e-4, 1e0) if plot_dl else (1e-6, 1e-2)
-                plt.ylim(ylim)
-            plt.legend()
-            print(f"    PLOT SAVED {plot_dir}/cl_filtered_tfed_{pols}.pdf")
-            plt.savefig(f"{plot_dir}/cl_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
-            plt.close()
+                plt.legend()
+                print(f"    PLOT SAVED {plot_dir}/abserr_{mtyp}_filtered_tfed_{pols}.pdf")  # noqa: E501
+                plt.savefig(f"{plot_dir}/abserr_{mtyp}_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
+                plt.close()
 
-        for pols in ["EE", "EB", "BB"]:
-            thbb = sp.bins.bin_cell(clth[pols][:sp.bins.lmax+1])
-            y = np.mean(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'b-', alpha=0.5, label="Filtered CMB, B only")  # noqa: E501
+            for pols in ["EE", "EB", "BB"]:
+                plt.title('Cl w/ filtering, not TFed')
+                y = np.mean(np.array([cl[pols] for cl in cls_noe_filtered]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='b', ls="-", label=f"Filtered {mtyp}, B only")  # noqa: E501
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='b', alpha=0.2)
 
-            thbb = clth_fil_nopure[pols]
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'k-', alpha=0.5, label="Filtered CMB, no purification")  # noqa: E501
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_nopure]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='k', ls="-", label=f"Filtered {mtyp}, no purification")  # noqa: E501
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='k', alpha=0.2)
 
-            thbb = clth_fil_pure[pols]
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'y-', alpha=0.5, label="Filtered CMB, purified")  # noqa: E501
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='y', ls="-", label=f"Filtered {mtyp}, purified")  # noqa: E501
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
 
-            thbb = clth_fil_pure_dep[pols]
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'g-', alpha=0.5, label=f"fCMB, purif. & deproj. (N={nsims_purify})")  # noqa: E501
-            plt.axhline(0, color="r", ls="--")
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='g', ls="-", label=f"f{mtyp}, purified & deproj. (N={nsims_purify})")  # noqa: E501
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='g', alpha=0.2)
 
-            plt.xlim([2, lmax_plot])
-            plt.ylim((-20, 20))
-            plt.xlabel(r"$\ell$", fontsize=14)
-            plt.ylabel(fr"$(\hat{{C}}_\ell^{{{pols}}} - C_\ell^{{{pols},\, th}})/(\sigma(C_\ell^{{{pols}}})/\sqrt{{N_{{\rm sims}}}})$", fontsize=14)  # noqa: E501
-            plt.legend()
-            print(f"    PLOT SAVED {plot_dir}/bias_filtered_tfed_{pols}.pdf")  # noqa: E501
-            plt.savefig(f"{plot_dir}/bias_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
-            plt.close()
+                plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
+                plt.plot(clth[pols][:sp.lmax+1]*cl2dl, 'r--', alpha=0.5, label="Theory")  # noqa: E501
 
-        for pols in ["EE", "EB", "BB"]:
-            yerr_ref = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, sigma_masked, 'm-', alpha=0.5, label="Masked CMB, purified")  # noqa: E501
-            plt.plot(sp.leff, yerr/yerr_ref, 'k-', alpha=0.5, label="Filtered CMB, no purification")  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, yerr/yerr_ref, 'y-', alpha=0.5, label="Filtered CMB, purified")  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, yerr/yerr_ref, 'g-', alpha=0.5, label="fCMB, purified & deproj.")  # noqa: E501
-            plt.axhline(1, color="b", linestyle="--", alpha=0.5, label="Filtered CMB, B only")  # noqa: E501
-
-            plt.xlim([2, lmax_plot])
-            plt.ylim((0.5, 1000))
-            plt.xlabel(r"$\ell$", fontsize=14)
-            plt.ylabel(fr"$\sigma(C_\ell^{{{pols}, X}})/\sigma(C_\ell^{{{pols}}},\,\rm{{B only}})$", fontsize=14)  # noqa: E501
-            plt.yscale('log')
-            plt.legend()
-            print(f"    PLOT SAVED {plot_dir}/error_filtered_tfed_{pols}.pdf")  # noqa: E501
-            plt.savefig(f"{plot_dir}/error_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
-            plt.close()
-
-        for pols in ["EE", "EB", "BB"]:
-            yerr = np.std(np.array([cl[pols] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, yerr, 'm--', alpha=0.5, label="Masked CMB, B only")  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, yerr, 'b--', alpha=0.5, label="Filtered CMB, B only")  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure_tfed]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, yerr, 'k-', alpha=0.5, label="Filtered CMB, no purification")  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, yerr, 'y-', alpha=0.5, label="Filtered CMB, purified")  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, yerr, 'g-', alpha=0.5, label="fCMB, purified & deproj.")  # noqa: E501
-
-            plt.xlim([2, lmax_plot])
-            plt.yscale("log")
-            plt.xlabel(r"$\ell$", fontsize=14)
-            lab = "D" if plot_dl else "C"
-            plt.ylabel(ylab, fontsize=14)
-            plt.ylabel(fr"$\sigma({{{lab}}}_\ell^{{{pols}, X}})$", fontsize=14)
-            plt.yscale('log')
-            plt.legend()
-            print(f"    PLOT SAVED {plot_dir}/abserr_filtered_tfed_{pols}.pdf")  # noqa: E501
-            plt.savefig(f"{plot_dir}/abserr_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
-            plt.close()
-
-        plt.title('Cl, w/ filtering not TFed')
-        for pols in ["EE", "EB", "BB"]:
-            y = np.mean(np.array([cl[pols] for cl in cls_noe_filtered]), axis=0)*cl2dl  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, y, color='b', ls="-", label="Filtered CMB, B only")  # noqa: E501
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='b', alpha=0.2)
-
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_nopure]), axis=0)*cl2dl  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, y, color='k', ls="-", label="Filtered CMB, no purification")  # noqa: E501
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='k', alpha=0.2)
-
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure]), axis=0)*cl2dl  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, y, color='y', ls="-", label="Filtered CMB, purified")  # noqa: E501
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
-
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)*cl2dl  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)*cl2dl  # noqa: E501
-            plt.plot(sp.leff, y, color='g', ls="-", label=f"fCMB, purified & deproj. (N={nsims_purify})")  # noqa: E501
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='g', alpha=0.2)
-
-            plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
-            plt.plot(clth[pols][:sp.lmax+1]*clth2dl, 'r--', alpha=0.5, label="Theory")  # noqa: E501
-
-            plt.xlim([2, lmax_plot])
-            if pols == "BB":
-                plt.yscale('log')
-                ylim = (1e-6, 2e-3) if plot_dl else (1e-8, 1e-5)
-                plt.ylim(ylim)
-            elif pols == "EE":
-                plt.yscale('log')
-                ylim = (1e-4, 1e0) if plot_dl else (1e-6, 1e-2)
-                plt.ylim(ylim)
-            plt.xlabel(r"$\ell$", fontsize=14)
-            lab = "D" if plot_dl else "C"
-            plt.ylabel(fr"${{{lab}}}_\ell^{{{pols}}}$", fontsize=14)
-            plt.legend()
-            print(f"    PLOT SAVED {plot_dir}/cl_{pols}_filtered.pdf")
-            plt.savefig(f"{plot_dir}/cl_{pols}_filtered.pdf", bbox_inches="tight")  # noqa: E501
-            plt.close()
-
-        for pols in ["EE", "EB", "BB"]:
-            thbb = sp.bins.bin_cell(clth[pols][:sp.bins.lmax+1])
-            y = np.mean(np.array([cl[pols] for cl in cls_noe_filtered]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'b-', alpha=0.5, label="Filtered CMB, B only")  # noqa: E501
-
-            thbb = clth_fil_nopure[pols]
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_nopure]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'k-', alpha=0.5, label="Filtered CMB, no purification")  # noqa: E501
-
-            thbb = clth_fil_pure[pols]
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'y-', alpha=0.5, label="Filtered CMB, purified")  # noqa: E501
-
-            thbb = clth_fil_pure_dep[pols]
-            y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_cmb)), 'g-', alpha=0.5, label=f"fCMB, purified & deproj. (N={nsims_purify})")  # noqa: E501
-            plt.axhline(0, color="r", ls="--")
-
-            plt.xlim([2, lmax_plot])
-            plt.ylim((-20, 20))
-            plt.xlabel(r"$\ell$", fontsize=14)
-            plt.ylabel(fr"$(\hat{{C}}_\ell^{{{pols}}} - C_\ell^{{{pols},\, th}})/(\sigma(C_\ell^{{{pols}}})/\sqrt{{N_{{\rm sims}}}})$",  # noqa: E501
-                       fontsize=14)
-            plt.legend()
-            print(f"    PLOT SAVED {plot_dir}/bias_filtered_{pols}.pdf")
-            plt.savefig(f"{plot_dir}/bias_filtered_{pols}.pdf", bbox_inches="tight")  # noqa: E501
-            plt.close()
-
-        for pols in ["EE", "EB", "BB"]:
-            yerr_ref = np.std(np.array([cl[pols] for cl in cls_noe_filtered]), axis=0)  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_nopure]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, sigma_masked, 'm-', alpha=0.5, label="Masked CMB, purified")  # noqa: E501
-            plt.plot(sp.leff, yerr/yerr_ref, 'k-', alpha=0.5, label="Filtered CMB, no purification")  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, yerr/yerr_ref, 'y-', alpha=0.5, label="Filtered CMB, purified")  # noqa: E501
-            yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)  # noqa: E501
-            plt.plot(sp.leff, yerr/yerr_ref, 'g-', alpha=0.5, label=f"fCMB, purified & deproj. (N={nsims_purify})")  # noqa: E501
-            plt.axhline(1, color="b", ls="--")
-
-            plt.xlim([2, lmax_plot])
-            plt.ylim((0.5, 1000))
-            plt.xlabel(r"$\ell$", fontsize=14)
-            plt.ylabel(fr"$\sigma(C_\ell^{{{pols}, X}})/\sigma(C_\ell^{{{pols}}},\,\rm{{B only}})$", fontsize=14)  # noqa: E501
-            plt.yscale('log')
-            plt.legend()
-            print(f"    PLOT SAVED {plot_dir}/error_filtered_{pols}.pdf")
-            plt.savefig(f"{plot_dir}/error_filtered_{pols}.pdf", bbox_inches="tight")  # noqa: E501
-            plt.close()
+                plt.xlim([2, lmax_plot])
+                if pols == "BB":
+                    plt.yscale('log')
+                    ylim = (1e-6, 2e-3) if plot_dl else (1e-8, 1e-5)
+                    #plt.ylim(ylim)
+                elif pols == "EE":
+                    plt.yscale('log')
+                    #ylim = (1e-4, 1e0) if plot_dl else (1e-6, 1e-2)
+                    plt.ylim(ylim)
+                plt.xlabel("$\ell$", fontsize=14)
+                lab = "D" if plot_dl else "C"
+                plt.ylabel(fr"${{{lab}}}_\ell^{{{pols}}}$", fontsize=14)
+                plt.legend()
+                print(f"    PLOT SAVED {plot_dir}/cl_{mtyp}{pols}_filtered.pdf")  # noqa: E501
+                plt.savefig(f"{plot_dir}/cl_{mtyp}{pols}_filtered.pdf", bbox_inches="tight")  # noqa: E501
+                plt.close()
         print(f"     ALL PLOTS: {plot_dir}")
 
 

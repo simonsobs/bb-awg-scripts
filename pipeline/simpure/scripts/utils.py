@@ -29,7 +29,7 @@ class MatrixPurification:
             Apodized mask used to construct eigenspectrum.
         eigspec_fn: str
             Npz file path pointing to the eigenspectrum computed with scripts
-            in https://github.com/Magwos/matrix-based_b-purification_for_sat/tree/main
+            in https://github.com/Magwos/matrix-based_b-purification_for_sat/tree/main  # noqa: E501
         thresh_lo: float
             Lower eigenvalue threshold selecting pure-E modes, in percent of
             the total number of eigenmodes.
@@ -78,7 +78,7 @@ class MatrixPurification:
             raise ValueError("Map must by TQU healpix map.")
         pRm = np.zeros_like(map)
         msk = self.mask_bool
-        pRm[1:, msk] = (self.pmat @ map.copy()[1:, msk].ravel()).reshape((2, -1))
+        pRm[1:, msk] = (self.pmat @ map.copy()[1:, msk].ravel()).reshape((2, -1))  # noqa: E501
         return pRm
 
 
@@ -128,7 +128,8 @@ def counter_1_over_f(freqs, fk=1., n=2):
     elif np.isscalar(fk) and np.isscalar(n):
         return 1/(1+(fk/freqs)**n)
     else:
-        raise ValueError("The fk and n must be a float value or array-like with length of number of detectors")
+        raise ValueError("The fk and n must be a float value or array-like "
+                         "with length of number of detectors")
 
 
 def subscan_polyfilter(tod, axis=1, nsamp_subscan=2048, degree=1):
@@ -153,8 +154,9 @@ def subscan_polyfilter(tod, axis=1, nsamp_subscan=2048, degree=1):
         x = np.linspace(-1, 1, tod_mat.shape[1])
         dx = np.mean(np.diff(x))
 
-        # Generate legendre functions of each degree and store them in an array
-        arr_legendre = np.array([eval_legendre(deg, x) for deg in range(degree_corr)])
+        # Generate legendre functions of each degree and store them in array
+        arr_legendre = np.array([eval_legendre(deg, x)
+                                 for deg in range(degree_corr)])
         
         means = np.mean(tod_mat, axis=1)[:, np.newaxis]
         tod_mat -= means
@@ -184,8 +186,9 @@ def toy_filter_healpix(map_in,
     # derived parameters
     Nsamp_sky = npix
     Tsamp_sky = Tsamp * Nsamp_sky
-    Nsamp_throw = int(Nsamp_sky // (Tsamp_sky / Tthrow))  # tile the sky in az throws
-    Nthrow = min(get_npix_integer_factors(nside_samp), key=lambda x: abs(x - Tsamp_sky/Tthrow))
+    Nsamp_throw = int(Nsamp_sky // (Tsamp_sky / Tthrow))  # tile the sky in az throws  # noqa: E501
+    Nthrow = min(get_npix_integer_factors(nside_samp),
+                 key=lambda x: abs(x - Tsamp_sky/Tthrow))
     Nsamp_throw = int(Nsamp_sky / Nthrow)
     Tthrow = Tsamp_sky * Nsamp_throw / Nsamp_sky
 
@@ -249,6 +252,24 @@ def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
     return lth, cl_th
 
 
+def get_plaw_cls(lmax, lmin=0, index=2, offset=0.01, beam_fwhm=None):
+    """
+    """
+    lth = np.arange(lmin, lmax+1)
+    clpl = 1 / (lth + offset)**index
+    cl_th = {
+        "EE": clpl,
+        "BB": clpl
+    }
+    for pol in ["TT", "TE", "ET", "TB", "BT", "EB", "BE"]:
+        cl_th[pol] = 0. * clpl
+    if beam_fwhm is not None:
+        sig = beam_fwhm / np.sqrt(8. * np.log(2)) /60. * np.pi/180.
+        bl = np.exp(-0.5*lth*(lth+1)*sig**2)
+        cl_th = {spec: cl_th[spec]*bl**2 for spec in cl_th}
+    return lth, cl_th
+
+
 def plot_transfer_function(lb, tf_dict, lmin, lmax, field_pairs, file_name):
     """
     Plot the transfer function given an input dictionary.
@@ -307,7 +328,7 @@ def get_inv_coupling(coupling_fname, mask, nmt_bins,
     """
     """
     if os.path.isfile(coupling_fname) and not overwrite:
-        inv_coupling = np.load(coupling_fname, allow_pickle=True)["inv_coupling"]
+        inv_coupling = np.load(coupling_fname, allow_pickle=True)["inv_coupling"]  # noqa: E501
         if not return_bp_win:
             return inv_coupling
         else:
@@ -363,7 +384,6 @@ def get_inv_coupling(coupling_fname, mask, nmt_bins,
 def read_map(map_file,
              pix_type='car',
              fields_hp=None,
-             convert_K_to_muK=False,
              geometry=None,
              car_template=None):
     """
@@ -377,8 +397,6 @@ def read_map(map_file,
         Pixellization type.
     fields_hp : tuple, optional
         Fields to read from a HEALPix map.
-    convert_K_to_muK : bool, optional
-        Convert K to muK.
     geometry : enmap.geometry, optional
         Enmap geometry.
     car_template: str
@@ -389,9 +407,6 @@ def read_map(map_file,
     map_out : np.ndarray
         Loaded map.
     """
-    conv = 1
-    if convert_K_to_muK:
-        conv = 1.e6
     if not (pix_type in ['hp', 'car']):
         raise ValueError(f"Unknown pixelisation type {pix_type}.")
     if pix_type == 'hp':
@@ -402,7 +417,7 @@ def read_map(map_file,
             geometry = enmap.read_map_geometry(car_template)
         m = enmap.read_map(map_file, geometry=geometry)
 
-    return conv*m
+    return m
 
 
 def get_coupled_pseudo_cls(fields1, fields2, nmt_binning):
@@ -726,8 +741,7 @@ def plot_map(map, file_name=None, lims=None, title=None, pix_type="car"):
         _plot_map_car(map, lims, file_name=file_name)
 
 
-def write_map(map_file, map, dtype=np.float64, pix_type='hp',
-              convert_muK_to_K=False):
+def write_map(map_file, map, dtype=np.float64, pix_type='hp'):
     """
     Write a map to a file, regardless of the pixelization type.
 
@@ -741,11 +755,7 @@ def write_map(map_file, map, dtype=np.float64, pix_type='hp',
         Data type.
     pix_type : str, optional
         Pixellization type.
-    convert_muK_to_K : bool, optional
-        Convert muK to K.
     """
-    if convert_muK_to_K:
-        map *= 1.e-6
     if not (pix_type in ['hp', 'car']):
         raise ValueError(f"Unknown pixelisation type {pix_type}.")
     if pix_type == 'hp':

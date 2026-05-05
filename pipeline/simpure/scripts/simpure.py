@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 # TODO: Make it an actual module
 sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', 'misc'))
 )
 import mpi_utils as mpi
 
@@ -20,6 +20,7 @@ import mpi_utils as mpi
 # * 2026/01/29: added flag tf_type to get_inv_coupling and compute_pspec
 # * 2026/02/05: adapted filtered map naming convention for CAR
 # * 2026/03/03: added MPI parallelization
+# * 2026/05/05: added power-law validation
 
 class SimPure:
     def __init__(self, pix_type, base_dir, out_dir, filter_setup,
@@ -97,26 +98,66 @@ class SimPure:
                 mp_masked = np.flip(mp_masked, axis=(1, 2))
                 return enmap.ndmap(mp_masked, wcs=self.wcs)
 
-    def load_cmb_sim(self, sim_id, filtered=False, pols_keep="EB"):
+    def load_val_sim(self, sim_id, filtered=False, pols_keep="EB", typ="cmb"):
         """
+        "typ" can be "cmb" or "plaw". TODO. 
         """
-        sim_dir = f"filtered_cmb_sims/{self.filter_setup}"  # obsmat, toy
-        # sim_dir = f"filtered_cmb_sims/satp3/f090/{self.filter_setup}/coadded_sims"  # stodlib
+        sim_dir = f"filtered_{typ}_sims/{self.filter_setup}"  # obsmat, toy
+        # sim_dir = f"filtered_{typ_lab}_sims/satp3/f090/{self.filter_setup}/coadded_sims"  # sotodlib  # noqa: E501
         if not filtered:
-            sim_dir = "cmb_sims"
+            sim_dir = "cmb_sims" if typ == "cmb" else "input_sims"
             pix_str = "CAR" if self.pix_type == "car" else "HP"
         else:
-            pix_str = "CAR_f090_science_filtered" if self.pix_type == "car" else "HP"
-        res_str = "20arcmin" if self.pix_type == "car" else f"nside{self.nside}"  # noqa: E501
-        sim_fname = f"cmb{pols_keep}_{res_str}_fwhm{self.beam_fwhm:.1f}_sim{sim_id:04d}_{pix_str}.fits"  # noqa: E501
+            pix_str = "CAR_f090_science_filtered" if self.pix_type == "car" else "HP"  # noqa: E501
+
+        if (self.pix_type, typ) == ("car", "cmb"):
+            res_str = "20arcmin"
+        elif (self.pix_type, typ) == ("car", "plaw"):
+            res_str = "20.0arcmin"
+        else:
+            res_str = f"nside{self.nside}"
+        sim_fname = f"{typ}{pols_keep}_{res_str}_fwhm{self.beam_fwhm:.1f}_sim{sim_id:04d}_{pix_str}.fits"  # noqa: E501
 
         map = ut.read_map(
             f"{self.base_dir}/{sim_dir}/{sim_fname}",
             pix_type=self.pix_type,
             fields_hp=[0, 1, 2],
-            car_template=self.car_template,
-            convert_K_to_muK=True
+            car_template=self.car_template
         )
+        conv = 1E6 if typ == "cmb" else 1. 
+        return conv * self.get_masked_map(map, binary=True)
+
+    def load_plaw_sim(self, sim_id, filtered=False, pols_keep="TEB"):
+        """
+        """
+        sim_dir = f"filtered_pure_sims/{self.filter_setup}"  # obsmat, toy
+        # sim_dir = f"filtered_pure_sims/satp3/f090/{self.filter_setup}/coadded_sims"  # sotodlib
+        if not filtered:
+            sim_dir = "input_sims"
+            pix_str = "CAR" if self.pix_type == "car" else "HP"
+        else:
+            pix_str = "CAR_f090_science_filtered" if self.pix_type == "car" else "HP"  # noqa: E501
+        res_str = "20.0arcmin" if self.pix_type == "car" else f"nside{self.nside}"  # noqa: E501
+        sim_fname = f"plaw{pols_keep}_{res_str}_fwhm{self.beam_fwhm:.1f}_sim{sim_id:04d}_{pix_str}.fits"  # noqa: E501
+
+        try:
+            map = ut.read_map(
+                f"{self.base_dir}/{sim_dir}/{sim_fname}",
+                pix_type=self.pix_type,
+                fields_hp=[0, 1, 2],
+                car_template=self.car_template
+            )
+        except EOFError:
+            print(f" EOFError: {self.base_dir}/{sim_dir}/{sim_fname}")
+            mp = hp.read_map(f"{self.base_dir}/{sim_dir}/{sim_fname}", field=None)  # noqa: E501
+            print(mp.shape)
+            import sys; sys.exit()
+        except ValueError:
+            print(f" ValueError: {self.base_dir}/{sim_dir}/{sim_fname}")
+            mp = hp.read_map(f"{self.base_dir}/{sim_dir}/{sim_fname}", field=None)  # noqa: E501
+            print(mp.shape)
+            import sys; sys.exit()
+
         return self.get_masked_map(map, binary=True)
 
     def load_transfer_sim(self, sim_id, filtered=False, typ=None):
@@ -137,8 +178,7 @@ class SimPure:
             f"{self.base_dir}/{sim_dir}/{sim_fname}",
             pix_type=self.pix_type,
             fields_hp=[0, 1, 2],
-            car_template=self.car_template,
-            convert_K_to_muK=True
+            car_template=self.car_template
         )
         return self.get_masked_map(map, binary=True)
 
@@ -284,7 +324,7 @@ class SimPure:
                 if i % 50 == 0:
                     print("   SAVE MAT", i)
                 if pix_type == "hp":
-                    mat.append(np.sum(np.array(mp_sims)*s[None, :, :], axis=(1, 2)))
+                    mat.append(np.sum(np.array(mp_sims)*s[None, :, :], axis=(1, 2)))  # noqa: E501
                 else:
                     mat.append(np.sum(np.array(mp_sims)*s[None, :, :, :],
                                       axis=(1, 2, 3)))
@@ -295,6 +335,7 @@ class SimPure:
             if mat_plot_fn is not None:
                 # Visualize eigenvalues of M
                 w, _ = np.linalg.eigh(mat)
+                plt.figure()
                 plt.plot(w[::-1])
                 plt.yscale('log')
                 plt.savefig(mat_plot_fn, bbox_inches="tight")
@@ -378,9 +419,10 @@ class SimPure:
             print("SAVED TF SIMS", fname)
         return cls_tf
 
-    def get_cmb_spectra(self,
+    def get_val_spectra(self,
                         out_dir,
                         nsims,
+                        map="cmb",
                         noE=False,
                         filtered=False,
                         purified=False,
@@ -392,11 +434,12 @@ class SimPure:
                         overwrite=False,
                         plot_dir=None):
         """
-        Docstring for get_cmb_spectra
+        TODO: Docstring for get_val_spectra
 
         :param self: Description
         :param out_dir: Description
         :param nsims: Description
+        :param map: Description
         :param noE: Description
         :param filtered: Description
         :param purified: Description
@@ -421,19 +464,19 @@ class SimPure:
             (False, True, True, True, False): "filtered_pure_dep",
             (False, True, True, True, True): "filtered_pure_dep_tfed"
         }[nfpdt]
-        fname = f"{out_dir}/cls_{clab}.npz"
+        fname = f"{out_dir}/cls_{map}_{clab}.npz"
         if os.path.isfile(fname) and not overwrite:
             cls = np.load(fname, allow_pickle=True)['cls']
         else:
             cls = []
             for i in range(nsims):
                 if i % 10 == 0:
-                    print("   CELLS ", i)
+                    print(f"   CELLS {map} ", i)
                 if clab == "masked_nopure":
-                    mp = self.load_cmb_sim(i, filtered=False)
+                    mp = self.load_val_sim(i, filtered=False, typ=map)
                     cl = self.compute_pspec(mp)
                 elif clab == "masked_pure":
-                    mp = self.load_cmb_sim(i, filtered=False)
+                    mp = self.load_val_sim(i, filtered=False, typ=map)
                     if i == 0:
                         ut.plot_map(
                             mp,
@@ -452,33 +495,33 @@ class SimPure:
                         )
                     cl = self.compute_pspec(mp, nmt_purify=True)
                 elif clab == "noe_masked":
-                    mp = self.load_cmb_sim(i, pols_keep="B")
+                    mp = self.load_val_sim(i, pols_keep="B", typ=map)
                     cl = self.compute_pspec(mp)
                 elif clab == "filtered_nopure":
-                    mp = self.load_cmb_sim(i, filtered=True)
+                    mp = self.load_val_sim(i, filtered=True, typ=map)
                     if i == 0:
                         ut.plot_map(
                             mp,
-                            file_name=f"{plot_dir}/sim_cmb_filt_{i:04d}",
+                            file_name=f"{plot_dir}/sim_{map}_filt_{i:04d}",
                             pix_type=self.pix_type
                         )
                         ut.plot_map(
                             self.get_masked_map(mp, nmt_purify=False, binary=False),  # noqa: E501
-                            file_name=f"{plot_dir}/sim_cmb_filt_masked_{i:04d}",  # noqa: E501
+                            file_name=f"{plot_dir}/sim_{map}_filt_masked_{i:04d}",  # noqa: E501
                             pix_type=self.pix_type
                         )
                     cl = self.compute_pspec(mp, transfer=None, nmt_purify=False)  # noqa: E501
                 elif clab == "filtered_nopure_tfed":
-                    mp = self.load_cmb_sim(i, filtered=True)
+                    mp = self.load_val_sim(i, filtered=True, typ=map)
                     if i == 0:
                         ut.plot_map(
                             mp,
-                            file_name=f"{plot_dir}/sim_cmb_filt_{i:04d}",
+                            file_name=f"{plot_dir}/sim_{map}_filt_{i:04d}",
                             pix_type=self.pix_type
                         )
                         ut.plot_map(
                             self.get_masked_map(mp, nmt_purify=False, binary=False),  # noqa: E501
-                            file_name=f"{plot_dir}/sim_cmb_filt_masked_{i:04d}",  # noqa: E501
+                            file_name=f"{plot_dir}/sim_{map}_filt_masked_{i:04d}",  # noqa: E501
                             pix_type=self.pix_type
                         )
                     cl = self.compute_pspec(
@@ -488,10 +531,10 @@ class SimPure:
                         nmt_purify=False
                     )
                 elif clab == "filtered_pure":
-                    mp = self.load_cmb_sim(i, filtered=True)
+                    mp = self.load_val_sim(i, filtered=True, typ=map)
                     cl = self.compute_pspec(mp, transfer=None, nmt_purify=True)
                 elif clab == "filtered_pure_tfed":
-                    mp = self.load_cmb_sim(i, filtered=True)
+                    mp = self.load_val_sim(i, filtered=True, typ=map)
                     cl = self.compute_pspec(
                         mp,
                         transfer=tf,
@@ -499,13 +542,15 @@ class SimPure:
                         nmt_purify=True
                     )
                 elif clab == "noe_filtered":
-                    mp = self.load_cmb_sim(i, filtered=True, pols_keep="B")
+                    mp = self.load_val_sim(i, filtered=True, pols_keep="B",
+                                           typ=map)
                     cl = self.compute_pspec(mp, transfer=None)
                 elif clab == "noe_filtered_tfed":
-                    mp = self.load_cmb_sim(i, filtered=True, pols_keep="B")
+                    mp = self.load_val_sim(i, filtered=True, pols_keep="B",
+                                           typ=map)
                     cl = self.compute_pspec(mp, transfer=tf, tf_type="nopure")
                 elif clab == "filtered_pure_dep":
-                    mp = self.load_cmb_sim(i, filtered=True)
+                    mp = self.load_val_sim(i, filtered=True, typ=map)
                     mp_masked = self.get_masked_map(mp, nmt_purify=True,
                                                     binary=False)
                     mp_masked_dep, mp_template = ut.deproject_many(mp_masked,
@@ -514,17 +559,17 @@ class SimPure:
                     if i == 1:
                         ut.plot_map(
                             mp_template,
-                            file_name=f"{plot_dir}/sim_cmb_filt_template_{i:04d}",  # noqa: E501
+                            file_name=f"{plot_dir}/sim_{map}_filt_template_{i:04d}",  # noqa: E501
                             pix_type=self.pix_type
                         )
                         ut.plot_map(
                             mp_masked,
-                            file_name=f"{plot_dir}/sim_cmb_filt_purify_{i:04d}",  # noqa: E501
+                            file_name=f"{plot_dir}/sim_{map}_filt_purify_{i:04d}",  # noqa: E501
                             pix_type=self.pix_type
                         )
                         ut.plot_map(
                             mp_masked_dep,
-                            file_name=f"{plot_dir}/sim_cmb_filt_purify_dep_{i:04d}",  # noqa: E501
+                            file_name=f"{plot_dir}/sim_{map}_filt_purify_dep_{i:04d}",  # noqa: E501
                             pix_type=self.pix_type
                         )
                     cl = self.compute_pspec(
@@ -535,7 +580,7 @@ class SimPure:
                         masked_on_input=True
                     )
                 elif clab == "filtered_pure_dep_tfed":
-                    mp = self.load_cmb_sim(i, filtered=True)
+                    mp = self.load_val_sim(i, filtered=True, typ=map)
                     mp_masked = self.get_masked_map(mp, nmt_purify=True,
                                                     binary=False)
                     mp_masked_dep, mp_template = ut.deproject_many(mp_masked,
