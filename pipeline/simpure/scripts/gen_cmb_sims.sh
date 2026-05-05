@@ -7,7 +7,8 @@ res_arcmin=5  # Ignored for HEALPIX
 smooth_fwhm=30
 nsims=500
 id_start=0
-out_dir=/cephfs/soukdata/user_data/kwolz/simpure/cmb_sims  # YOUR OUTPUT DIR
+# out_dir=/cephfs/soukdata/user_data/kwolz/simpure/cmb_sims  # SO:UK
+out_dir=/pscratch/sd/k/kwolz/bbdev/simpure/cmb_sims  # NERSC
 bb_awg_scripts_dir=/shared_home/kwolz/bbdev/bb-awg-scripts  # YOUR BB-AWG-SCRIPTS DIR
 car_template=${bb_awg_scripts_dir}/pipeline/simpure/band_car_fejer1_20arcmin.fits  # Ignored for HEALPIX
 
