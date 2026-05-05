@@ -39,15 +39,14 @@ def main():
     base_dir = "/pscratch/sd/k/kwolz/bbdev/simpure"  # NERSC
 
     # Filtering choice
-    filter_setup = "toy_apo_nside128"  # Toy filter
-    # filter_setup = f"obsmat_polyonly_apo_nside{nside}"  # Simple poly filter
+    # filter_setup = "toy_apo_nside128"  # Toy filter
+    filter_setup = f"obsmat_polyonly_apo_nside{nside}"  # Simple poly filter
     # filter_setup = f"obsmat_apo_nside{nside}"  # BBMASTER paper
 
-
     # general
-    nsims_purify = 100  # number of pure-E sims used for template deprojection
-    nsims_val = 10  # number of validation sims
-    nsims_transfer = 10  # number of pure (E,B sims used for transfer function
+    nsims_purify = 1000  # number of pure-E sims used for template deprojection
+    nsims_val = 100  # number of validation sims
+    nsims_transfer = 50  # number of pure (E,B sims used for transfer function)
     id_sim_transfer_start = 0
     lmax_plot = 300
     overwrite = True  # If True, always recompute products.
@@ -55,9 +54,10 @@ def main():
     ignore_filtering = False  # If True, only check mask-based purification.
     plot_dl = False  # Plot D_ells or C_ells?
 
-    out_dir = f"/cephfs/soukdata/user_data/kwolz/simpure/purification/{filter_setup}_20260505/ndep{nsims_purify}_ntrf{nsims_transfer}_nval{nsims_val}"  # noqa: E501
+    out_dir = f"{base_dir}/purification/{filter_setup}_20260505/ndep{nsims_purify}_ntrf{nsims_transfer}_nval{nsims_val}"  # noqa: E501
     plot_dir = f"{out_dir}/plots"
-    mask_file = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside128.fits"  # noqa: E501
+    mask_file = "/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside128.fits"  # NERSC # noqa: E501
+    # mask_file = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside128.fits"  # SO:UK noqa: E501
 
     sp = SimPure(pix_type,
                  base_dir,
@@ -84,7 +84,8 @@ def main():
     cl2dl = ls*(ls+1)/2./np.pi if plot_dl else 1.
     _, cl_cmb = ut.get_theory_cls(cosmo, lmax=sp.lmax+500, beam_fwhm=beam_fwhm)
     _, cl_plaw = ut.get_plaw_cls(sp.lmax+500, beam_fwhm=beam_fwhm)
-    clth_dict = {"cmb": cl_cmb, "plaw": cl_plaw}    
+    clth_dict = {"cmb": cl_cmb, "plaw": cl_plaw}
+    mp_sims, mat = (None, None)
 
     os.makedirs(plot_dir, exist_ok=True)
     ut.plot_map(sp.mask, file_name=f"{plot_dir}/mask", pix_type=pix_type)
@@ -115,31 +116,31 @@ def main():
             if id == 0:
                 print("  2A. TF sims unfiltered w/o purification")
                 kwargs = {"filtered": False, "purified": False, "deprojected": False}  # noqa: E501
-                cls_tf_unfiltered_nopure = sp.get_tf_sims(
+                cls_tf_unfiltered_nopure = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 1:
                 print("  2B. TF sims unfiltered w/ purification")
                 kwargs = {"filtered": False, "purified": True, "deprojected": False}  # noqa: E501
-                cls_tf_unfiltered_pure = sp.get_tf_sims(
+                cls_tf_unfiltered_pure = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 2:
                 print("  2C. TF sims filtered w/o purification")
                 kwargs = {"filtered": True, "purified": False, "deprojected": False}  # noqa: E501
-                cls_tf_filtered_nopure = sp.get_tf_sims(
+                cls_tf_filtered_nopure = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 3:
                 print("  2D. TF sims filtered w/ purification")
                 kwargs = {"filtered": True, "purified": True, "deprojected": False}  # noqa: E501
-                cls_tf_filtered_pure = sp.get_tf_sims(
+                cls_tf_filtered_pure = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite, 
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 4:
                 print("  2E. TF sims filtered w/ purification & deprojection")
                 kwargs = {"filtered": True, "purified": True, "deprojected": True}  # noqa: E501
-                cls_tf_filtered_pure_dep = sp.get_tf_sims(
+                cls_tf_filtered_pure_dep = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     mp_sims=mp_sims, mat=mat,
                     id_sim_start=id_sim_transfer_start, **kwargs
@@ -207,9 +208,9 @@ def main():
             # Precompute couplings
             coupling_cases = {"nopure", "pure", "pure_dep"}
             for cc in coupling_cases:
-                tf = {"nopure": transfer_nopure,
-                      "pure": transfer_pure,
-                      "pure_dep": transfer_pure_dep}[cc]
+                tf = {"nopure": transfer_nopure["full_tf"],
+                      "pure": transfer_pure["full_tf"],
+                      "pure_dep": transfer_pure_dep["full_tf"]}[cc]
                 purify = {"nopure": False, "pure": True, "pure_dep": True}[cc]
                 _ = sp.get_inv_coupling(transfer=tf,
                                         tf_type=cc,
@@ -259,7 +260,7 @@ def main():
             tf = None
         _ = sp.get_val_spectra(
             out_dir, nsims_val, overwrite=overwrite_cls, plot_dir=plot_dir,
-            **kwargs, tf=tf
+            **kwargs, tf=tf, mp_sims=mp_sims, mat=mat
         )
 
     # Plotting
@@ -549,7 +550,7 @@ def main():
                     plt.yscale('log')
                     #ylim = (1e-4, 1e0) if plot_dl else (1e-6, 1e-2)
                     plt.ylim(ylim)
-                plt.xlabel("$\ell$", fontsize=14)
+                plt.xlabel(r"$\ell$", fontsize=14)
                 lab = "D" if plot_dl else "C"
                 plt.ylabel(fr"${{{lab}}}_\ell^{{{pols}}}$", fontsize=14)
                 plt.legend()
