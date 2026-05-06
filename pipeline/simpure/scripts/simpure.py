@@ -105,7 +105,7 @@ class SimPure:
         sim_dir = f"filtered_{typ}_sims/{self.filter_setup}"  # obsmat, toy
         # sim_dir = f"filtered_{typ_lab}_sims/satp3/f090/{self.filter_setup}/coadded_sims"  # sotodlib  # noqa: E501
         if not filtered:
-            sim_dir = "cmb_sims" if typ == "cmb" else "input_sims"
+            sim_dir = {"cmb": "cmb_sims", "pure": "input_sims", "plaw": "plaw_sims"}[typ]  # noqa: E501
             pix_str = "CAR" if self.pix_type == "car" else "HP"
         else:
             pix_str = "CAR_f090_science_filtered" if self.pix_type == "car" else "HP"  # noqa: E501
@@ -126,39 +126,6 @@ class SimPure:
         )
         conv = 1E6 if typ == "cmb" else 1. 
         return conv * self.get_masked_map(map, binary=True)
-
-    def load_plaw_sim(self, sim_id, filtered=False, pols_keep="TEB"):
-        """
-        """
-        sim_dir = f"filtered_pure_sims/{self.filter_setup}"  # obsmat, toy
-        # sim_dir = f"filtered_pure_sims/satp3/f090/{self.filter_setup}/coadded_sims"  # sotodlib
-        if not filtered:
-            sim_dir = "input_sims"
-            pix_str = "CAR" if self.pix_type == "car" else "HP"
-        else:
-            pix_str = "CAR_f090_science_filtered" if self.pix_type == "car" else "HP"  # noqa: E501
-        res_str = "20.0arcmin" if self.pix_type == "car" else f"nside{self.nside}"  # noqa: E501
-        sim_fname = f"plaw{pols_keep}_{res_str}_fwhm{self.beam_fwhm:.1f}_sim{sim_id:04d}_{pix_str}.fits"  # noqa: E501
-
-        try:
-            map = ut.read_map(
-                f"{self.base_dir}/{sim_dir}/{sim_fname}",
-                pix_type=self.pix_type,
-                fields_hp=[0, 1, 2],
-                car_template=self.car_template
-            )
-        except EOFError:
-            print(f" EOFError: {self.base_dir}/{sim_dir}/{sim_fname}")
-            mp = hp.read_map(f"{self.base_dir}/{sim_dir}/{sim_fname}", field=None)  # noqa: E501
-            print(mp.shape)
-            import sys; sys.exit()
-        except ValueError:
-            print(f" ValueError: {self.base_dir}/{sim_dir}/{sim_fname}")
-            mp = hp.read_map(f"{self.base_dir}/{sim_dir}/{sim_fname}", field=None)  # noqa: E501
-            print(mp.shape)
-            import sys; sys.exit()
-
-        return self.get_masked_map(map, binary=True)
 
     def load_transfer_sim(self, sim_id, filtered=False, typ=None):
         """
@@ -347,9 +314,9 @@ class SimPure:
 
         return mp_sims, mat
 
-    def get_tf_sims(self, out_dir, nsims, id_sim_start=0, overwrite=False,
-                    filtered=True, purified=True, deprojected=True,
-                    mp_sims=None, mat=None):
+    def get_tf_spectra(self, out_dir, nsims, id_sim_start=0, overwrite=False,
+                       filtered=True, purified=True, deprojected=True,
+                       mp_sims=None, mat=None):
         """
         Docstring for get_tf_sims
 
@@ -358,6 +325,8 @@ class SimPure:
         :param filtered: Description
         :param purified: Description
         :param deprojected: Description
+
+        TODO: check how mp_sims, tf, and mat were passed.
         """
         pure_lab = {True: "pure", False: "nopure"}
         filt_lab = {True: "filtered", False: "unfiltered"}
@@ -449,6 +418,8 @@ class SimPure:
         :param tf: Description
         :param overwrite: Description
         :param plot_dir: Description
+
+        TODO: check how mp_sims, tf, and mat were passed.
         """
         nfpdt = (noE, filtered, purified, deprojected, TFed)
         clab = {

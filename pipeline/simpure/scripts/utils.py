@@ -9,6 +9,7 @@ from scipy.linalg import pinvh
 from itertools import product
 from scipy.special import eval_legendre
 import copy
+import toast
 
 
 # # Changelog:
@@ -274,7 +275,6 @@ def plot_transfer_function(lb, tf_dict, lmin, lmax, field_pairs, file_name):
     """
     Plot the transfer function given an input dictionary.
     """
-    import copy
     npan = len(field_pairs)
     plt.figure(figsize=(25*npan/9, 25*npan/9))
     grid = plt.GridSpec(npan, npan, hspace=0.3, wspace=0.3)
