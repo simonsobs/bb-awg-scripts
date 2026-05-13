@@ -316,6 +316,7 @@ def main(args):
             sim_id=sim_id
         )
         assert os.path.isdir(map_dir), map_dir
+        tracemalloc.start()
 
         if not ib:
             logger.info(f"Loading atomics for ({patch}, {freq_channel}, "
@@ -325,7 +326,6 @@ def main(args):
         w_list, wmap_list = ([], [])
 
         if split_label == "science":
-            tracemalloc.start()
             for coadd in intra_obs_pair:
                 wmap_l, w_l = fu.get_atomics_maps_list(
                     sim_id, sim_type,
@@ -340,7 +340,6 @@ def main(args):
                                    for c in tracemalloc.get_traced_memory()]
             logger.info("Traced Memory for 'science' (Current, Peak): "
                         f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
-            tracemalloc.stop()
         elif split_label in inter_obs_splits:
             for coadd in intra_obs_pair:
                 wmap_l, w_l = fu.get_atomics_maps_list(
@@ -392,6 +391,7 @@ def main(args):
             plot_dirs[(patch, freq_channel, sim_type)],
             pix_type=pix_type, do_plot=False
         )
+        tracemalloc.stop()
         comm.Barrier()
     if rank == 0:
         end = time.time()
