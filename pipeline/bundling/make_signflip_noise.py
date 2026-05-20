@@ -73,85 +73,94 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
     task_ids = mpi.distribute_tasks(size, rank, n_missing,)
     #local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
-    # Loop over only missing tasks
-    #for task_id in mpi.taskrange(len(missing_tasks)):
-    #for task_id in mpi.taskrange(n_missing - 1):
+    # Group tasks by bundle_id so we can reuse SignFlipper. SignFlipper reads the
+    # per-bundle atomics into memory, and reusing it avoids repeating that work
+    # for every sim_id.
+    sim_ids_by_bundle = {}
     for task_id in task_ids:
         bundle_id, sim_id = missing_tasks[task_id]
-        print(f"Running bundle_id={bundle_id} sim_id={sim_id}")
+        sim_ids_by_bundle.setdefault(bundle_id, []).append(sim_id)
 
-        combined_map = None
-        combined_weight = None
-
-        # Now construct the signflipper (only for needed bundle_id)
+    # Loop over only missing tasks for this rank, grouped by bundle_id.
+    for bundle_id, sim_ids in sim_ids_by_bundle.items():
+        signflippers = []
         for bundle_db, map_dir_i in zip(sat_bundle_dbs, sat_map_dirs):
-            signflipper = SignFlipper(
-                bundle_db=bundle_db,
-                freq_channel=args.freq_channel,
-                wafer=args.wafer,
-                bundle_id=bundle_id,
-                null_prop_val=split_inter_obs,
-                pix_type=args.pix_type,
-                car_map_template=args.car_map_template,
-                split_label=split_intra_obs,
-                map_dir=map_dir_i,
-                atomic_list=args.atomic_list
-            )
+            signflippers.append((
+                bundle_db,
+                SignFlipper(
+                    bundle_db=bundle_db,
+                    freq_channel=args.freq_channel,
+                    wafer=args.wafer,
+                    bundle_id=bundle_id,
+                    null_prop_val=split_inter_obs,
+                    pix_type=args.pix_type,
+                    car_map_template=args.car_map_template,
+                    split_label=split_intra_obs,
+                    map_dir=map_dir_i,
+                    atomic_list=args.atomic_list,
+                    abscal=args.abscal
+                )
+            ))
 
-            print(len(signflipper.fnames))
+        for sim_id in sim_ids:
+            print(f"Running bundle_id={bundle_id} sim_id={sim_id}")
 
-            # NEW check here
-            if not signflipper.fnames:
-                print(f"Skipping bundle_id={bundle_id} sim_id={sim_id} (no atomic files)")
-                continue
+            combined_map = None
+            combined_weight = None
 
-            # Make noise map
-            try:
-                result = signflipper.signflip(seed=12345 * bundle_id + sim_id)
-                if not isinstance(result, (tuple, list)) or len(result) != 2:
-                    print(f"SignFlipper returned unexpected result for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {result}")
+            for bundle_db, signflipper in signflippers:
+                print(len(signflipper.fnames))
+                if not signflipper.fnames:
+                    print(f"Skipping bundle_id={bundle_id} sim_id={sim_id} (no atomic files)")
                     continue
-                noise_map, noise_weight = result
-            except Exception as e:
-                print(f"SignFlipper crashed for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {e}")
-                continue
 
-            # Initialize or accumulate
-            if combined_map is None:
-                combined_map = noise_map.copy()
-                combined_weight = noise_weight.copy()
-            else:
-                combined_map += noise_map
-                combined_weight += noise_weight
+                # Make noise map
+                try:
+                    result = signflipper.signflip(seed=12345 * bundle_id + sim_id)
+                    if not isinstance(result, (tuple, list)) or len(result) != 2:
+                        print(f"SignFlipper returned unexpected result for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {result}")
+                        continue
+                    noise_map, noise_weight = result
+                except Exception as e:
+                    print(f"SignFlipper crashed for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {e}")
+                    continue
+
+                # Initialize or accumulate
+                if combined_map is None:
+                    combined_map = noise_map.copy()
+                    combined_weight = noise_weight.copy()
+                else:
+                    combined_map += noise_map
+                    combined_weight += noise_weight
 
             if combined_map is None:
                 print(f"No valid maps for bundle_id={bundle_id} sim_id={sim_id}, skipping save.")
                 continue
 
-        # Output filenames
-        out_fname = os.path.join(
-            out_dir,
-            args.map_string_format.format(
-                split=split_tag,
-                bundle_id=bundle_id,
-                wafer=wafer_tag,
-                patch=patch_tag,
-                freq_channel=args.freq_channel,
-                map_type='{map_type}'
+            # Output filenames
+            out_fname = os.path.join(
+                out_dir,
+                args.map_string_format.format(
+                    split=split_tag,
+                    bundle_id=bundle_id,
+                    wafer=wafer_tag,
+                    patch=patch_tag,
+                    freq_channel=args.freq_channel,
+                    map_type='{map_type}'
+                )
             )
-        )
-        out_fname = out_fname.replace("__", "_")
-        out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{}")
+            out_fname = out_fname.replace("__", "_")
+            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{}")
 
-        # Skip existing maps if overwrite=False
-        if (not args.overwrite) and os.path.exists(out_fname.format("map")):
-            if rank == 0:
-                print(f"Skipping existing: {out_fname}")
-            continue
+            # Skip existing maps if overwrite=False
+            if (not args.overwrite) and os.path.exists(out_fname.format("map")):
+                if rank == 0:
+                    print(f"Skipping existing: {out_fname}")
+                continue
 
-        # Save maps
-        print('writing maps: '+out_fname)
-        utils.write_maps(out_fname, args.pix_type, combined_map, combined_weight, dtype=np.float32)
+            # Save maps
+            print('writing maps: '+out_fname)
+            utils.write_maps(out_fname, args.pix_type, combined_map, combined_weight, dtype=np.float32)
 
         # Quickplots
         #if sim_id % (n_sims // 3) == 0:

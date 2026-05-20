@@ -312,6 +312,7 @@ class SignFlipper(_Coadder):
                                        is_weights=True)
                         for fname in self.fnames]
         print("weights: ", len(self.wmaps))
+        self._weights_noise = None
 
 
     def signflip(self, seed=None):
@@ -329,11 +330,23 @@ class SignFlipper(_Coadder):
         signflip_noise: np.array
             TQU map with th sign-flip noise realization.
         """
+        class _NoInplaceScale:
+            """Wrapper that prevents in-place scaling of cached maps in utils.sum_maps."""
+            def __init__(self, base):
+                self._base = base
+
+            def __getattr__(self, name):
+                return getattr(self._base, name)
+
+            def __imul__(self, other):
+                out = self._base.copy()
+                out *= other
+                return out
+
         if seed is not None:
             np.random.seed(seed)
         perm_idx = np.random.permutation(len(self.wmaps))
-        maps_list, weights_list = ([self.wmaps[i] for i in perm_idx],
-                                   [self.weights[i] for i in perm_idx])
+        maps_list = [_NoInplaceScale(self.wmaps[i]) for i in perm_idx]
 
         mean_wQU_list = [self.ws[i] for i in perm_idx]
         abscal = self.full_abscal[perm_idx]
@@ -342,10 +355,24 @@ class SignFlipper(_Coadder):
         pm_one = np.random.choice([-1, 1])
         sign_list = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
 
-        signflip_noise, weights_noise = utils.coadd_maps(
-            maps_list, weights_list, pix_type=self.pix_type,
-            sign_list=sign_list, car_template_map=self.car_map_template,
-            abscal=abscal
+        if self._weights_noise is None:
+            weights_list = [self.weights[i] for i in perm_idx]
+            signflip_noise, weights_noise = utils.coadd_maps(
+                maps_list, weights_list, pix_type=self.pix_type,
+                sign_list=sign_list, car_template_map=self.car_map_template,
+                abscal=abscal
+            )
+            self._weights_noise = weights_noise
+            return signflip_noise, weights_noise
+
+        signflip_noise = utils.sum_maps(
+            maps_list,
+            self._weights_noise,
+            self.pix_type,
+            mult=sign_list * abscal**-1,
+            fields_hp=self.fields_hp
         )
 
-        return signflip_noise, weights_noise
+        good_weights = self._weights_noise > 0
+        signflip_noise[good_weights] /= self._weights_noise[good_weights]
+        return signflip_noise, self._weights_noise
