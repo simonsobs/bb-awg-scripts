@@ -285,15 +285,15 @@ def main(args):
                 ignore_cfg_check=True
             )
         except loader.LoaderError:
-            logger.warning(f"NO METADATA: "
+            logger.warning(f"NO METADATA: ",
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
         except OSError as err:
-            logger.warning(f"{err}: "
+            logger.warning(f"{err}: ",
                 ignore_cfg_check=True,
             )
         except loader.LoaderError:
-            logger.warning(f"NO METADATA IN DATA_AMAN: "
+            logger.warning(f"NO METADATA IN DATA_AMAN: ",
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
 
