@@ -156,6 +156,7 @@ def main(args):
     fl = bandlim_sine2(ells, 650, 50)
 
     for id_sim in range(id_start, id_start+n_sims):
+        print(f"{id_sim+1}/{n_sims}")
 
         np.random.seed(id_sim)
         alms = hp.synalm(ps, lmax=1000)
