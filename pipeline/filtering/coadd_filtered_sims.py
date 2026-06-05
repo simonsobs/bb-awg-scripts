@@ -35,7 +35,7 @@ def main(args):
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=3)
+    logger = pp_util.init_logger("benchmark", verbosity=args.verbosity)
     if rank == 0:
         start = time.time()
 
@@ -50,15 +50,17 @@ def main(args):
     # Sim related arguments
     if args.sim_types is None:
         sim_types = [None]
-        logger.warning("No sim_types considered. If this is by mistake, "
-                       "please ensure to add in the filtering yaml.")
+        if rank == 0:
+            logger.warning("No sim_types considered. If this is by mistake, "
+                           "please ensure to add in the filtering yaml.")
     else:
         sim_types = args.sim_types
     sim_string_format = args.sim_string_format
     if args.sim_ids is None:
         sim_ids = [None]
-        logger.warning("No sim_ids considered. If this is by mistake, "
-                       "please ensure to add in the filtering yaml.")
+        if rank == 0:
+            logger.warning("No sim_ids considered. If this is by mistake, "
+                           "please ensure to add in the filtering yaml.")
     else:
         sim_ids = args.sim_ids
     if isinstance(sim_ids, str):
@@ -69,7 +71,8 @@ def main(args):
             sim_ids = np.array([int(sim_ids)])
     elif not isinstance(sim_ids, list):
         raise ValueError("Argument 'sim_ids' has the wrong format")
-    logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
+    if rank == 0:
+        logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Input directory
     atomic_sim_dir = args.atomic_sim_dir
@@ -161,8 +164,9 @@ def main(args):
             else:
                 intra_obs_pair = intra_obs_pair.split(",")
 
-    logger.info(f"Split labels to coadd individually: {intra_obs_splits}")
-    logger.info(f"Split labels to coadd together: {intra_obs_pair}")
+    if rank == 0:
+        logger.info(f"Split labels to coadd individually: {intra_obs_splits}")
+        logger.info(f"Split labels to coadd together: {intra_obs_pair}")
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id and without atomic batches - inter obs null label
@@ -198,10 +202,11 @@ def main(args):
             nbatch = nbatches_dict[patch]
             batches[patch] = range(nbatch)
             nctimes = len(ctimes[patch, 'science', None])
-            logger.info(
-                f"{patch}: splitting atomics into {nbatch} random "
-                f"batches with {nctimes // nbatch} ctimes in each."
-            )
+            if rank == 0:
+                logger.info(
+                    f"{patch}: splitting atomics into {nbatch} random "
+                    f"batches with {nctimes // nbatch} ctimes in each."
+                )
             idx_rand = np.random.permutation(range(nctimes))
             for ib in batches[patch]:
                 ctimes[patch, "science", ib] = [
@@ -310,6 +315,8 @@ def main(args):
                  for patch, freq, sim, split, sim_type in local_mpi_list]
 
     for patch, freq_channel, sim_id, split_label, sim_type, ib in loop_over:
+        task_element = (patch, freq_channel, sim_id, split_label, sim_type)
+        local_task_id = local_mpi_list.index(task_element)
         map_dir = atomic_sim_dir.format(
             patch=patch,
             freq_channel=freq_labels[freq_channel],
@@ -318,9 +325,9 @@ def main(args):
         assert os.path.isdir(map_dir), map_dir
 
         if not ib:
-            logger.info(f"Loading atomics for ({patch}, {freq_channel}, "
-                        f"{split_label})"
-                        f" to filter {sim_type}, {split_label}, sim {sim_id}")
+            logger.debug(f"Loading atomics for ({patch}, {freq_channel}, "
+                         f"{split_label})"
+                         f" to filter {sim_type}, {split_label}, sim {sim_id}")
 
         w_list, wmap_list = ([], [])
 
@@ -338,8 +345,8 @@ def main(args):
                 w_list += w_l
             current_gb, peak_gb = [1024**(-3) * c
                                    for c in tracemalloc.get_traced_memory()]
-            logger.info("Traced Memory for 'science' (Current, Peak): "
-                        f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
+            logger.debug("Traced Memory for 'science' (Current, Peak): "
+                         f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
             tracemalloc.stop()
         elif split_label in inter_obs_splits:
             for coadd in intra_obs_pair:
@@ -362,9 +369,9 @@ def main(args):
             )
 
         if not ib:
-            logger.info(f"Coadding atomics for ({patch}, {freq_channel}, "
-                        f"{split_label})"
-                        f" to filter {sim_type}, sim {sim_id}")
+            logger.debug(f"Coadding atomics for ({patch}, {freq_channel}, "
+                         f"{split_label})"
+                         f" to filter {sim_type}, sim {sim_id}")
 
         map_filtered, weights = bu.coadd_maps(
             wmap_list, w_list, pix_type=pix_type,
@@ -392,6 +399,9 @@ def main(args):
             plot_dirs[(patch, freq_channel, sim_type)],
             pix_type=pix_type, do_plot=False
         )
+        if ib in [None, batches[patch][-1]]:
+            logger.info(f"Done: {local_task_id+1}/{len(local_mpi_list)} "
+                        f"for rank {rank}.")
         comm.Barrier()
     if rank == 0:
         end = time.time()
