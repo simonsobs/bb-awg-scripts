@@ -199,6 +199,10 @@ def main(args):
                                     logger=logger)
     local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
+    # Ensure that idle workers finish and don't hang
+    if not task_ids:
+        comm.barrier()
+
     # Loop over set of local tasks (patch, freq_channel, obs_id, wafer).
     # For each of these, loop over (sim_id, sim_type) and do:
     # * read simulated map

@@ -313,6 +313,10 @@ def main(args):
     loop_over = [(patch, freq, sim, split, sim_type, ib)
                  for ib in batches[patch]
                  for patch, freq, sim, split, sim_type in local_mpi_list]
+    
+    # Ensure that idle workers finish and don't hang
+    if not task_ids:
+        comm.barrier()
 
     for patch, freq_channel, sim_id, split_label, sim_type, ib in loop_over:
         task_element = (patch, freq_channel, sim_id, split_label, sim_type)
