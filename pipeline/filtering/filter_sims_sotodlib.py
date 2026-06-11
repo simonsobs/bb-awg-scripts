@@ -34,7 +34,7 @@ def main(args):
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=2)
+    logger = pp_util.init_logger("benchmark", verbosity=args.verbosity)
     if rank == 0:
         start = time.time()
 
@@ -202,12 +202,21 @@ def main(args):
                                     logger=logger)
     local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
+    # Ensure that idle workers finish and don't hang
+    if not task_ids:
+        comm.barrier()
+
     # Loop over set of local tasks (patch, freq_channel, obs_id, wafer).
     # For each of these, loop over (sim_id, sim_type) and do:
     # * read simulated map
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
-    for patch, freq_channel, obs_id, wafer in local_mpi_list:
+    for task_element in local_mpi_list:
+        patch, freq_channel, obs_id, wafer = task_element
+        local_task_id = local_mpi_list.index(task_element)
+        logger.debug(f"Starting task: "
+                     f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+        
         start = time.time()
 
         # First, check if atomic maps already exist.
@@ -284,6 +293,9 @@ def main(args):
                 stop_for_sims=True,
                 ignore_cfg_check=True
             )
+        # After focal plane thinning, the data AxisManager might not have any
+        # detectors left, resulting in one of several errors caught below.
+        # TODO: We should account for those directly in sotodlib. 
         except loader.LoaderError:
             logger.warning(f"NO METADATA: ",
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
@@ -294,6 +306,10 @@ def main(args):
             )
         except loader.LoaderError:
             logger.warning(f"NO METADATA IN DATA_AMAN: ",
+                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            continue
+        except IndexError:
+            logger.warning(f"NO DETECTORS LEFT AFTER RESTRICTING: "
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
 
@@ -307,8 +323,8 @@ def main(args):
             )
             map_file = f"{sim_dir}/{map_fname}"
 
-            logger.info(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                        f" to filter {sim_type}, sim {sim_id}")
+            logger.debug(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
+                         f" to filter {sim_type}, sim {sim_id}")
             start0 = time.time()
 
             # Handling pixellization
@@ -332,6 +348,9 @@ def main(args):
                     ignore_cfg_check=True,
                     data_amans=data_aman
                 )
+            # After focal plane thinning, the sim AxisManager might not have
+            # any detectors, resulting in one of several errors caught below.
+            # TODO: We should account for those directly in sotodlib. 
             except loader.LoaderError:
                 logger.warning(
                     "METADATA MISSING: "
@@ -396,13 +415,15 @@ def main(args):
                             f_w, w, dtype=np.float32, overwrite=True, nest=True
                         )
             end0 = time.time()
-            logger.info(f"Filtered in {end0 - start0:.1f} seconds: "
-                        f"{sim_type}, sim {sim_id} with setup "
-                        f"({patch}, {freq_channel}, {obs_id}, {wafer})")
-
-        logger.info(f"Processed {len(sim_ids)} simulations for "
-                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
-                    f"{time.time() - start:.1f} seconds.")
+            logger.debug(f"Filtered in {end0 - start0:.1f} seconds: "
+                         f"{sim_type}, sim {sim_id} with setup "
+                         f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+        logger.debug(f"Processed {len(sim_ids)} simulations for "
+                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
+                     f"{time.time() - start:.1f} seconds.")
+        logger.info(f"Done: {local_task_id+1}/{len(local_mpi_list)} "
+                    f"for rank {rank}.")
+        
     comm.Barrier()
     if rank == 0:
         end = time.time()

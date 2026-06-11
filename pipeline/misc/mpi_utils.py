@@ -11,10 +11,17 @@ size = 1
 comm = None
 
 
-def print_rnk0(text, rank, if_rank=0, logger=None):
+def print_rnk0(text, rank, if_rank=0, logger=None, verbosity=2):
     if rank == if_rank:
         if logger:
-            logger.info(text)
+            if verbosity == 1:
+                logger.warning(text)
+            elif verbosity == 2:
+                logger.info(text)
+            elif verbosity == 3:
+                logger.debug(text)
+            else:
+                raise ValueError("Verbosity must be between 1 and 3.")
         else:
             print(text)
 
@@ -73,7 +80,7 @@ def taskrange(imax, imin=0, shift=0, logger=None):
     elif not is_initialized():
         print_rnk0("MPI is not yet properly initialized. "
                    "Are you sure this is what you want to do?",
-                   rank, logger=logger)
+                   rank, logger=logger, verbosity=1)
 
     if not is_mpion():
         return np.arange(imin, imax + 1)
@@ -82,11 +89,13 @@ def taskrange(imax, imin=0, shift=0, logger=None):
 
     subrange = None
     if ntask <= 0:
-        print_rnk0("number of task can't be zero", rank, logger=logger)
+        print_rnk0("number of task can't be zero", rank, logger=logger,
+                   verbosity=1)
         subrange = np.arange(0, 0)  # return zero range
     else:
         if ntask != imax - imin + 1:
-            print_rnk0(f"WARNING: setting ntask={ntask}", rank, logger=logger)
+            print_rnk0(f"WARNING: setting ntask={ntask}", rank, logger=logger,
+                       verbosity=1)
         perrank = ntask // size
         print_rnk0(f"Running {ntask} simulations on {size} nodes",
                    rank, logger=logger)
@@ -119,6 +128,9 @@ def distribute_tasks(size, rank, ntasks, id_start=0, logger=None):
     if size > ntasks:
         local_start = rank
         local_stop = rank + 1
+        if rank == 0:
+            logger.warning(f"You assign {ntasks} tasks to {size} workers. "
+                           "Consider using less workers.")
     else:
         local_start = rank * (ntasks // size)
         local_stop = local_start + (ntasks // size)
@@ -138,7 +150,7 @@ def distribute_tasks(size, rank, ntasks, id_start=0, logger=None):
 
     print_rnk0(f"Rank {rank} has {len(local_task_ids)} tasks: "
                f"{np.array(local_task_ids, dtype=int)}",
-               rank, if_rank=rank, logger=logger)
+               rank, if_rank=rank, logger=logger, verbosity=3)
     print_rnk0(f"Total number of tasks is {ntasks}", rank, logger=logger)
 
     return local_task_ids

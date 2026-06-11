@@ -166,11 +166,14 @@ def get_query_atomics(freq_channel, ctimes, split_label="science",
     """
     """
     ctimes = list(map(int, ctimes))
+    ctimes_write = tuple(np.asarray(ctimes).tolist())
+    if len(ctimes) == 1:
+        ctimes_write = f"({ctimes[0]})"
     query = f"""
             SELECT obs_id, wafer
             FROM atomic
             WHERE freq_channel == '{freq_channel}'
-            AND ctime IN {tuple(np.asarray(ctimes).tolist())}
+            AND ctime IN {ctimes_write}
             AND split_label == '{split_label}'
             """
     if split_label != "science":
@@ -327,7 +330,7 @@ class Cfg:
     remove_atomics: Optional[bool] = False
     overwrite_atomics: Optional[bool] = True
     base_dir: Optional[str] = None
-    t2p_template: Optional[bool] = True
+    verbosity: Optional[int] = 2
 
     def update(self, dict):
         # Add extra private args not expected in config file
