@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import utils as ut
+from utils import MatrixPurification
 from simpure import SimPure
 import sys
 
@@ -23,15 +24,16 @@ import mpi_utils as mpi
 # * 2026/03/03: changed output directory naming convention
 # * 2026/03/04: added power-law simulation validation
 # * 2026/05/05: tested power-law simulation validation
+# * 2026/05/27: added matrix-based purification
 
 
 def main():
     print("  0. Initialization")
     # pixelization
     pix_type = "hp"
-    nside = 128
+    nside = 64
     car_template = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/band_car_fejer1_20arcmin.fits"  # noqa: E501
-    beam_fwhm = 30
+    beam_fwhm = 60
     nlb = 10  # number of multipoles per bin
 
     # Computing cluster
@@ -40,24 +42,31 @@ def main():
 
     # Filtering choice
     # filter_setup = "toy_apo_nside128"  # Toy filter
-    filter_setup = f"obsmat_polyonly_apo_nside{nside}"  # Simple poly filter
+    filter_setup = f"obsmat_polyonly_apo_nside{nside}_binary_masked"  # Simple poly filter
     # filter_setup = f"obsmat_apo_nside{nside}"  # BBMASTER paper
 
-    # general
-    nsims_purify = 1000  # number of pure-E sims used for template deprojection
-    nsims_val = 100  # number of validation sims
-    nsims_transfer = 50  # number of pure (E,B sims used for transfer function)
-    id_sim_transfer_start = 0
-    lmax_plot = 300
+    # General parameters
     overwrite = True  # If True, always recompute products.
-    deproject_null = False  # Deproject null vector instead of pureB template.
+    purify_method = "deproj"  # Choose between "matrix", "deproj", None
+    nsims_purify = 1000  # number of pure-E sims used for template deprojection.
+                         # Only relevant if purify_method is "deproj"
+    nsims_val = 200  # number of validation sims
+    nsims_transfer = 200  # number of pure (E,B sims used for transfer function)
+    id_sim_transfer_start = 0
+
+    deproject_null = False  # Only applies to "deproj". Deproject a null matrix
     ignore_filtering = False  # If True, only check mask-based purification.
     plot_dl = False  # Plot D_ells or C_ells?
+    lmax_plot = 200  # Plot until what ell max?
 
-    out_dir = f"{base_dir}/purification/{filter_setup}_20260505/ndep{nsims_purify}_ntrf{nsims_transfer}_nval{nsims_val}"  # noqa: E501
+    # NOTE: This will be the name of the output folder.
+    # Choose a representative name for the test case at hand.
+    test_label = f"{purify_method}_binary_masked"
+
+    out_dir = f"{base_dir}/purification/{test_label}"
     plot_dir = f"{out_dir}/plots"
-    mask_file = "/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside128.fits"  # NERSC # noqa: E501
-    # mask_file = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside128.fits"  # SO:UK noqa: E501
+    mask_file = f"/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside{nside}.fits"  # NERSC # noqa: E501
+    # mask_file = f"/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside{nside}.fits"  # SO:UK noqa: E501
 
     sp = SimPure(pix_type,
                  base_dir,
@@ -69,7 +78,6 @@ def main():
                  beam_fwhm=beam_fwhm,
                  nlb=nlb
                  )
-
     cosmo = {
         "cosmomc_theta": 0.0104085,
         "As": 2.1e-9,
@@ -85,7 +93,7 @@ def main():
     _, cl_cmb = ut.get_theory_cls(cosmo, lmax=sp.lmax+500, beam_fwhm=beam_fwhm)
     _, cl_plaw = ut.get_plaw_cls(sp.lmax+500, beam_fwhm=beam_fwhm)
     clth_dict = {"cmb": cl_cmb, "plaw": cl_plaw}
-    mp_sims, mat = (None, None)
+    deproj_sims, deproj_mat, matpure = (None, None, None)
 
     os.makedirs(plot_dir, exist_ok=True)
     ut.plot_map(sp.mask, file_name=f"{plot_dir}/mask", pix_type=pix_type)
@@ -93,59 +101,68 @@ def main():
                 pix_type=pix_type)
 
     if not ignore_filtering:
-        print("  1. Make deprojection matrix")
-        if not deproject_null:
-
-            sim_dir = f"{out_dir}/sims_filt"
-            sim_fn = "sim_pureE_alpha2_filt_pure_Bout_{id_sim:04d}.fits"
-            mat_fn = f"{out_dir}/matcorr_alpha2_filt_pure_Bout_nsims{nsims_purify}.npz"  # noqa: E501
-            mat_plot_fn = f"{plot_dir}/M_deproject_eigvals_nsims{nsims_purify}.pdf"  # noqa: E501
-            mp_sims, mat = sp.make_deprojection_matrix(
-                sim_dir, sim_fn, mat_fn, nsims_purify, overwrite, mat_plot_fn)
-        else:
-            print("  1A. Null B-residuals to mock deproject")
-            mp = sp.load_cmb_sim(0, filtered=True)
-            mp_sims = np.zeros((nsims_purify,) + mp.shape)
-            mat = np.eye(nsims_purify)
+        if purify_method == "deproj":
+            if not deproject_null:
+                print("  1A. Make deprojection matrix")
+                sim_dir = f"{out_dir}/sims_filt"
+                sim_fn = "sim_pureE_alpha2_filt_pure_Bout_{id_sim:04d}.fits"
+                mat_fn = f"{out_dir}/matcorr_alpha2_filt_pure_Bout_nsims{nsims_purify}.npz"  # noqa: E501
+                mat_plot_fn = f"{plot_dir}/M_deproject_eigvals_nsims{nsims_purify}.pdf"  # noqa: E501
+                deproj_sims, deproj_mat = sp.make_deprojection_matrix(
+                    sim_dir, sim_fn, mat_fn, nsims_purify, overwrite,
+                    mat_plot_fn)
+            else:
+                mp = sp.load_cmb_sim(0, filtered=True)
+                deproj_sims = np.zeros((nsims_purify,) + mp.shape)
+                deproj_mat = np.eye(nsims_purify)
+        elif purify_method == "matrix":
+            print("   1B. Prepare matrix purification")
+            eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_nside64.npz"
+            matpure = MatrixPurification(sp.mask,
+                                         eigspec_fn,
+                                         thresh_lo=0.25,
+                                         thresh_hi=0.75)
         sp.comm.barrier()
 
         print("  2. Transfer function computation")
         local_task_ids = mpi.distribute_tasks(sp.size, sp.rank, 5, id_start=0)
 
         for id in local_task_ids:
+            kwargs = {"deproj_sims": deproj_sims,
+                      "deproj_mat": deproj_mat,
+                      "matpure": matpure}
             if id == 0:
                 print("  2A. TF sims unfiltered w/o purification")
-                kwargs = {"filtered": False, "purified": False, "deprojected": False}  # noqa: E501
+                kwargs.update({"filtered": False, "purified": False, "method": None})  # noqa: E501
                 cls_tf_unfiltered_nopure = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 1:
                 print("  2B. TF sims unfiltered w/ purification")
-                kwargs = {"filtered": False, "purified": True, "deprojected": False}  # noqa: E501
+                kwargs.update({"filtered": False, "purified": True, "method": None})  # noqa: E501
                 cls_tf_unfiltered_pure = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 2:
                 print("  2C. TF sims filtered w/o purification")
-                kwargs = {"filtered": True, "purified": False, "deprojected": False}  # noqa: E501
+                kwargs.update({"filtered": True, "purified": False, "method": None})  # noqa: E501
                 cls_tf_filtered_nopure = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 3:
                 print("  2D. TF sims filtered w/ purification")
-                kwargs = {"filtered": True, "purified": True, "deprojected": False}  # noqa: E501
+                kwargs.update({"filtered": True, "purified": True, "method": None})  # noqa: E501
                 cls_tf_filtered_pure = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite, 
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 4:
-                print("  2E. TF sims filtered w/ purification & deprojection")
-                kwargs = {"filtered": True, "purified": True, "deprojected": True}  # noqa: E501
-                cls_tf_filtered_pure_dep = sp.get_tf_spectra(
+                print("  2E. TF sims filtered w/ advanced purification")
+                kwargs.update({"filtered": True, "purified": True, "method": purify_method})  # noqa: E501
+                cls_tf_filtered_pure_adv = sp.get_tf_spectra(
                     out_dir, nsims_transfer, overwrite=overwrite,
-                    mp_sims=mp_sims, mat=mat,
                     id_sim_start=id_sim_transfer_start, **kwargs
                 )
-        
+
         sp.comm.barrier()
         cls_tf_unfiltered_nopure = np.load(
             f"{out_dir}/cls_tf_unfiltered_nopure_nsims{nsims_transfer}.npz",
@@ -163,83 +180,166 @@ def main():
             f"{out_dir}/cls_tf_filtered_pure_nsims{nsims_transfer}.npz",
             allow_pickle=True
         )["cls"]
-        cls_tf_filtered_pure_dep = np.load(
-            f"{out_dir}/cls_tf_filtered_pure_dep_nsims{nsims_transfer}.npz",
+        cls_tf_filtered_pure_adv = np.load(
+            f"{out_dir}/cls_tf_filtered_pure_{purify_method}_nsims{nsims_transfer}.npz",  # noqa: E501
             allow_pickle=True
         )["cls"]
+
+        # DEBUG
+        print("cls_tf_unfiltered_nopure", cls_tf_unfiltered_nopure.shape)
+        plt.figure()
+        plt.plot(sp.leff, np.mean(cls_tf_unfiltered_nopure[:, 0, 0], axis=0), label="Zm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_nopure[:, 0, 0], axis=0), label="ZRm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_pure_adv[:, 0, 0], axis=0), label="PZRm")
+        plt.yscale("log")
+        plt.legend()
+        plt.ylabel(r"$C_\ell$")
+        plt.xlabel(r"$\ell")
+        plt.savefig(f"{plot_dir}/cls_tf_tt_to_tt.png")
+        print(f"{plot_dir}/cls_tf_tt_to_tt.png")
+        plt.close()
+
+        plt.figure()
+        plt.plot(sp.leff, np.mean(cls_tf_unfiltered_nopure[:, 0, 1], axis=0), label="Zm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_nopure[:, 0, 1], axis=0), label="ZRm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_pure_adv[:, 0, 1], axis=0), label="PZRm")
+        plt.yscale("log")
+        plt.legend()
+        plt.ylabel(r"$C_\ell$")
+        plt.xlabel(r"$\ell")
+        plt.savefig(f"{plot_dir}/cls_tf_te_to_te.png")
+        print(f"{plot_dir}/cls_tf_te_to_te.png")
+        plt.close()
+
+        plt.figure()
+        plt.plot(sp.leff, np.mean(cls_tf_unfiltered_nopure[:, 8, 5], axis=0), label="Zm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_nopure[:, 8, 5], axis=0), label="ZRm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_pure_adv[:, 8, 5], axis=0), label="PZRm")
+        plt.yscale("log")
+        plt.legend()
+        plt.ylabel(r"$C_\ell$")
+        plt.xlabel(r"$\ell")
+        plt.savefig(f"{plot_dir}/cls_tf_bb_to_ee.png")
+        print(f"{plot_dir}/cls_tf_bb_to_ee.png")
+        plt.close()
+
+        plt.figure()
+        plt.plot(sp.leff, np.mean(cls_tf_unfiltered_nopure[:, 5, 8], axis=0), label="Zm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_nopure[:, 5, 8], axis=0), label="ZRm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_pure_adv[:, 5, 8], axis=0), label="PZRm")
+        plt.yscale("log")
+        plt.legend()
+        plt.ylabel(r"$C_\ell$")
+        plt.xlabel(r"$\ell")
+        plt.savefig(f"{plot_dir}/cls_tf_ee_to_bb.png")
+        print(f"{plot_dir}/cls_tf_ee_to_bb.png")
+        plt.close()
+
+        plt.figure()
+        plt.plot(sp.leff, np.mean(cls_tf_unfiltered_nopure[:, 5, 5], axis=0), label="Zm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_nopure[:, 5, 5], axis=0), label="ZRm")
+        plt.plot(sp.leff, np.mean(cls_tf_filtered_pure_adv[:, 5, 5], axis=0), label="PZRm")
+        plt.yscale("log")
+        plt.legend()
+        plt.ylabel(r"$C_\ell$")
+        plt.xlabel(r"$\ell")
+        plt.savefig(f"{plot_dir}/cls_tf_ee_to_ee.png")
+        print(f"{plot_dir}/cls_tf_ee_to_ee.png")
+        plt.close()
+
+        print("CLs shape", cls_tf_filtered_pure_adv.shape)
+        print("cls pure adv TT", np.mean(cls_tf_filtered_pure_adv[:, 0, 0, :5], axis=0))
+        print("cls pure adv TE", np.mean(cls_tf_filtered_pure_adv[:, 1, 1, :5], axis=0))
+        print("cls pure adv TB", np.mean(cls_tf_filtered_pure_adv[:, 2, 2, :5], axis=0))
+        print("cls pure adv ET", np.mean(cls_tf_filtered_pure_adv[:, 3, 3, :5], axis=0))
+        print("cls pure adv BT", np.mean(cls_tf_filtered_pure_adv[:, 4, 4, :5], axis=0))
+        print("cls pure adv EE", np.mean(cls_tf_filtered_pure_adv[:, 5, 5, :5], axis=0))
+        print("cls pure adv EB", np.mean(cls_tf_filtered_pure_adv[:, 6, 6, :5], axis=0))
+        print("cls pure adv BE", np.mean(cls_tf_filtered_pure_adv[:, 7, 7, :5], axis=0))
+        print("cls pure adv BB", np.mean(cls_tf_filtered_pure_adv[:, 8, 8, :5], axis=0))
 
         local_task_ids = mpi.distribute_tasks(sp.size, sp.rank, 3, id_start=0)
         for id in local_task_ids:
             if id == 0:
                 print("  2F. TF w/ purification")
                 transfer_pure = ut.get_transfer_dict(cls_tf_filtered_pure,
-                                                    cls_tf_unfiltered_pure)
+                                                     cls_tf_unfiltered_pure)
                 np.savez(f"{out_dir}/transfer_pure.npz", **transfer_pure)
             if id == 1:
                 print("  2G. TF w/o purification")
-                transfer_nopure = ut.get_transfer_dict(cls_tf_filtered_nopure,
-                                                    cls_tf_unfiltered_nopure)
+                transfer_nopure = ut.get_transfer_dict(
+                    cls_tf_filtered_nopure, cls_tf_unfiltered_nopure)
                 np.savez(f"{out_dir}/transfer_nopure.npz", **transfer_nopure)
             if id == 2:
-                print("  2H. TF with purification & deprojection")
-                transfer_pure_dep = ut.get_transfer_dict(
-                    cls_tf_filtered_pure_dep, cls_tf_unfiltered_pure)
-                np.savez(f"{out_dir}/transfer_pure_dep.npz",
-                         **transfer_pure_dep)
+                print("  2H. TF with advanced purification")
+                if purify_method == "matrix":
+                    cls_tf_comp = cls_tf_unfiltered_nopure
+                else:
+                    cls_tf_comp = cls_tf_unfiltered_pure
+                transfer_pure_adv = ut.get_transfer_dict(
+                    cls_tf_filtered_pure_adv, cls_tf_comp)
+                np.savez(f"{out_dir}/transfer_pure_{purify_method}.npz",
+                         **transfer_pure_adv)
         sp.comm.barrier()
 
         transfer_pure = np.load(f"{out_dir}/transfer_pure.npz", allow_pickle=True)  # noqa: E501
         transfer_nopure = np.load(f"{out_dir}/transfer_nopure.npz", allow_pickle=True)  # noqa: E501
-        transfer_pure_dep = np.load(f"{out_dir}/transfer_pure_dep.npz", allow_pickle=True)  # noqa: E501
+        transfer_pure_adv = np.load(f"{out_dir}/transfer_pure_{purify_method}.npz", allow_pickle=True)  # noqa: E501
 
         if sp.rank == 0:
             field_pairs = ["EE", "EB", "BE", "BB"]
-            file_name = f"{plot_dir}/transfer_dep_nsims{nsims_purify}_tf_nsims{nsims_transfer}.pdf"  # noqa: E501
+            file_name = f"{plot_dir}/transfer_function.pdf"  # noqa: E501
             tf_dict = {
                 "nopure": transfer_nopure, "pure": transfer_pure,
-                f"pure_dep (N={nsims_purify})": transfer_pure_dep
+                f"pure_{purify_method}": transfer_pure_adv
             }
             ut.plot_transfer_function(sp.leff, tf_dict, 0, lmax_plot,
                                       field_pairs, file_name=file_name)
             ut.plot_transfer_function(
+                sp.leff, tf_dict, 0, lmax_plot,
+                ["TT", "TE", "TB", "ET", "BT"] + field_pairs,
+                file_name=file_name.replace(".pdf", "_inclT.pdf"))
+            ut.plot_transfer_function(
                 sp.leff, tf_dict, 0, lmax_plot, ["BB"],
                 file_name=file_name.replace(".pdf", "_BB.pdf"))
-            
+
             # Precompute couplings
-            coupling_cases = {"nopure", "pure", "pure_dep"}
+            coupling_cases = {"nopure", "pure", f"pure_{purify_method}"}
             for cc in coupling_cases:
+                print(cc)
                 tf = {"nopure": transfer_nopure["full_tf"],
                       "pure": transfer_pure["full_tf"],
-                      "pure_dep": transfer_pure_dep["full_tf"]}[cc]
-                purify = {"nopure": False, "pure": True, "pure_dep": True}[cc]
+                      f"pure_{purify_method}": transfer_pure_adv["full_tf"]}[cc]
+                purify = {"nopure": False, "pure": True, "pure_deproj": True,
+                          "pure_matrix": False}[cc]
                 _ = sp.get_inv_coupling(transfer=tf,
                                         tf_type=cc,
-                                        nmt_purify=purify)
+                                        nmt_purify=purify,
+                                        overwrite=overwrite)
             for purify in [True, False]:
-                _ = sp.get_inv_coupling(nmt_purify=purify)
-
+                _ = sp.get_inv_coupling(nmt_purify=purify, overwrite=overwrite)
 
     # Compute CLs
     print("  3. Power spectrum computation")
     sp.comm.barrier()
-    cases = [{"noE": True, "filtered": False, "map": m, "purified": False, "deprojected": False, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
-    cases += [{"noE": False, "filtered": False, "map": m, "purified": True, "deprojected": False, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
-    cases += [{"noE": False, "filtered": False, "map": m, "purified": False, "deprojected": False, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
+    cases = [{"noE": True, "filtered": False, "map": m, "purified": False, "method": None, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
+    cases += [{"noE": False, "filtered": False, "map": m, "purified": True, "method": None, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
+    cases += [{"noE": False, "filtered": False, "map": m, "purified": False, "method": None, "TFed": False} for m in ["cmb", "plaw"]]  # noqa: E501
     if not ignore_filtering:
-        cases += [{"noE": True, "filtered": True, "map": m, "purified": False, "deprojected": False, "TFed": tfed} for m in ["cmb", "plaw"] for tfed in [False, True]]  # noqa: E501
-        cases += [{"noE": False, "filtered": True, "map": m, "purified": True, "deprojected": d, "TFed": t} for m in ["cmb", "plaw"] for d in [False, True] for t in [False, True]]  # noqa: E501
-        cases += [{"noE": False, "filtered": True, "map": m, "purified": False, "deprojected": False, "TFed": t} for m in ["cmb", "plaw"] for t in [False, True]]  # noqa: E501
+        cases += [{"noE": True, "filtered": True, "map": m, "purified": False, "method": None, "TFed": tfed} for m in ["cmb", "plaw"] for tfed in [False, True]]  # noqa: E501
+        cases += [{"noE": False, "filtered": True, "map": m, "purified": True, "method": p, "TFed": t} for m in ["cmb", "plaw"] for p in [None, purify_method] for t in [False, True]]  # noqa: E501
+        cases += [{"noE": False, "filtered": True, "map": m, "purified": False, "method": None, "TFed": t} for m in ["cmb", "plaw"] for t in [False, True]]  # noqa: E501
 
     def case_label(case):
+        plab = {None: "mask", "deproj": "sim-based", "matrix": "matrix"}[purify_method]  # noqa: E501
         lab = ""
         lab += "Filtered " if case["filtered"] else "Masked "
         lab += case["map"]
         lab += "B " if case["noE"] else "EB "
-        lab += "with purification" if case["purified"] else "without purification"  # noqa: E501
-        lab += " and deprojection" if case["deprojected"] else ""
+        lab += f"with {plab} purification" if case["purified"] else "without purification"  # noqa: E501
         lab += ", TFed" if case["TFed"] else ""
         return lab
-    
+
     if sp.rank == 0:
         print("Coupling computation")
 
@@ -250,9 +350,9 @@ def main():
         print(f" 3 ({id+1}/{nranks})  {case_label(cases[id])}")
         kwargs = cases[id]
         if kwargs["TFed"]:
-            if kwargs["purified"] and kwargs["deprojected"]:
-                tf = transfer_pure_dep["full_tf"]
-            elif kwargs["purified"] and not kwargs["deprojected"]:
+            if kwargs["purified"] and kwargs["method"]:
+                tf = transfer_pure_adv["full_tf"]
+            elif kwargs["purified"] and not kwargs["method"]:
                 tf = transfer_pure["full_tf"]
             else:
                 tf = transfer_nopure["full_tf"]
@@ -260,7 +360,8 @@ def main():
             tf = None
         _ = sp.get_val_spectra(
             out_dir, nsims_val, overwrite=overwrite_cls, plot_dir=plot_dir,
-            **kwargs, tf=tf, mp_sims=mp_sims, mat=mat
+            **kwargs, tf=tf, deproj_sims=deproj_sims, deproj_mat=deproj_mat,
+            matpure=matpure
         )
 
     # Plotting
@@ -274,8 +375,8 @@ def main():
     _, bpw_msk_nopure = sp.get_inv_coupling(return_bp_win=True,
                                             overwrite=overwrite)
     _, bpw_msk_pure = sp.get_inv_coupling(nmt_purify=True,
-                                        return_bp_win=True,
-                                        overwrite=overwrite)
+                                          return_bp_win=True,
+                                          overwrite=overwrite)
     if not ignore_filtering:
         _, bpw_fil_nopure = sp.get_inv_coupling(
             transfer=transfer_nopure["full_tf"],
@@ -291,9 +392,9 @@ def main():
             return_bp_win=True,
             overwrite=overwrite
         )
-        _, bpw_fil_pure_dep = sp.get_inv_coupling(
-            transfer=transfer_pure_dep["full_tf"],
-            tf_type="pure_dep",
+        _, bpw_fil_pure_adv = sp.get_inv_coupling(
+            transfer=transfer_pure_adv["full_tf"],
+            tf_type=f"pure_{purify_method}",
             nmt_purify=True,
             return_bp_win=True,
             overwrite=True
@@ -385,12 +486,12 @@ def main():
             clth = clth_dict[mtyp]
             clth_fil_nopure = ut.bin_theory_cls(clth_dict[mtyp], bpw_fil_nopure)  # noqa: E501
             clth_fil_pure = ut.bin_theory_cls(clth_dict[mtyp], bpw_fil_pure)
-            clth_fil_pure_dep = ut.bin_theory_cls(clth_dict[mtyp], bpw_fil_pure_dep)  # noqa: E501
+            clth_fil_pure_adv = ut.bin_theory_cls(clth_dict[mtyp], bpw_fil_pure_adv)  # noqa: E501
 
             cls_filtered_nopure_tfed = np.load(f"{out_dir}/cls_{mtyp}_filtered_nopure_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
             cls_filtered_nopure = np.load(f"{out_dir}/cls_{mtyp}_filtered_nopure.npz", allow_pickle=True)["cls"]  # noqa: E501
-            cls_filtered_pure_dep_tfed = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure_dep_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
-            cls_filtered_pure_dep = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure_dep.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_filtered_pure_adv_tfed = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure_{purify_method}_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
+            cls_filtered_pure_adv = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure_{purify_method}.npz", allow_pickle=True)["cls"]  # noqa: E501
             cls_filtered_pure_tfed = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
             cls_filtered_pure = np.load(f"{out_dir}/cls_{mtyp}_filtered_pure.npz", allow_pickle=True)["cls"]  # noqa: E501
             cls_noe_filtered_tfed = np.load(f"{out_dir}/cls_{mtyp}_noe_filtered_tfed.npz", allow_pickle=True)["cls"]  # noqa: E501
@@ -413,14 +514,14 @@ def main():
                 plt.plot(sp.leff, y, color='y', ls="-", label=f"Filtered {mtyp}, purified")  # noqa: E501
                 plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
 
-                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
-                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
-                plt.plot(sp.leff, y, color='g', ls="-", label=f"f{mtyp}, purified & deproj.")  # noqa: E501
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_adv_tfed]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_adv_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='g', ls="-", label=f"f{mtyp}, {purify_method}-purified")  # noqa: E501
                 plt.fill_between(sp.leff, y-yerr, y+yerr, color='g', alpha=0.2)
 
                 plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
                 plt.plot(clth[pols][:sp.lmax+1]*cl2dl, 'r--', alpha=0.5, label="Theory")  # noqa: E501
-                plt.plot(sp.leff, clth_fil_pure_dep[pols], 'r-.', alpha=0.5, label="Theory dep.")  # noqa: E501
+                plt.plot(sp.leff, clth_fil_pure_adv[pols], 'r-.', alpha=0.5, label="Theory pure")  # noqa: E501
 
                 plt.xlim([2, lmax_plot])
                 plt.xlabel(r"$\ell$", fontsize=14)
@@ -456,10 +557,10 @@ def main():
                 yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)  # noqa: E501
                 plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'y-', alpha=0.5, label=f"Filtered {mtyp}, purified")  # noqa: E501
 
-                thbb = clth_fil_pure_dep[pols]
-                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
-                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
-                plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'g-', alpha=0.5, label=f"f{mtyp}, purif. & deproj. (N={nsims_purify})")  # noqa: E501
+                thbb = clth_fil_pure_adv[pols]
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_adv_tfed]), axis=0)  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_adv_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'g-', alpha=0.5, label=f"f{mtyp}, {purify_method}-purified (N={nsims_purify})")  # noqa: E501
                 plt.axhline(0, color="r", ls="--")
 
                 plt.xlim([2, lmax_plot])
@@ -478,8 +579,8 @@ def main():
                 plt.plot(sp.leff, yerr/yerr_ref, 'k-', alpha=0.5, label=f"Filtered {mtyp}, no purification")  # noqa: E501
                 yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)  # noqa: E501
                 plt.plot(sp.leff, yerr/yerr_ref, 'y-', alpha=0.5, label=f"Filtered {mtyp}, purified")  # noqa: E501
-                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)  # noqa: E501
-                plt.plot(sp.leff, yerr/yerr_ref, 'g-', alpha=0.5, label=f"f{mtyp}, purified & deproj.")  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_adv_tfed]), axis=0)  # noqa: E501
+                plt.plot(sp.leff, yerr/yerr_ref, 'g-', alpha=0.5, label=f"f{mtyp}, {purify_method}-purified")  # noqa: E501
                 plt.axhline(1, color="b", linestyle="--", alpha=0.5, label=f"Filtered {mtyp}, B only")  # noqa: E501
 
                 plt.xlim([2, lmax_plot])
@@ -501,8 +602,8 @@ def main():
                 plt.plot(sp.leff, yerr, 'k-', alpha=0.5, label=f"Filtered {mtyp}, no purification")  # noqa: E501
                 yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_tfed]), axis=0)*cl2dl  # noqa: E501
                 plt.plot(sp.leff, yerr, 'y-', alpha=0.5, label=f"Filtered {mtyp}, purified")  # noqa: E501
-                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep_tfed]), axis=0)*cl2dl  # noqa: E501
-                plt.plot(sp.leff, yerr, 'g-', alpha=0.5, label=f"f{mtyp}, purified & deproj.")  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_adv_tfed]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, yerr, 'g-', alpha=0.5, label=f"f{mtyp}, {purify_method}-purified")  # noqa: E501
 
                 plt.xlim([2, lmax_plot])
                 plt.yscale("log")
@@ -533,9 +634,9 @@ def main():
                 plt.plot(sp.leff, y, color='y', ls="-", label=f"Filtered {mtyp}, purified")  # noqa: E501
                 plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
 
-                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)*cl2dl  # noqa: E501
-                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_dep]), axis=0)*cl2dl  # noqa: E501
-                plt.plot(sp.leff, y, color='g', ls="-", label=f"f{mtyp}, purified & deproj. (N={nsims_purify})")  # noqa: E501
+                y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_adv]), axis=0)*cl2dl  # noqa: E501
+                yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_adv]), axis=0)*cl2dl  # noqa: E501
+                plt.plot(sp.leff, y, color='g', ls="-", label=f"f{mtyp}, {purify_method}-purified (N={nsims_purify})")  # noqa: E501
                 plt.fill_between(sp.leff, y-yerr, y+yerr, color='g', alpha=0.2)
 
                 plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)
