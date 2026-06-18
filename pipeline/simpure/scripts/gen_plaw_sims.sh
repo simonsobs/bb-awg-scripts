@@ -1,14 +1,14 @@
 #!/bin/bash
 
 pix_type=hp
-nside=128  # Ignored for CAR
+nside=64  # Ignored for CAR
 res_arcmin=5  # Ignored for HEALPIX
-smooth_fwhm=30
+smooth_fwhm=60
 n_sims=200
 id_sims_start=0
 # out_dir=/cephfs/soukdata/user_data/kwolz/simpure/plaw_sims  # SO:UK
 out_dir=/pscratch/sd/k/kwolz/bbdev/simpure/plaw_sims  # NERSC
-bb_awg_scripts_dir=/shared_home/kwolz/bbdev/bb-awg-scripts  # YOUR BB-AWG-SCRIPTS DIR
+bb_awg_scripts_dir=/global/homes/k/kwolz/bbdev/bb-awg-scripts  # YOUR BB-AWG-SCRIPTS DIR
 car_template=${bb_awg_scripts_dir}/pipeline/simpure/band_car_fejer1_20arcmin.fits  # Ignored for HEALPIX
 
 mkdir -p $out_dir

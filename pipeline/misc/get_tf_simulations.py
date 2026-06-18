@@ -173,7 +173,6 @@ def main(args):
                 map = hp.alm2map(
                     alms_list, nside, lmax=lmax
                 )
-                print(tag, [m.any() for m in map])
                 hp.write_map(
                     f"{out_dir}/{tag}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
                     map,

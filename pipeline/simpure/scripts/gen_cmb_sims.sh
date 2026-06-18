@@ -2,14 +2,14 @@
 
 pix_type="hp"
 pols_keep="B"  # "EB" means the CMB simulation contains both E-and B-modes
-nside=128  # Ignored for CAR
+nside=64  # Ignored for CAR
 res_arcmin=5  # Ignored for HEALPIX
-smooth_fwhm=30
-nsims=500
+smooth_fwhm=60
+nsims=200
 id_start=0
 # out_dir=/cephfs/soukdata/user_data/kwolz/simpure/cmb_sims  # SO:UK
 out_dir=/pscratch/sd/k/kwolz/bbdev/simpure/cmb_sims  # NERSC
-bb_awg_scripts_dir=/shared_home/kwolz/bbdev/bb-awg-scripts  # YOUR BB-AWG-SCRIPTS DIR
+bb_awg_scripts_dir=/global/homes/k/kwolz/bbdev/bb-awg-scripts  # YOUR BB-AWG-SCRIPTS DIR
 car_template=${bb_awg_scripts_dir}/pipeline/simpure/band_car_fejer1_20arcmin.fits  # Ignored for HEALPIX
 
 mkdir -p $out_dir

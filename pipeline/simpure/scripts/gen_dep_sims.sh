@@ -1,17 +1,18 @@
 #!/bin/bash
 
 pix_type=hp
-nside=128
+nside=64
 res_arcmin=20
-smooth_fwhm=30
-n_sims=2000
+smooth_fwhm=60
+n_sims=1000
 id_sims_start=0
 
 mkdir -p $out_dir
 
 # out_dir=/cephfs/soukdata/user_data/kwolz/simpure/input_sims  # SO:UK
 out_dir=/pscratch/sd/k/kwolz/bbdev/simpure/input_sims  # NERSC
-bb_awg_scripts_dir=/shared_home/kwolz/bbdev/bb-awg-scripts
+# bb_awg_scripts_dir=/shared_home/kwolz/bbdev/bb-awg-scripts  # SO:UK
+bb_awg_scripts_dir=/global/homes/k/kwolz/bbdev/bb-awg-scripts
 
 set OMP_NUM_THREADS=1
 
