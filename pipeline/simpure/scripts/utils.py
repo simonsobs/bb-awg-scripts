@@ -18,6 +18,7 @@ import toast
 # * 2026/02/03: fix bug confusing sigma and fwhm in get_theory_cls
 # * 2026/02/20: add healpix toy filtering routines
 # * 2026/04/29: add class MatrixPurification
+# * 2026/06/18: add documentation
 
 
 class MatrixPurification:
@@ -45,15 +46,29 @@ class MatrixPurification:
         eigspec = np.load(eigspec_fn)
         norm_eigvecs = eigspec['norm_eigvecs']
         num_e = int(norm_eigvecs.shape[0]*thresh_lo)
-        num_b = int(norm_eigvecs.shape[0]*thresh_hi) 
+        num_b = int(norm_eigvecs.shape[0]*thresh_hi)
         v = np.hstack(
-            (norm_eigvecs[:,num_b:],  # from thresh_hi to 1
-            norm_eigvecs[:,:num_e]))  # from 0 to thresh_hi
-        self.pmat = np.tensordot(v, v, axes=((1,),(1,)))
-    
+            (norm_eigvecs[:, num_b:],  # from thresh_hi to 1
+             norm_eigvecs[:, :num_e]))  # from 0 to thresh_hi
+        self.pmat = np.tensordot(v, v, axes=((1,), (1,)))
+
     def observe_map(self, map, obsmat_fn, apply_mask=True):
         """
         Apply observation matrix, and optionally multiply by apodized mask.
+
+        Arguments
+        ---------
+        :param map: array-like
+            Input TQU map
+        :param obsmat_fn: str
+            Full input path to TOAST observation matrix
+        :param apply_map: bool
+            Whether to multiply the observed map by the analysis mask
+        
+        Returns
+        -------
+        array-like
+            Output TQU map
         """
         if map.shape[0] != 3 or map.ndim != 2:
             raise ValueError("Map must by TQU healpix map.")
@@ -66,18 +81,22 @@ class MatrixPurification:
             mask3 = np.hstack((idx_n2r + Npix, idx_n2r + 2*Npix))
             self.obsmat = obsmat[mask3][:, mask3]
         Rm = np.zeros_like(map)
-        Rm[1:,msk] = (self.obsmat @ map.copy()[1:,msk].ravel()).reshape((2,-1))
+        Rm[0] = map[0]  # don't do anything to temperature
+        Rm[1:, msk] = (self.obsmat @ map.copy()[1:,msk].ravel()).reshape((2,-1))
         if not apply_mask:
             return Rm
         return Rm * self.mask_apo[None, :]
 
-    def purify_observed_map(self, map):
+    def purify_observed_map(self, map, ):
         """
         Apply matrix-based purification to observed and masked map.
+
+        TODO: This needs to be fixed
         """
         if map.shape[0] != 3 or map.ndim != 2:
-            raise ValueError("Map must by TQU healpix map.")
+            raise ValueError("Map must be TQU healpix map.")
         pRm = np.zeros_like(map)
+        pRm[0] = map[0]  # don't do anything to temperature
         msk = self.mask_bool
         pRm[1:, msk] = (self.pmat @ map.copy()[1:, msk].ravel()).reshape((2, -1))  # noqa: E501
         return pRm
@@ -138,7 +157,7 @@ def subscan_polyfilter(tod, axis=1, nsamp_subscan=2048, degree=1):
     Subscan polynomial filter using Legendre polynomials.
     """
     assert tod.shape[axis] / nsamp_subscan == tod.shape[axis] // nsamp_subscan
-    
+
     tod = np.swapaxes(tod, axis, -1)
     degree_corr = degree + 1
     subscan_indices = np.arange(0, tod.shape[axis]+1, nsamp_subscan)
@@ -147,7 +166,7 @@ def subscan_polyfilter(tod, axis=1, nsamp_subscan=2048, degree=1):
         ### Normalization constant of legendre function 
         norm_vector = np.arange(degree_corr)
         norm_vector = 2./(2.*norm_vector+1)
-        
+
         # Get each subscan to be filtered
         tod_mat = copy.deepcopy(tod[:, start:end])
 
@@ -158,16 +177,16 @@ def subscan_polyfilter(tod, axis=1, nsamp_subscan=2048, degree=1):
         # Generate legendre functions of each degree and store them in array
         arr_legendre = np.array([eval_legendre(deg, x)
                                  for deg in range(degree_corr)])
-        
+
         means = np.mean(tod_mat, axis=1)[:, np.newaxis]
         tod_mat -= means
-        
+
         # Make model to be subtracted
         coeffs = np.dot(arr_legendre, tod_mat.T)
         model = np.dot((coeffs/norm_vector[:, np.newaxis]).T,arr_legendre)*dx
 
         model += means
-        tod[:,start:end] -= model
+        tod[:, start:end] -= model
 
     return np.swapaxes(tod, axis, -1)
 
@@ -230,6 +249,18 @@ def toy_filter_healpix(map_in,
 
 def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
     """
+    Computes CAMB theory power spectra given an input cosmology.
+
+    Arguments
+    ---------
+    :param cosmo_params: dict
+        dictionary containing the cosmology parameters input to CAMB
+    :param lmax: int
+        maximum multipole to output
+    :param lmin: int
+        minimum multipole to output
+    :param beam_fwhm: float
+        Beam FWHM to convolve the theory spectrum with, in arcminutes
     """
     params = camb.set_params(**cosmo_params)
     results = camb.get_results(params)
@@ -255,6 +286,20 @@ def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
 
 def get_plaw_cls(lmax, lmin=0, index=2, offset=0.01, beam_fwhm=None):
     """
+    Computes power-law theory power spectra.
+
+    Arguments
+    ---------
+    :param lmax: int
+        maximum multipole to output
+    :param lmin: int
+        minimum multipole to output
+    :param index: int
+        power-law index
+    :param offset: float
+        x-offset to avoid dividing by zero at the monopole
+    :param beam_fwhm: float
+        Beam FWHM to convolve the theory spectrum with, in arcminutes
     """
     lth = np.arange(lmin, lmax+1)
     clpl = 1 / (lth + offset)**index
@@ -326,6 +371,39 @@ def get_inv_coupling(coupling_fname, mask, nmt_bins,
                      return_bp_win=False, wcs=None, lmax_mask=None,
                      overwrite=False):
     """
+    Get inverse bandpower coupling matrix, accounting for mask-related mode
+    coupling and potentially transfer function from other mask-based
+    operations like filtering and purification.
+
+    Arguments
+    ---------
+    :param coupling_fname: str
+        Full file path to bandpower coupling matrix
+    :param mask: array-like
+        Scalar mask to multiply map by
+    :param nmt_bins: NmtBin object
+        NaMaster binning scheme
+    :param transfer: array-like
+        9x9xNbin transfer function
+    :param nmt_purify: bool
+        Whether to account for KS purification on the mask-based mode
+        coupling matrix.
+    :return_bp_win: bool
+        Whether to return the bandpower window function
+    :param wcs: dict
+        Dictionary with Astropy World Coordinate System (WCS) information
+    :param lmax_mask: int
+        Maximum multipole to keep for the mask pseudo spectrum needed to
+        compute the mask-based mode coupling matrix
+    :param overwrite: bool
+        Whether to overwrite existing inverse coupling files
+
+    Returns
+    -------
+    :param inv_coupling: array-like
+        9*Nbins x 9*Nbins inverse bandpower coupling matrix
+    :param bp_win: array-like
+        9 x nbins x 9 x nl bandpower window function 
     """
     if os.path.isfile(coupling_fname) and not overwrite:
         inv_coupling = np.load(coupling_fname, allow_pickle=True)["inv_coupling"]  # noqa: E501
@@ -424,12 +502,13 @@ def get_coupled_pseudo_cls(fields1, fields2, nmt_binning):
     """
     Compute the binned coupled pseudo-C_ell estimates from two
     (spin-0 or spin-2) NaMaster fields and a multipole binning scheme.
-    Parameters
+   
+    Arguments
     ----------
-    fields1, fields2 : NmtField
-        Spin-0 or spin-2 fields to correlate.
-    nmt_binning : NmtBin
-        Multipole binning scheme.
+    :param fields1, fields2: NmtField objects
+        Spin-0 or spin-2 fields to correlate
+    :param nmt_binning: NmtBin object
+        Multipole binning scheme
     """
     spins = list(fields1.keys())
 
@@ -452,6 +531,7 @@ def decouple_pseudo_cls(coupled_pseudo_cells, coupling_inv):
     Decouples the coupled pseudo-C_ell estimators computed between two fields
     of spin 0 or 2. Returns decoupled binned power spectra labeled by field
     pairs (e.g. 'TT', 'TE', 'EE', 'EB', 'BB' etc.).
+
     Parameters
     ----------
     coupled_pseudo_cells : dict with keys f"spin{s1}xspin{s2}",

@@ -21,12 +21,35 @@ import mpi_utils as mpi
 # * 2026/02/05: adapted filtered map naming convention for CAR
 # * 2026/03/03: added MPI parallelization
 # * 2026/05/05: added power-law validation
+# * 2026/06/18: add documentation
 
 class SimPure:
     def __init__(self, pix_type, base_dir, out_dir, filter_setup,
                  mask_filename, car_template=None, nside=None,
                  beam_fwhm=30., nlb=10):
         """
+        Class for simulation-based purification.
+
+        Arguments
+        ---------
+        :param pix_type: str
+            Pixelization type. Supported are "car" and "hp".
+        :param base_dir: str
+            Base input directory for sim-based purification
+        :param out_dir: array-like
+            Output directory for sim-based purification
+        :param filter_setup: str
+            Name given to the filtering setup. Can be anything.
+        :param mask_filename: str
+            Full path to the (apodized) analysis mask
+        :param car_template: str
+            Full path to the CAR pixelization template. Ignored if
+            pixelization_type is "hp".
+        :beam_fwhm: float
+            Beam resolution FWHM. Only used to load specific maps from disk.
+        :nlb: int
+            Number of multipoles to bin into a bandpower bin. Determines
+            (linear) NaMaster bandpower binning scheme.
         """
         self.pix_type = pix_type
         if self.pix_type == "hp":
@@ -71,7 +94,22 @@ class SimPure:
 
     def get_masked_map(self, mp, nmt_purify=False, binary=False):
         """
-        binary=True is ignored if nmt_purify is False.
+        Outputs map multiplied by the apodized mask.
+
+        Arguments
+        ---------
+        :param mp: array-like
+            Input (unmasked) TQU map
+        :param nmt_purify: bool
+            Whether to apply KS purification on the map level after masking
+        :param binary: bool
+            Whether to multiply by binary msk instead of apodized mask.
+            Ignored if nmt_purify is False.
+        
+        Returns
+        -------
+        array-like
+            Output map
         """
         assert mp.shape[0] in [2, 3]
 
@@ -100,7 +138,23 @@ class SimPure:
 
     def load_val_sim(self, sim_id, filtered=False, pols_keep="EB", typ="cmb"):
         """
-        "typ" can be "cmb" or "plaw". TODO. 
+        Load validation simulation for purification.
+
+        Arguments
+        ---------
+        :param sim_id: int
+            Simulation ID to load
+        :param filtered: bool
+            Whether to load filtered simulation
+        :param pols_keep: str
+            What polarizations to keep in the map. Can be "EB" or "B".
+        :param typ: str
+            What type of validation map to load. Can be "cmb" or "plaw".
+
+        Returns
+        -------
+        array-like
+            Binary-masked TQU map, in muK units
         """
         sim_dir = f"filtered_{typ}_sims/{self.filter_setup}"  # obsmat, toy
         # sim_dir = f"filtered_{typ_lab}_sims/satp3/f090/{self.filter_setup}/coadded_sims"  # sotodlib  # noqa: E501
@@ -129,6 +183,21 @@ class SimPure:
 
     def load_transfer_sim(self, sim_id, filtered=False, typ=None):
         """
+        Load pure-type simulation for transfer function calculation.
+
+        Arguments
+        ---------
+        :param sim_id: int
+            Simulation ID to load
+        :param filtered: bool
+            Whether to load filtered simulation
+        :param typ: str
+            What type of validation map to load. Can be "pure{T|E|B}".
+
+        Returns
+        -------
+        array-like
+            Binary-masked TQU map
         """
         assert typ in [f"pure{p}" for p in "TEB"], "Invalid pure type"
         sim_dir = f"filtered_pure_sims/{self.filter_setup}"  # obsmat, toy
@@ -159,11 +228,38 @@ class SimPure:
                          return_bp_win=False,
                          overwrite=False):
         """
+        Get inverse bandpower coupling matrix, accounting for mask-related mode
+        coupling and potentially transfer function from other mask-based
+        operations like filtering and purification.
+
+        Arguments
+        ---------
+        :param transfer: array-like
+            9x9xNbin transfer function
+        :param tf_type: str
+            Type of TF. Supported are None, "nopure", "pure", "pure_deproj",
+            "pure_matrix".
+        :param nmt_purify: bool
+            Whether to account for KS purification on the mask-based mode
+            coupling matrix.
+        :return_bp_win: bool
+            Whether to return the bandpower window function
+        :param overwrite: bool
+            Whether to overwrite existing inverse coupling files
+
+        Returns
+        -------
+        :param inv_coupling: array-like
+            9*Nbins x 9*Nbins inverse bandpower coupling matrix
+        :param bp_win: array-like
+            9 x nbins x 9 x nl bandpower window function 
         """
         pix_type = "hp" if self.wcs is None else "car"
         pure_label = "_nmt_purify" if nmt_purify else ""
         tf_label = {None: "", "nopure": "_tf_nopure",
-                    "pure": "_tf_pure", "pure_dep": "_tf_pure_dep"}[tf_type] 
+                    "pure": "_tf_pure", "pure_deproj": "_tf_pure_deproj",
+                    "pure_matrix": "_tf_pure_matrix"}[tf_type] 
+        print("tf_label", tf_label)
         fn = f"{self.out_dir}/inv_coupling{tf_label}{pure_label}_{pix_type}.npz"  # noqa: E501
 
         return ut.get_inv_coupling(
@@ -179,6 +275,35 @@ class SimPure:
                       nmt_purify_mcm=None,
                       masked_on_input=False):
         """
+        Compute power spectrum, or NaMaster field from an input map.
+
+        Arguments
+        ---------
+        :param overwrite: map
+            TQU input map. Assmed to be non-masked unless
+            "masked_on_input" is set to True.
+        :param transfer: array-like
+            9x9xNbin transfer function
+        :param tf_type: str
+            Type of TF. Supported are None, "nopure", "pure", "pure_deproj",
+            "pure_matrix".
+        :param nmt_purify: bool
+            Whether to apply KS purification on the map level
+        :return_just_field: bool
+            Whether to return NmtField object. If False (default), return
+            decoupled power spectrum.
+        :param nmt_purify_mcm: bool
+            Whether to account for KS purification on the mask-based mode
+            coupling matrix.
+        :param masked_on_input: bool
+            Whether assumes input map to have been multiplied by analysis mask
+        
+        Returns
+        -------
+        :param field: NmtField object
+            Output field
+        :param cl: dict of array-like
+            Dictionary of decoupled power spectra, with keys "TT", "TE", etc.
         """
         assert map.shape[0] == 3
         lmax = self.bins.lmax
@@ -207,6 +332,14 @@ class SimPure:
 
     def extract_pure_mode(self, map, lmax, which_mode="B"):
         """
+        Extracts the pure-B component of a polarized map using harmonic
+        transformation.
+
+        Arguments
+        ---------
+        :param map: array-like
+            Input TQU map
+        
         """
         alms = {}
         alms["T"], alms["E"], alms["B"] = ut.map2alm(map, lmax,
@@ -223,10 +356,34 @@ class SimPure:
     def get_pcls_mat_transfer(self, fields, fields2=None):
         return ut.get_pcls_mat_transfer(fields, self.bins, fields2)
 
-    def make_deprojection_matrix(self, sim_dir, sim_fn, mat_fn, nsims_purify,
+    def make_deprojection_matrix(self, sim_dir, sim_fn, deproj_mat_fn,
+                                 nsims_purify,
                                  overwrite=False, mat_plot_fn=None):
         """
-        Docstring for make_deprojection_matrix
+        Makes a deprojection matrix for simulation-based purification.
+
+        Arguments
+        ---------
+        :param sim_dir: str
+            Input directory for filtered pure-E simulations
+        :param sim_fn: str
+            File name for filtered pure-E simulations. Must contain fstring
+            'sim_id'
+        :param deproj_mat_fn: str
+            Full file path to npz file that contains deprojection matrix. Will
+            be written to if nonexistent or overwrite == True.
+        :param nsims_purify: int
+            Number of pure-E simulations to use to build deprojection matrix
+        :param overwrite: bool
+            Whether to overwrite deprojection sims and matrix
+
+        Returns
+        -------
+        :param deproj_sims: array-like
+            Array of E-to-B leakage template maps for deprojection
+        :param deproj_mat: array-like
+            Deprojection matrix (outer product of deproj_sims with itself,
+            and cropped in dimensionality)
         """
         # Map B-residuals (B-only component of filtered,
         # mask-purified pure-E simulations)
@@ -265,7 +422,7 @@ class SimPure:
         
         if self.rank == 0:
             # Then save the deprojection matrix
-            mp_sims = []
+            deproj_sims = []
             for i in range(nsims_purify):
                 if i % 50 == 0:
                     print("   SAVE MP SIMS", i)
@@ -280,28 +437,28 @@ class SimPure:
                 else:
                     print(f"WARNING: {fname} is not present.")
                     continue
-                mp_sims.append(mp_masked_bonly)
+                deproj_sims.append(mp_masked_bonly)
 
             # Save M_ij = s_ipn *s_jpn, where s is the simulation vector
             # of B-residuals
-            if os.path.isfile(mat_fn) and not overwrite:
+            if os.path.isfile(deproj_mat_fn) and not overwrite:
                 pass
-            mat = []
-            for i, s in enumerate(mp_sims):
+            deproj_mat = []
+            for i, s in enumerate(deproj_sims):
                 if i % 50 == 0:
                     print("   SAVE MAT", i)
                 if pix_type == "hp":
-                    mat.append(np.sum(np.array(mp_sims)*s[None, :, :], axis=(1, 2)))  # noqa: E501
+                    deproj_mat.append(np.sum(np.array(deproj_sims)*s[None, :, :], axis=(1, 2)))  # noqa: E501
                 else:
-                    mat.append(np.sum(np.array(mp_sims)*s[None, :, :, :],
+                    deproj_mat.append(np.sum(np.array(deproj_sims)*s[None, :, :, :],  # noqa: E501
                                       axis=(1, 2, 3)))
-            mat = np.array(mat)
-            np.savez(mat_fn, mat=mat, mp_sims=mp_sims)
-            print("SAVED MAT", mat_fn, mat.shape)
+            deproj_mat = np.array(deproj_mat)
+            np.savez(deproj_mat_fn, deproj_mat=deproj_mat, deproj_sims=deproj_sims)  # noqa: E501
+            print("SAVED MAT", deproj_mat_fn, deproj_mat.shape)
 
             if mat_plot_fn is not None:
                 # Visualize eigenvalues of M
-                w, _ = np.linalg.eigh(mat)
+                w, _ = np.linalg.eigh(deproj_mat)
                 plt.figure()
                 plt.plot(w[::-1])
                 plt.yscale('log')
@@ -309,30 +466,52 @@ class SimPure:
                 print(f"    PLOT SAVED {mat_plot_fn}")
                 plt.close()
         self.comm.barrier()
-        mat, mp_sims = [np.load(mat_fn, allow_pickle=True)[k]
-                        for k in ["mat", "mp_sims"]]
+        deproj_mat, deproj_sims = [np.load(deproj_mat_fn, allow_pickle=True)[k]
+                                   for k in ["deproj_mat", "deproj_sims"]]
 
-        return mp_sims, mat
+        return deproj_sims, deproj_mat
 
     def get_tf_spectra(self, out_dir, nsims, id_sim_start=0, overwrite=False,
-                       filtered=True, purified=True, deprojected=True,
-                       mp_sims=None, mat=None):
+                       filtered=True, purified=True, method=None,
+                       deproj_sims=None, deproj_mat=None, matpure=None):
         """
-        Docstring for get_tf_sims
+        Compute TF input power spectra for purification.
 
-        :param self: Description
-        :param overwrite: Description
-        :param filtered: Description
-        :param purified: Description
-        :param deprojected: Description
+        Arguments
+        ---------
+        :param out_dir: str
+            Output directory for validation sim spectra
+        :param nsims: int
+            Number of simulations to compute spectra of
+        :param id_sim_start: int
+            Simulation ID to start
+        :param overwrite: bool
+            Whether to recompute power spectra instead of loading from disk
+        :param filtered: bool
+            Whether to compute spectra from filtered maps
+        :param method: str
+            What method of purification to use. Supports "matrix", "deproj".
+        :param deprojected: bool
+            Whether to compute spectra from sim-based purified maps
+        :param deproj_sims: array-like
+            Array of E-to-B leakage template maps for deprojection
+        :param deproj_mat: array-like
+            Deprojection matrix (outer product of deproj_sims with itself,
+            and cropped in dimensionality)
+        :param matpure: MatrixPurification object
+            Class instance to perform matrix-based purification
+        
+        Returns
+        -------
 
-        TODO: check how mp_sims, tf, and mat were passed.
+        array-like
+            Array of binned coupled power spectra from TF simulations
         """
         pure_lab = {True: "pure", False: "nopure"}
         filt_lab = {True: "filtered", False: "unfiltered"}
-        dep_lab = {True: "_dep", False: ""}
-        fpd = (filtered, purified, deprojected)
-        fname = f"{out_dir}/cls_tf_{filt_lab[filtered]}_{pure_lab[purified]}{dep_lab[deprojected]}_nsims{nsims}.npz"  # noqa: E501
+        adv_lab = f"_{method}" if method is not None else ""
+        fp = (filtered, purified)
+        fname = f"{out_dir}/cls_tf_{filt_lab[filtered]}_{pure_lab[purified]}{adv_lab}_nsims{nsims}.npz"  # noqa: E501
 
         if os.path.isfile(fname) and not overwrite:
             cls_tf = np.load(fname, allow_pickle=True)["cls"]
@@ -343,42 +522,53 @@ class SimPure:
                     print("   TF SIMS ", i)
                 fields, fields2 = ({}, {})
                 for typ in [f"pure{f}" for f in "TEB"]:
-                    if fpd == (False, False, False):
+                    if fp == (False, False):
                         mp = self.load_transfer_sim(i, filtered=False, typ=typ)
                         f = self.compute_pspec(
                             mp, nmt_purify=False, return_just_field=True
                         )
-                        fields[typ] = f
-                        fields2[typ] = f
-                    elif fpd == (False, True, False):
+                    elif fp == (False, True):
                         mp = self.load_transfer_sim(i, filtered=False, typ=typ)
                         f = self.compute_pspec(
                             mp, nmt_purify=True, return_just_field=True
                         )
-                        fields[typ] = f
-                        fields2[typ] = f
-                    elif fpd == (True, False, False):
+                    elif fp == (True, False):
                         mp = self.load_transfer_sim(i, filtered=True, typ=typ)
                         f = self.compute_pspec(
                             mp, nmt_purify=False, return_just_field=True
                         )
-                    elif fpd == (True, True, False):
+                    elif fp == (True, True):
                         mp = self.load_transfer_sim(i, filtered=True, typ=typ)
-                        f = self.compute_pspec(
-                            mp, nmt_purify=True, return_just_field=True
-                        )
-                    elif fpd == (True, True, True):
-                        mp = self.load_transfer_sim(i, filtered=True, typ=typ)
-                        mp_masked = self.get_masked_map(mp, nmt_purify=True,
-                                                        binary=False)
-                        mp_masked_dep, _ = ut.deproject_many(mp_masked,
-                                                             mp_sims,
-                                                             mat)
-                        f = self.compute_pspec(
-                            mp_masked_dep,
-                            return_just_field=True,
-                            masked_on_input=True
-                        )
+                        if method is None:
+                            f = self.compute_pspec(
+                                mp, nmt_purify=True, return_just_field=True)
+                        elif method == "matrix":
+                            mp_masked = self.get_masked_map(mp,
+                                                            nmt_purify=False,
+                                                            binary=False)
+                            mp_masked_pure = matpure.purify_observed_map(
+                                mp_masked)
+                            f = self.compute_pspec(
+                                mp_masked_pure,
+                                return_just_field=True,
+                                masked_on_input=True
+                            )
+                        elif method == "deproj":
+                            mp_masked = self.get_masked_map(mp,
+                                                            nmt_purify=True,
+                                                            binary=False)
+                            mp_masked_pure, _ = ut.deproject_many(mp_masked,
+                                                                  deproj_sims,
+                                                                  deproj_mat)
+                            f = self.compute_pspec(
+                                mp_masked_pure,
+                                return_just_field=True,
+                                masked_on_input=True
+                            )
+                        else:
+                            raise ValueError("Unknown purification method."
+                                             "Choose either 'matrix', 'deproj'"
+                                             ", or None.")
                     fields[typ] = f
                     fields2[typ] = f
                 pcls_mat = self.get_pcls_mat_transfer(fields, fields2)
@@ -391,56 +581,93 @@ class SimPure:
     def get_val_spectra(self,
                         out_dir,
                         nsims,
+                        id_sim_start=0,
+                        overwrite=False,
+                        plot_dir=None,
                         map="cmb",
                         noE=False,
                         filtered=False,
                         purified=False,
-                        deprojected=False,
+                        method=None,
                         TFed=False,
-                        mp_sims=None,
-                        mat=None,
-                        tf=None,
-                        overwrite=False,
-                        plot_dir=None):
+                        deproj_sims=None,
+                        deproj_mat=None,
+                        matpure=None,
+                        tf=None):
         """
-        TODO: Docstring for get_val_spectra
+        Compute validation spectra for purification.
 
-        :param self: Description
-        :param out_dir: Description
-        :param nsims: Description
-        :param map: Description
-        :param noE: Description
-        :param filtered: Description
-        :param purified: Description
-        :param deprojected: Description
-        :param mp_sims: Description
-        :param mat: Description
-        :param tf: Description
-        :param overwrite: Description
-        :param plot_dir: Description
-
-        TODO: check how mp_sims, tf, and mat were passed.
+        Arguments
+        ---------
+        :param out_dir: str
+            Output directory for validation sim spectra
+        :param nsims: int
+            Number of simulations to compute spectra of
+        :param id_sim_start: int
+            Simulation ID to start
+        :param overwrite: bool
+            Whether to recompute power spectra instead of loading from disk
+        :param plot_dir: str
+            Plotting directory
+        :param map: str
+            Type of map to be used for validation. Can be "cmb" or "plaw".
+        :param noE: bool
+            Whether to compute spectra from B-mode-only maps
+        :param filtered: bool
+            Whether to compute spectra from filtered maps
+        :param purified: bool
+            Whether to apply NaMaster purification ot the maps
+        :param method: str
+            What method of advanced purification to use.
+            Supported are "matrix", "deproj".
+        :param TFed: bool
+            Whether the power spectra have been transfer-fucntion corrected
+        :param deprojected: bool
+            Whether to compute spectra from sim-based purified maps
+        :param deproj_sims: array-like
+            Array of E-to-B leakage template maps
+        :param deproj_mat: array-like
+            Deprojection matrix (outer product of deproj_sims with itself,
+            and cropped in dimensionality)
+        :param matpure: MatrixPurification object
+            Class instance to perform matrix-based purification
+        :param tf: array-like
+            9x9xNbin transfer function
+        
+        Returns
+        -------
+        dict of array-like
+            Dictionary of decoupled power spectra, with keys "TT", "TE", etc.
         """
-        nfpdt = (noE, filtered, purified, deprojected, TFed)
-        clab = {
-            (False, False, False, False, False): "masked_nopure",
-            (False, False, True, False, False): "masked_pure",
-            (True, False, False, False, False): "noe_masked",
-            (False, True, False, False, False): "filtered_nopure",
-            (False, True, False, False, True): "filtered_nopure_tfed",
-            (False, True, True, False, False): "filtered_pure",
-            (False, True, True, False, True): "filtered_pure_tfed",
-            (True, True, False, False, False): "noe_filtered",
-            (True, True, False, False, True): "noe_filtered_tfed",
-            (False, True, True, True, False): "filtered_pure_dep",
-            (False, True, True, True, True): "filtered_pure_dep_tfed"
-        }[nfpdt]
+        nfpmt = (noE, filtered, purified, method, TFed)
+        clabs = {
+            (False, False, False, None, False): "masked_nopure",
+            (False, False, True, None, False): "masked_pure",
+            (True, False, False, None, False): "noe_masked",
+            (False, True, False, None, False): "filtered_nopure",
+            (False, True, False, None, True): "filtered_nopure_tfed",
+            (False, True, True, None, False): "filtered_pure",
+            (False, True, True, None, True): "filtered_pure_tfed",
+            (True, True, False, None, False): "noe_filtered",
+            (True, True, False, None, True): "noe_filtered_tfed",
+            (True, True, False, None, False): "noe_filtered",
+            (False, True, True, "matrix", False): "filtered_pure_matrix",
+            (False, True, True, "matrix", True): "filtered_pure_matrix_tfed",
+            (False, True, True, "deproj", False): "filtered_pure_deproj",
+            (False, True, True, "deproj", True): "filtered_pure_deproj_tfed",
+        }
+        clab = clabs[nfpmt]
+        if nfpmt not in clabs:
+            raise ValueError("Your configuration is not supported:\n"
+                             f"(noE {noE}, filtered {filtered}, "
+                             f"purified {purified}, method {method}, "
+                             f"TFed {TFed})")
         fname = f"{out_dir}/cls_{map}_{clab}.npz"
         if os.path.isfile(fname) and not overwrite:
             cls = np.load(fname, allow_pickle=True)['cls']
         else:
             cls = []
-            for i in range(nsims):
+            for i in range(id_sim_start, id_sim_start+nsims):
                 if i % 10 == 0:
                     print(f"   CELLS {map} ", i)
                 if clab == "masked_nopure":
@@ -520,49 +747,39 @@ class SimPure:
                     mp = self.load_val_sim(i, filtered=True, pols_keep="B",
                                            typ=map)
                     cl = self.compute_pspec(mp, transfer=tf, tf_type="nopure")
-                elif clab == "filtered_pure_dep":
+                elif "filtered_pure_deproj" in clab:
                     mp = self.load_val_sim(i, filtered=True, typ=map)
                     mp_masked = self.get_masked_map(mp, nmt_purify=True,
                                                     binary=False)
-                    mp_masked_dep, mp_template = ut.deproject_many(mp_masked,
-                                                                   mp_sims,
-                                                                   mat)
-                    if i == 1:
-                        ut.plot_map(
-                            mp_template,
-                            file_name=f"{plot_dir}/sim_{map}_filt_template_{i:04d}",  # noqa: E501
-                            pix_type=self.pix_type
-                        )
-                        ut.plot_map(
-                            mp_masked,
-                            file_name=f"{plot_dir}/sim_{map}_filt_purify_{i:04d}",  # noqa: E501
-                            pix_type=self.pix_type
-                        )
-                        ut.plot_map(
-                            mp_masked_dep,
-                            file_name=f"{plot_dir}/sim_{map}_filt_purify_dep_{i:04d}",  # noqa: E501
-                            pix_type=self.pix_type
-                        )
+                    mp_masked_dep, _ = ut.deproject_many(mp_masked,
+                                                         deproj_sims,
+                                                         deproj_mat)
+                    tf_type = None
+                    if clab == "filtered_pure_deproj_tfed":
+                        tf_type = "pure_deproj"
                     cl = self.compute_pspec(
                         mp_masked_dep,
-                        transfer=None,
+                        transfer=tf,
+                        tf_type=tf_type,
                         nmt_purify=False,
                         nmt_purify_mcm=True,
                         masked_on_input=True
                     )
-                elif clab == "filtered_pure_dep_tfed":
+                elif "filtered_pure_matrix" in clab:
                     mp = self.load_val_sim(i, filtered=True, typ=map)
-                    mp_masked = self.get_masked_map(mp, nmt_purify=True,
+                    mp_masked = self.get_masked_map(mp,
+                                                    nmt_purify=False,
                                                     binary=False)
-                    mp_masked_dep, mp_template = ut.deproject_many(mp_masked,
-                                                                   mp_sims,
-                                                                   mat)
+                    mp_masked_pure = matpure.purify_observed_map(mp_masked)
+                    tf_type = None
+                    if clab == "filtered_pure_matrix_tfed":
+                        tf_type = "pure_matrix"
                     cl = self.compute_pspec(
-                        mp_masked_dep,
+                        mp_masked_pure,
                         transfer=tf,
-                        tf_type="pure_dep",
+                        tf_type=tf_type,
                         nmt_purify=False,
-                        nmt_purify_mcm=True,
+                        nmt_purify_mcm=False,
                         masked_on_input=True
                     )
 
