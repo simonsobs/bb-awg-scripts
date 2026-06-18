@@ -321,11 +321,18 @@ def main(args):
     for patch, freq_channel, sim_id, split_label, sim_type, ib in loop_over:
         task_element = (patch, freq_channel, sim_id, split_label, sim_type)
         local_task_id = local_mpi_list.index(task_element)
-        map_dir = atomic_sim_dir.format(
-            patch=patch,
-            freq_channel=freq_labels[freq_channel],
-            sim_id=sim_id
-        )
+        if sim_id is None:
+            map_dir = atomic_sim_dir.format(
+                patch=patch,
+                freq_channel=freq_labels[freq_channel],
+                sim_type=sim_type
+            )
+        else:
+            map_dir = atomic_sim_dir.format(
+                patch=patch,
+                freq_channel=freq_labels[freq_channel],
+                sim_id=sim_id
+            )
         assert os.path.isdir(map_dir), map_dir
 
         if not ib:
