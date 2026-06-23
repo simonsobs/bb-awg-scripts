@@ -1,3 +1,7 @@
+"""
+Based on coadd_filtered_ext.py, 
+adapted to run on the external data.
+"""
 import numpy as np
 import argparse
 import sqlite3
@@ -30,12 +34,27 @@ def main(args):
     """
     if args.pix_type not in ["hp", "car"]:
         raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
+    if "{patch" not in args.bundle_db:
+        raise ValueError("bundle_db does not have \
+                         required placeholder 'patch'")
+    for required_tag in ["{sim_type"]:
+        if required_tag not in args.sim_string_format:
+            raise ValueError(f"sim_string_format does not have \
+                             required placeholder '{required_tag}'")
+    for required_tag in ["{patch", "{freq_channel"]:
+        if required_tag not in args.output_dir:
+            raise ValueError(f"output_dir does not have \
+                             required placeholder '{required_tag}'")
+    for required_tag in ["{patch", "{freq_channel"]:
+        if required_tag not in args.atomic_sim_dir:
+            raise ValueError(f"atomic_sim_dir does not have \
+                             required placeholder '{required_tag}'")
 
     # MPI related initialization
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=args.verbosity)
+    logger = pp_util.init_logger("benchmark", verbosity=3)
     if rank == 0:
         start = time.time()
 
@@ -44,35 +63,12 @@ def main(args):
     freq_labels = {}
     for f in args.freq_channels:  # If these don't contain the "f", add
         freq_channel = f"f{f}" if "f" not in f else f
-        freq_labels[freq_channel] = f  # dict values are original labels
+        freq_labels[freq_channel] = f  # dict values are the original labels
     freq_channels = list(freq_labels.keys())
 
     # Sim related arguments
-    if args.sim_types is None:
-        sim_types = [None]
-        if rank == 0:
-            logger.warning("No sim_types considered. If this is by mistake, "
-                           "please ensure to add in the filtering yaml.")
-    else:
-        sim_types = args.sim_types
+    sim_types = args.sim_types
     sim_string_format = args.sim_string_format
-    if args.sim_ids is None:
-        sim_ids = [None]
-        if rank == 0:
-            logger.warning("No sim_ids considered. If this is by mistake, "
-                           "please ensure to add in the filtering yaml.")
-    else:
-        sim_ids = args.sim_ids
-    if isinstance(sim_ids, str):
-        if "," in sim_ids:
-            id_min, id_max = sim_ids.split(",")
-            sim_ids = np.arange(int(id_min), int(id_max)+1)
-        else:
-            sim_ids = np.array([int(sim_ids)])
-    elif not isinstance(sim_ids, list):
-        raise ValueError("Argument 'sim_ids' has the wrong format")
-    if rank == 0:
-        logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
     # Input directory
     atomic_sim_dir = args.atomic_sim_dir
@@ -82,23 +78,12 @@ def main(args):
     out_dirs = {
         (patch, freq_channel, sim_type):
         args.output_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel],
-            sim_type=sim_type
+            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
         )
-        for patch, freq_channel, sim_type in product(patches,
-                                                     freq_channels,
-                                                     sim_types)
+        for patch, freq_channel, sim_type in product(patches, freq_channels, sim_types)
     }
-    if args.coadded_dirs is None:
-        coadded_dir = f"{args.output_dir}/coadded_sims"
-    else:
-        coadded_dir = args.coadded_dirs
-    coadded_dirs = {
-        key: coadded_dir.format(patch=key[0],
-                                freq_channel=freq_labels[key[1]],
-                                sim_type=key[2])
-        for key in out_dirs
-    }
+    coadded_dirs = {key: f"{out_dir}/coadded_maps"
+                    for key, out_dir in out_dirs.items()}
     plot_dirs = {key: f"{out_dir}/plots" for key, out_dir in out_dirs.items()}
 
     for key in out_dirs:
@@ -120,6 +105,7 @@ def main(args):
                   for patch in patches}
 
     # Bundle query arguments
+    freq_channel = args.freq_channels
     inter_obs_splits = args.inter_obs_splits
     if inter_obs_splits is None:
         inter_obs_splits = []
@@ -139,34 +125,27 @@ def main(args):
     }
 
     # Gather all split labels of atomics to be coadded
-    if args.intra_obs_splits in [None, [], [None], "None"]:
-        intra_obs_splits = []
-    else:
-        intra_obs_splits = args.intra_obs_splits
-    if args.intra_obs_pair in [None, [], [None], "None"]:
-        intra_obs_pair = []
-    else:
-        intra_obs_pair = args.intra_obs_pair
-    if ((intra_obs_splits, intra_obs_pair) == ([], [])):
-        raise ValueError("You must pass at least one of the two: "
-                         "'intra_obs_pair' or 'intra_obs_splits'.")
-    if intra_obs_splits != []:
+    intra_obs_splits = args.intra_obs_splits
+    intra_obs_pair = args.intra_obs_pair
+    if intra_obs_splits is not None:
         if isinstance(intra_obs_splits, str):
             if "," not in intra_obs_splits:
                 intra_obs_splits = [intra_obs_splits]
             else:
                 intra_obs_splits = (intra_obs_splits).split(",")
-    if intra_obs_pair != []:
+    if intra_obs_pair is not None:
         if isinstance(intra_obs_pair, str):
             if "," not in intra_obs_pair:
                 raise ValueError("You must pass a comma-separated string list "
                                  "to 'intra_obs_pair'.")
             else:
                 intra_obs_pair = intra_obs_pair.split(",")
+    if ((intra_obs_splits, intra_obs_pair) == (None, None)):
+        raise ValueError("You must pass at least one of the two: "
+                         "'intra_obs_pair' or 'intra_obs_splits'.")
 
-    if rank == 0:
-        logger.info(f"Split labels to coadd individually: {intra_obs_splits}")
-        logger.info(f"Split labels to coadd together: {intra_obs_pair}")
+    logger.info(f"Split labels to coadd individually: {intra_obs_splits}")
+    logger.info(f"Split labels to coadd together: {intra_obs_pair}")
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id and without atomic batches - inter obs null label
@@ -184,15 +163,16 @@ def main(args):
         )
 
     # Randomly split science ctimes into batches (optional)
-    nbatches = 1 if args.nbatch_atomics is None else args.nbatch_atomics
-    nbatches_dict = {}
-    for patch in patches:
-        # Limit number of batches to one half the number of ctimes
-        if nbatches > len(ctimes[patch, "science", None]) // 2:
-            nbatches_dict[patch] = len(ctimes[patch, "science", None]) // 2
-        # Must have at least two batches
-        if nbatches < 2:
-            nbatches_dict[patch] = None
+    nbatches = args.nbatch_atomics
+    if nbatches is not None:
+        nbatches_dict = {}
+        for patch in patches:
+            # Limit number of batches to one half the number of ctimes
+            if nbatches > len(ctimes[patch, "science", None]) // 2:
+                nbatches_dict[patch] = len(ctimes[patch, "science", None]) // 2
+            # Must have at least two batches
+            if nbatches < 2:
+                nbatches_dict[patch] = None
     batches = {}
     for patch in patches:
         batches[patch] = [None]
@@ -202,11 +182,10 @@ def main(args):
             nbatch = nbatches_dict[patch]
             batches[patch] = range(nbatch)
             nctimes = len(ctimes[patch, 'science', None])
-            if rank == 0:
-                logger.info(
-                    f"{patch}: splitting atomics into {nbatch} random "
-                    f"batches with {nctimes // nbatch} ctimes in each."
-                )
+            logger.info(
+                f"{patch}: splitting atomics into {nbatch} random "
+                f"batches with {nctimes // nbatch} ctimes in each."
+            )
             idx_rand = np.random.permutation(range(nctimes))
             for ib in batches[patch]:
                 ctimes[patch, "science", ib] = [
@@ -298,10 +277,9 @@ def main(args):
 
     split_labels_all = ["science"] + intra_obs_splits + inter_obs_splits
     split_labels_all = list(dict.fromkeys(split_labels_all))  # no duplicates
-    mpi_shared_list = [(patch, freq_channel, sim_id, split_label, sim_type)
+    mpi_shared_list = [(patch, freq_channel, split_label, sim_type)
                        for patch in patches
                        for freq_channel in freq_channels
-                       for sim_id in sim_ids
                        for split_label in split_labels_all
                        for sim_type in sim_types]
 
@@ -310,43 +288,31 @@ def main(args):
     task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list),
                                     logger=logger)
     local_mpi_list = [mpi_shared_list[i] for i in task_ids]
-    loop_over = [(patch, freq, sim, split, sim_type, ib)
+    loop_over = [(patch, freq, split, sim_type, ib)
                  for ib in batches[patch]
-                 for patch, freq, sim, split, sim_type in local_mpi_list]
-    
-    # Ensure that idle workers finish and don't hang
-    if not task_ids:
-        comm.barrier()
+                 for patch, freq, split, sim_type in local_mpi_list]
 
-    for patch, freq_channel, sim_id, split_label, sim_type, ib in loop_over:
-        task_element = (patch, freq_channel, sim_id, split_label, sim_type)
-        local_task_id = local_mpi_list.index(task_element)
-        if sim_id is None:
-            map_dir = atomic_sim_dir.format(
-                patch=patch,
-                freq_channel=freq_labels[freq_channel],
-                sim_type=sim_type
-            )
-        else:
-            map_dir = atomic_sim_dir.format(
-                patch=patch,
-                freq_channel=freq_labels[freq_channel],
-                sim_id=sim_id
-            )
+
+    for patch, freq_channel, split_label, sim_type, ib in loop_over:
+        map_dir = atomic_sim_dir.format(
+            patch=patch,
+            freq_channel=freq_labels[freq_channel],
+            sim_type=sim_type
+        )
         assert os.path.isdir(map_dir), map_dir
-        tracemalloc.start()
 
         if not ib:
-            logger.debug(f"Loading atomics for ({patch}, {freq_channel}, "
-                         f"{split_label})"
-                         f" to filter {sim_type}, {split_label}, sim {sim_id}")
+            logger.info(f"Loading atomics for ({patch}, {freq_channel}, "
+                        f"{split_label})"
+                        f" to filter {sim_type}, {split_label}")
 
         w_list, wmap_list = ([], [])
 
         if split_label == "science":
+            tracemalloc.start()
             for coadd in intra_obs_pair:
                 wmap_l, w_l = fu.get_atomics_maps_list(
-                    sim_id, sim_type,
+                    None, sim_type,
                     atomic_metadata[patch, freq_channel, coadd, ib],
                     freq_labels[freq_channel], map_dir, coadd,
                     sim_string_format, mfmt=mfmt, pix_type=pix_type,
@@ -356,13 +322,13 @@ def main(args):
                 w_list += w_l
             current_gb, peak_gb = [1024**(-3) * c
                                    for c in tracemalloc.get_traced_memory()]
-            logger.debug("Traced Memory for 'science' (Current, Peak): "
-                         f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
+            logger.info("Traced Memory for 'science' (Current, Peak): "
+                        f"{current_gb:.2f} GB, {peak_gb:.2f} GB")
             tracemalloc.stop()
         elif split_label in inter_obs_splits:
             for coadd in intra_obs_pair:
                 wmap_l, w_l = fu.get_atomics_maps_list(
-                    sim_id, sim_type,
+                    None, sim_type,
                     atomic_metadata[patch, freq_channel, split_label, coadd, ib],  # noqa
                     freq_channel, map_dir, coadd,
                     sim_string_format, mfmt=mfmt, pix_type=pix_type,
@@ -372,7 +338,7 @@ def main(args):
                 w_list += w_l
         else:
             wmap_list, w_list = fu.get_atomics_maps_list(
-                sim_id, sim_type,
+                None, sim_type,
                 atomic_metadata[patch, freq_channel, split_label, ib],
                 freq_channel, map_dir, split_label,
                 sim_string_format, mfmt=mfmt, pix_type=pix_type,
@@ -380,16 +346,15 @@ def main(args):
             )
 
         if not ib:
-            logger.debug(f"Coadding atomics for ({patch}, {freq_channel}, "
-                         f"{split_label})"
-                         f" to filter {sim_type}, sim {sim_id}")
+            logger.info(f"Coadding atomics for ({patch}, {freq_channel}, "
+                        f"{split_label})"
+                        f" to filter {sim_type}")
 
         map_filtered, weights = bu.coadd_maps(
             wmap_list, w_list, pix_type=pix_type,
             car_template_map=car_map_template
         )
         out_fname = sim_string_format.format(
-            sim_id=sim_id,
             sim_type=sim_type,
             freq_channel=freq_labels[freq_channel]
         ).split("/")[-1]
@@ -400,19 +365,16 @@ def main(args):
         )
         fu.save_and_plot_map(
             map_filtered, out_fname,
-            coadded_dirs[(patch, freq_channel, sim_type)],
-            plot_dirs[(patch, freq_channel, sim_type)],
+            coadded_dirs[patch, freq_channel, sim_type],
+            plot_dirs[patch, freq_channel, sim_type],
             pix_type=pix_type
         )
         fu.save_and_plot_map(
             weights, out_fname.replace(".fits", "_weights.fits"),
-            coadded_dirs[(patch, freq_channel, sim_type)],
-            plot_dirs[(patch, freq_channel, sim_type)],
+            coadded_dirs[patch, freq_channel, sim_type],
+            plot_dirs[patch, freq_channel, sim_type],
             pix_type=pix_type, do_plot=False
         )
-        if ib in [None, batches[patch][-1]]:
-            logger.info(f"Done: {local_task_id+1}/{len(local_mpi_list)} "
-                        f"for rank {rank}.")
         comm.Barrier()
     if rank == 0:
         end = time.time()
@@ -424,11 +386,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
     )
-    parser.add_argument(
-        "--sim_ids", type=str, default=None,
-        help="Simulations to be processed, in format [first],[last]."
-             "Overwrites the yaml file configs."
-    )
+
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
     config.update(vars(args))
