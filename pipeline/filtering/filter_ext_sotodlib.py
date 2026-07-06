@@ -1,3 +1,7 @@
+"""
+Based on filter_sims_sotodlib.py, 
+adapted to run on the external data.
+"""
 import numpy as np
 import healpy as hp
 import argparse
@@ -7,10 +11,10 @@ import sys
 import time
 from itertools import product
 
+
 import sotodlib.preprocess.preprocess_util as pp_util
 from sotodlib.core.metadata import loader
 from pixell import enmap
-
 
 # TODO: Make it an actual module
 sys.path.append(
@@ -28,13 +32,19 @@ def main(args):
     """
     """
     if args.pix_type not in ["hp", "car"]:
-        raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
+        raise ValueError(
+            "Unknown pixel type, must be 'car' or 'hp'."
+        )
+    for required_tag in ["{sim_type"]:
+        if required_tag not in args.sim_string_format:
+            raise ValueError(f"sim_string_format does not have \
+                             required placeholder {required_tag}")
 
     # MPI related initialization
     rank, size, comm = mpi.init(True)
 
     # Initialize the logger
-    logger = pp_util.init_logger("benchmark", verbosity=args.verbosity)
+    logger = pp_util.init_logger("benchmark", verbosity=2)
     if rank == 0:
         start = time.time()
 
@@ -47,34 +57,12 @@ def main(args):
     preprocess_config_init = args.preprocess_config_init
     preprocess_config_proc = args.preprocess_config_proc
 
-    if rank == 0:
-        logger.debug(f"Using atomic DB from {atom_db}")
+    logger.debug(f"Using atomic DB from {atom_db}")
 
     # Sim related arguments
-    if args.sim_types is None:
-        sim_types = [None]
-        logger.warning("No sim_types considered. If this is by mistake, "
-                       "please ensure to add in the filtering yaml.")
-    else:
-        sim_types = args.sim_types
     sim_dir = args.sim_dir
     sim_string_format = args.sim_string_format
-    if args.sim_ids is None:
-        sim_ids = [None]
-        logger.warning("No sim_ids considered. If this is by mistake, "
-                       "please ensure to add in the filtering yaml.")
-    else:
-        sim_ids = args.sim_ids
-    if isinstance(sim_ids, str):
-        if "," in sim_ids:
-            id_min, id_max = sim_ids.split(",")
-            sim_ids = np.arange(int(id_min), int(id_max)+1)
-        else:
-            sim_ids = np.array([int(sim_ids)])
-    elif not isinstance(sim_ids, list):
-        raise ValueError("Argument 'sim_ids' has the wrong format")
-    if rank == 0:
-        logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
+    sim_types = args.sim_types
 
     # Ensure that freq_channels for the metadata follow the "f090" convention.
     # We keep the original labels in a dict called freq_labels.
@@ -88,21 +76,13 @@ def main(args):
     atomics_dir = {}
     for freq_channel, patch in product(freq_channels, args.patches):
         atomics_dir[(patch, freq_channel)] = {}
-        for sim_type in sim_types:
+        for isim_type, sim_type in enumerate(sim_types):
             out_dir = args.output_dir.format(
                 patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
             )
-            for sim_id in sim_ids:
-                atomic_sim_dir = args.atomic_sim_dir.format(
-                    patch=patch, freq_channel=freq_labels[freq_channel],
-                    sim_type=sim_type, sim_id=sim_id
-                )
-                dir_key = sim_id if sim_id is not None else sim_type
-                atomics_dir[patch, freq_channel][dir_key] = atomic_sim_dir  # noqa
-                if sim_id is not None and "{sim_id" not in args.atomic_sim_dir:
-                    atomics_dir[patch, freq_channel][dir_key] += f"/{sim_id:04d}"  # noqa
-                os.makedirs(atomics_dir[patch, freq_channel][dir_key],
-                            exist_ok=True)
+            atomics_dir[patch, freq_channel][isim_type] = f"{out_dir}/atomic_maps"  # noqa
+            os.makedirs(atomics_dir[patch, freq_channel][isim_type],
+                        exist_ok=True)
 
     # Arguments related to pixellization
     pix_type = args.pix_type
@@ -136,8 +116,7 @@ def main(args):
     ctimes = {patch: None for patch in args.patches}
     for patch in args.patches:
         if os.path.isfile(bundle_dbs[patch]):
-            if rank == 0:
-                logger.info(f"Loading from {bundle_dbs[patch]}.")
+            logger.info(f"Loading from {bundle_dbs[patch]}.")
             bundle_coordinator = coord.BundleCoordinator.from_dbfile(
                 bundle_dbs[patch], bundle_id=bundle_id
             )
@@ -147,6 +126,7 @@ def main(args):
         # Extract all ctimes for the given bundle_id
         ctimes[patch] = bundle_coordinator.get_ctimes(bundle_id=bundle_id)
 
+    # TODO: check if query_restrict is channel- or patch-specific
     query_restrict = args.query_restrict
     queries = {
         (patch, freq_channel): fu.get_query_atomics(
@@ -180,11 +160,10 @@ def main(args):
                     atomic_metadata[split_label] += [
                         (patch, freq_channel, obs_id, wafer)
                     ]
-        if rank == 0:
-            logger.info(
-                f"{patch}, {freq_channel}, 'science': "
-                f"{len(res_science)} atomic maps to filter."
-            )
+        logger.info(
+            f"{patch}, {freq_channel}, 'science': "
+            f"{len(res_science)} atomic maps to filter."
+        )
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
@@ -204,31 +183,20 @@ def main(args):
                                     logger=logger)
     local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
-    # Ensure that idle workers finish and don't hang
-    if not task_ids:
-        comm.barrier()
-
     # Loop over set of local tasks (patch, freq_channel, obs_id, wafer).
-    # For each of these, loop over (sim_id, sim_type) and do:
+    # For each of these, loop over (sim_type) and do:
     # * read simulated map
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
-    for task_element in local_mpi_list:
-        patch, freq_channel, obs_id, wafer = task_element
-        local_task_id = local_mpi_list.index(task_element)
-        logger.debug(f"Starting task: "
-                     f"({patch}, {freq_channel}, {obs_id}, {wafer})")
-        
+    for patch, freq_channel, obs_id, wafer in local_mpi_list:
         start = time.time()
 
         # First, check if atomic maps already exist.
         maps_exist = True
-        for sim_id, sim_type in product(sim_ids, sim_types):
+        for isim_type, sim_type in enumerate(args.sim_types):
             # Path to unfiltered simulation
             map_fname = sim_string_format.format(
-                sim_id=sim_id,
                 sim_type=sim_type,
-                freq_channel=freq_labels[freq_channel]
             )
 
             for split_label in intra_obs_splits:
@@ -240,8 +208,7 @@ def main(args):
                         f"_{obs_id}_{wafer}_{split_label}{mfmt}"
                     )
 
-                    dir_key = sim_id if sim_id is not None else sim_type
-                    f_wmap = atomics_dir[patch, freq_channel][dir_key]
+                    f_wmap = atomics_dir[patch, freq_channel][isim_type]
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
 
@@ -254,7 +221,7 @@ def main(args):
         if maps_exist and not args.overwrite_atomics:
             logger.info(
                 f"Map exists: ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                f" to filter sims {sim_ids}, {sim_types}"
+                f" to filter sims {args.sim_types}"
             )
             continue
 
@@ -281,12 +248,8 @@ def main(args):
             ]
             meta.restrict("dets", thinned)
 
-        # Process data here to have t2p leakage template
-        # It will stop before each step with the
-        # use_data_aman flag in the preprocess config
-        # files and store the AxisManager in the data_aman
-        # dict.
         try:
+            print(pp_util.__file__)
             data_aman = pp_util.multilayer_load_and_preprocess(
                 obs_id,
                 configs_init,
@@ -294,40 +257,23 @@ def main(args):
                 meta=meta,
                 logger=logger,
                 stop_for_sims=True,
-                ignore_cfg_check=True
-            )
-        # After focal plane thinning, the data AxisManager might not have any
-        # detectors left, resulting in one of several errors caught below.
-        # TODO: We should account for those directly in sotodlib. 
-        except loader.LoaderError:
-            logger.warning(f"NO METADATA: ",
-                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
-            continue
-        except OSError as err:
-            logger.warning(f"{err}: ",
                 ignore_cfg_check=True,
             )
         except loader.LoaderError:
-            logger.warning(f"NO METADATA IN DATA_AMAN: ",
-                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
-            continue
-        except IndexError:
-            logger.warning(f"NO DETECTORS LEFT AFTER RESTRICTING: "
+            logger.warning(f"NO METADATA IN DATA_AMAN: "
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
 
-        for sim_id, sim_type in product(sim_ids, sim_types):
+        for isim_type, sim_type in enumerate(args.sim_types):
 
             # Path to unfiltered simulation
             map_fname = sim_string_format.format(
-                sim_id=sim_id,
-                sim_type=sim_type,
-                freq_channel=freq_labels[freq_channel]
+                sim_type=sim_type
             )
             map_file = f"{sim_dir}/{map_fname}"
 
-            logger.debug(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                         f" to filter {sim_type}, sim {sim_id}")
+            logger.info(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
+                        f" to filter {sim_type}")
             start0 = time.time()
 
             # Handling pixellization
@@ -351,9 +297,6 @@ def main(args):
                     ignore_cfg_check=True,
                     data_amans=data_aman
                 )
-            # After focal plane thinning, the sim AxisManager might not have
-            # any detectors, resulting in one of several errors caught below.
-            # TODO: We should account for those directly in sotodlib. 
             except loader.LoaderError:
                 logger.warning(
                     "METADATA MISSING: "
@@ -401,8 +344,7 @@ def main(args):
                         f"_{obs_id}_{wafer}_{split_label}{mfmt}"
                     )
 
-                    dir_key = sim_id if sim_id is not None else sim_type
-                    f_wmap = atomics_dir[patch, freq_channel][dir_key]
+                    f_wmap = atomics_dir[patch, freq_channel][isim_type]
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
 
@@ -419,15 +361,13 @@ def main(args):
                             f_w, w, dtype=np.float32, overwrite=True, nest=True
                         )
             end0 = time.time()
-            logger.debug(f"Filtered in {end0 - start0:.1f} seconds: "
-                         f"{sim_type}, sim {sim_id} with setup "
-                         f"({patch}, {freq_channel}, {obs_id}, {wafer})")
-        logger.debug(f"Processed {len(sim_ids)} simulations for "
-                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
-                     f"{time.time() - start:.1f} seconds.")
-        logger.info(f"Done: {local_task_id+1}/{len(local_mpi_list)} "
-                    f"for rank {rank}.")
-        
+            logger.info(f"Filtered in {end0 - start0:.1f} seconds: "
+                        f"{sim_type}"
+                        f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+
+        logger.info(f"Processed {len(sim_types)} simulations for "
+                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
+                    f"{time.time() - start:.1f} seconds.")
     comm.Barrier()
     if rank == 0:
         end = time.time()
@@ -438,11 +378,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file", type=str, help="yaml file with configuration."
-    )
-    parser.add_argument(
-        "--sim_ids", type=str, default=None,
-        help="Simulations to be processed, in format [first],[last]."
-             "Overwrites the yaml file configs."
     )
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)

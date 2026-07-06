@@ -1,0 +1,35 @@
+## Required shared arguments ##
+bundle_db: '/scratch/gpfs/SIMONSOBS/sat-iso/v4/bundling/satp3_20251216/bundles_{patch}_seed66_20251216.db'
+atomic_db: '/scratch/gpfs/SIMONSOBS/sat-iso/v4/mapmaking/satp3_20251216/atomic_db.sqlite'
+output_dir: &output_dir /scratch/gpfs/SIMONSOBS/external_data_e2e/v4/filtered_ext_data/wmap/f{sim_type}/satp3/{patch}/{freq_channel}
+sim_dir: /scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/wmap/maps
+atomic_sim_dir: !path [*output_dir, atomic_maps]
+sim_string_format: "wmap_car_{sim_type}_bundle0_res1.0amin_coords_c.fits"
+
+# For filtering on 4 tiger nodes, 2 sims take <~ 3 hours.
+sim_types: ["K", "Ka"]  # ext data freq channel
+sim_ids: [0]  # should be there, but not used in the filter_ext_sotodib.py script
+patches: [south]
+freq_channels: [f090, f150]  # freq channel defining the filtering
+t2p_template: False
+
+# (Required for coadd_filtered_sims)
+intra_obs_splits: [det_lower, det_upper]
+
+## Optional shared arguments ##
+pix_type: car
+car_map_template: "/scratch/gpfs/SIMONSOBS/so/science-readiness/geometry/sat_f090.fits"
+bundle_id: 0
+query_restrict: " pwv < 2 AND number_dets > 10 "
+
+## Required arguments for filter_sims_sotodlib / filter_ext_sotodlib ##
+preprocess_config_init: preprocessing_config_20251216_init.yaml
+preprocess_config_proc: preprocessing_config_20251216_proc.yaml
+
+## Optional arguments for filter_sims_sotodlib / filter_ext_sotodlib ##
+fp_thin: 8
+
+## Optional arguments for coadd_filtered_sims ##
+intra_obs_pair: [det_lower, det_upper]
+inter_obs_splits: []
+nbatch_atomics: 1

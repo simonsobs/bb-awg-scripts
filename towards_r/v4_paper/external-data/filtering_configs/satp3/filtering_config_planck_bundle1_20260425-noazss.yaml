@@ -1,0 +1,36 @@
+## Required shared arguments ##
+bundle_db: '/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/bundling/satp3_20260417_noazss/bundles_{patch}_seed66_20260417.db'
+atomic_db: '/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/mapmaking/satp3_20260417_noazss/atomic_db.sqlite'
+#output_dir: &output_dir /scratch/gpfs/SIMONSOBS/external_data_e2e/v4/filtered_ext_data_20260304/planck/f{sim_type}/satp3/{patch}/{freq_channel}
+output_dir: &output_dir /scratch/gpfs/SIMONSOBS/users/sa5705/SO/ISO_v4_paper/filtered_ext_data_20260417_noazss/planck/f{sim_type}/satp3/{patch}/{freq_channel}
+sim_dir: /scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/maps
+atomic_sim_dir: !path [*output_dir, atomic_maps]
+sim_string_format: "planck_car_{sim_type}_bundle1_res1.0amin_coords_c.fits"
+
+# For filtering on 4 tiger nodes, 2 sims take <~ 3 hours.
+#sim_types: ["030", "100", "143", "217", "353"]  # ext data freq channel
+sim_types: ["100", "143", "353"]  # ext data freq channel
+sim_ids: [0]  # should be there, but not used in the filter_ext_sotodib.py script
+patches: [south]
+freq_channels: [f090, f150]  # freq channel defining the filtering
+
+# (Required for coadd_filtered_sims)
+intra_obs_splits: [det_in, det_out]
+
+## Optional shared arguments ##
+pix_type: car
+car_map_template: "/scratch/gpfs/SIMONSOBS/so/science-readiness/geometry/sat_f090.fits"
+bundle_id: 1
+query_restrict: "pwv < 2 AND number_dets > 10 AND ((f_hwp > 1.9 AND f_hwp < 2.3) OR (f_hwp > -2.3 AND f_hwp < -1.9))"
+
+## Required arguments for filter_sims_sotodlib / filter_ext_sotodlib ##
+preprocess_config_init: /home/sa5705/software/bb-awg-scripts/towards_r/v4_paper/external-data/filtering_configs/satp3/preprocessing_config_20260417_init.yaml
+preprocess_config_proc: /home/sa5705/software/bb-awg-scripts/towards_r/v4_paper/external-data/filtering_configs/satp3/preprocessing_config_20260425_noazss_proc.yaml
+
+## Optional arguments for filter_sims_sotodlib / filter_ext_sotodlib ##
+fp_thin: 8
+
+## Optional arguments for coadd_filtered_sims ##
+intra_obs_pair: [det_in, det_out]
+inter_obs_splits: []
+nbatch_atomics: 1
