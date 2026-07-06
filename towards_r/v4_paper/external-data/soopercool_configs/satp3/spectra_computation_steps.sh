@@ -50,7 +50,7 @@ for sat in "${instruments[@]}"; do
           #srun -n 112 -c 1 --cpu_bind=cores python -u ${soopercool_dir}/pipeline/compute_covariance.py --globals ${paramfile}
           #echo "=== Done with compute_covariance.py ==="
           srun -n 1 -c 112 python -u ${soopercool_dir}/pipeline/create_sacc_file_analytic.py --globals ${paramfile} --data
-          echo "=== Done with create_sacc_file_analytic.py ==="
+          #echo "=== Done with create_sacc_file_analytic.py ==="
           #
           #srun -n 1 -c 112 python ${soopercool_dir}/pipeline/postproc/fit_cals_and_beams.py --sacc-file /scratch/gpfs/SIMONSOBS/external_data_e2e/v4/spectra/filtered_${sat}_${sat_freq}_20260304_fixed_exp_tag/south/20251216_full-dataset/science/saccs/cl_and_cov_sacc.fits --lmin-fit 150 --lmax-fit 600 --map-sets-ref planck_f100_filtered_${sat}_${sat_freq}_south_science,planck_f143_filtered_${sat}_${sat_freq}_south_science --map-sets-to-fit ${sat}_f090_south_science,${sat}_f150_south_science --lmax-sacc 650
           #echo "=== Done with fit_cals_and_beams.py ==="
