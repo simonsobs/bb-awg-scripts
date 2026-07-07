@@ -295,7 +295,8 @@ class SignFlipper(_Coadder):
 
         bundle_info = self._get_bundle_info(bundle_id, map_dir, null_prop_val=null_prop_val, split_label=split_label)
         self.fnames = list(bundle_info['filename'])
-        self.ws = bundle_info['weight'].to_numpy()
+        # copy(): pandas >= 3.0 returns a read-only view, but ws is scaled in place below
+        self.ws = bundle_info['weight'].to_numpy().copy()
 
         self.full_abscal = utils.get_abscal(abscal, bundle_info['wafer'], bundle_info['freq_channel'])
         self.ws = self.ws * (self.full_abscal**-2)  # ivar gets -2 powers of abscal
