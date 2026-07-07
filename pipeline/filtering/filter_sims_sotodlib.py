@@ -86,21 +86,23 @@ def main(args):
 
     # Create output directories
     atomics_dir = {}
-    for freq_channel, patch, sim_type in product(freq_channels, args.patches, sim_types):
+    for freq_channel, patch in product(freq_channels, args.patches):
         atomics_dir[(patch, freq_channel)] = {}
-        out_dir = args.output_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
-        )
-        for sim_id in sim_ids:
-            atomic_sim_dir = args.atomic_sim_dir.format(
-                patch=patch, freq_channel=freq_labels[freq_channel],
-                sim_type=sim_type, sim_id=sim_id
+        for sim_type in sim_types:
+            out_dir = args.output_dir.format(
+                patch=patch, freq_channel=freq_labels[freq_channel], sim_type=sim_type
             )
-            atomics_dir[patch, freq_channel][sim_id] = atomic_sim_dir  # noqa
-            if sim_id is not None and "{sim_id" not in args.atomic_sim_dir:
-                atomics_dir[patch, freq_channel][sim_id] += f"/{sim_id:04d}"  # noqa
-            os.makedirs(atomics_dir[patch, freq_channel][sim_id],
-                        exist_ok=True)
+            for sim_id in sim_ids:
+                atomic_sim_dir = args.atomic_sim_dir.format(
+                    patch=patch, freq_channel=freq_labels[freq_channel],
+                    sim_type=sim_type, sim_id=sim_id
+                )
+                dir_key = sim_id if sim_id is not None else sim_type
+                atomics_dir[patch, freq_channel][dir_key] = atomic_sim_dir  # noqa
+                if sim_id is not None and "{sim_id" not in args.atomic_sim_dir:
+                    atomics_dir[patch, freq_channel][dir_key] += f"/{sim_id:04d}"  # noqa
+                os.makedirs(atomics_dir[patch, freq_channel][dir_key],
+                            exist_ok=True)
 
     # Arguments related to pixellization
     pix_type = args.pix_type
@@ -238,7 +240,8 @@ def main(args):
                         f"_{obs_id}_{wafer}_{split_label}{mfmt}"
                     )
 
-                    f_wmap = atomics_dir[patch, freq_channel][sim_id]
+                    dir_key = sim_id if sim_id is not None else sim_type
+                    f_wmap = atomics_dir[patch, freq_channel][dir_key]
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
 
@@ -398,7 +401,8 @@ def main(args):
                         f"_{obs_id}_{wafer}_{split_label}{mfmt}"
                     )
 
-                    f_wmap = atomics_dir[patch, freq_channel][sim_id]
+                    dir_key = sim_id if sim_id is not None else sim_type
+                    f_wmap = atomics_dir[patch, freq_channel][dir_key]
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
 

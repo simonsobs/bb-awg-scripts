@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 
 from pixell import enmap, enplot
 from sotodlib.coords.demod import make_map
+from sotodlib.coords.helpers import get_deflected_sightline
 from sotodlib.coords import P
 
 
@@ -196,7 +197,7 @@ def get_fullsky_geometry(res_arcmin=5., variant="fejer1"):
 
 
 def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
-                     nside=None, site=None, logger=None):
+                     nside=None, site=None, logger=None, apply_wobble=False):
     """
     """
     obs.wrap("weather", np.full(1, "toco"))
@@ -227,8 +228,12 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
     for split_label in split_labels:
         cuts = obs.flags.glitch_flags + ~obs.preprocess.split_flags.cuts[split_label]  # noqa
 
-        Proj = P.for_tod(obs, wcs_kernel=wcs, comps='TQU', cuts=cuts,
-                         hwp=True, interpol=None)
+        if apply_wobble and ("wobble_params" in obs):
+            sight = get_deflected_sightline(obs)
+        else:
+            sight = None
+        Proj = P.for_tod(obs, sight=sight, wcs_kernel=wcs, comps='TQU',
+                         cuts=cuts, hwp=True, interpol=None)
         result = make_map(obs, P=Proj, det_weights=2 * inv_var,
                           det_weights_demod=inv_var)
         wmap_dict[split_label] = result['weighted_map']
