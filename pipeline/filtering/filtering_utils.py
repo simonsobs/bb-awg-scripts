@@ -98,9 +98,9 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
                 try:
                     wmap = enmap.read_map(fname_wmap)
                     w = enmap.read_map(fname_w)
-                except:
-                    print(fname_wmap)
-                    print(fname_w)
+                except Exception as e:
+                    print(f"Failed to read map files: {e}")
+                    raise
             elif pix_type == "hp":
                 wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
                 w = hp.read_map(fname_w, field=range(3), nest=True)

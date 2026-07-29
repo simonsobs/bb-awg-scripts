@@ -31,18 +31,23 @@ def main(args):
     if args.pix_type not in ["hp", "car"]:
         raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
 
+    # MPI related initialization
     rank, size, comm = mpi.init(True)
 
+    # Initialize the logger
     logger = pp_util.init_logger("benchmark", verbosity=args.verbosity)
     if rank == 0:
         start = time.time()
 
+    # Ensure that freq_channels for the metadata follow the "f090" convention.
+    # We keep the original labels in a dict called freq_labels.
     freq_labels = {}
-    for f in args.freq_channels:
+    for f in args.freq_channels:  # If these don't contain the "f", add
         freq_channel = f"f{f}" if "f" not in f else f
-        freq_labels[freq_channel] = f
+        freq_labels[freq_channel] = f  # dict values are original labels
     freq_channels = list(freq_labels.keys())
 
+    # Sim related arguments
     if args.sim_types is None:
         sim_types = [None]
         if rank == 0:
@@ -69,8 +74,10 @@ def main(args):
     if rank == 0:
         logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
 
+    # Input directory
     atomic_sim_dir = args.atomic_sim_dir
 
+    # Output directories
     patches = args.patches
     out_dirs = {
         (patch, freq_channel, sim_type):
@@ -98,18 +105,21 @@ def main(args):
         os.makedirs(coadded_dirs[key], exist_ok=True)
         os.makedirs(plot_dirs[key], exist_ok=True)
 
+    # Pixelization arguments
     pix_type = args.pix_type
     if pix_type == "hp":
-        mfmt = ".fits"
+        mfmt = ".fits"  # TODO: test fits.gz for HEALPix
         car_map_template = None
     elif pix_type == "car":
         mfmt = ".fits"
         car_map_template = args.car_map_template
 
+    # Databases
     atom_db = args.atomic_db
     bundle_dbs = {patch: args.bundle_db.format(patch=patch)
                   for patch in patches}
 
+    # Bundle query arguments
     inter_obs_splits = args.inter_obs_splits
     if inter_obs_splits is None:
         inter_obs_splits = []
@@ -119,6 +129,7 @@ def main(args):
         else:
             inter_obs_splits = [inter_obs_splits]
 
+    # Load all data from bundle dbs without filtering
     bundle_id = args.bundle_id
     bundles = {
         patch:
@@ -127,6 +138,7 @@ def main(args):
         ) for patch in patches
     }
 
+    # Gather all split labels of atomics to be coadded
     if args.intra_obs_splits in [None, [], [None], "None"]:
         intra_obs_splits = []
     else:
@@ -156,6 +168,8 @@ def main(args):
         logger.info(f"Split labels to coadd individually: {intra_obs_splits}")
         logger.info(f"Split labels to coadd together: {intra_obs_pair}")
 
+    # Extract list of ctimes from bundle database for the given
+    # bundle_id and without atomic batches - inter obs null label
     ctimes = {
         (patch, inter_obs_split, None):
         bundles[patch].get_ctimes(
@@ -163,16 +177,20 @@ def main(args):
         ) for inter_obs_split in inter_obs_splits
         for patch in patches
     }
+    # Add the science split without atomic batches
     for patch in patches:
         ctimes[patch, "science", None] = bundles[patch].get_ctimes(
             bundle_id=bundle_id
         )
 
+    # Randomly split science ctimes into batches (optional)
     nbatches = 1 if args.nbatch_atomics is None else args.nbatch_atomics
     nbatches_dict = {}
     for patch in patches:
+        # Limit number of batches to one half the number of ctimes
         if nbatches > len(ctimes[patch, "science", None]) // 2:
             nbatches_dict[patch] = len(ctimes[patch, "science", None]) // 2
+        # Must have at least two batches
         if nbatches < 2:
             nbatches_dict[patch] = None
     batches = {}
@@ -196,6 +214,7 @@ def main(args):
                     for i in idx_rand if (i+ib) % nbatch
                 ]
 
+    # Restrict the inter-obs null splits to the ctimes of the "science" split
     for patch in patches:
         for inter_obs_split, ib in product(inter_obs_splits, batches[patch]):
             ctimes[patch, inter_obs_split, ib] = [
@@ -204,9 +223,11 @@ def main(args):
                 if ct in ctimes[patch, "science", ib]
             ]
 
+    # Connect the the atomic map DB
     db_con = sqlite3.connect(atom_db)
     db_cur = db_con.cursor()
 
+    # TODO: check if query_restrict is channel- or patch-specific
     query_restrict = args.query_restrict
 
     relevant_splits = list(set(["science"] + intra_obs_splits + intra_obs_pair))  # noqa
@@ -222,6 +243,7 @@ def main(args):
     }
     atomic_metadata = {key: [] for key in queries}
 
+    # Query all atomics used for science, filtering ctimes
     for (patch, freq_channel, split_label, ib), query in queries.items():
         if split_label == "science":
             res = db_cur.execute(query)
@@ -230,6 +252,8 @@ def main(args):
                 (obs_id, wafer) for obs_id, wafer in res
             ]
 
+    # Query all atomics used for intra-obs splits
+    # filtering ctimes and split labels
     for (patch, freq_channel, split_label, ib), query in queries.items():
         if split_label != "science":
             res = db_cur.execute(query)
@@ -245,6 +269,9 @@ def main(args):
                                                       ib]
             ]
 
+    # Query all atomics used for inter-obs splits
+    # filtering ctimes w.r.t to the null prop considered
+    # for the two intra-obs splits to be coadded
     if len(intra_obs_pair) != 0:
         for patch, freq_channel in product(patches, freq_channels):
             for inter_obs_split, intra_obs_split, ib in product(inter_obs_splits,  # noqa
@@ -278,6 +305,7 @@ def main(args):
                        for split_label in split_labels_all
                        for sim_type in sim_types]
 
+    # Every rank must have the same shared list
     mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
     task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list),
                                     logger=logger)
@@ -382,6 +410,7 @@ def main(args):
             logger.info(f"Done: {local_task_id+1}/{len(local_mpi_list)} "
                         f"for rank {rank}.")
 
+    # All ranks sync here after completing their tasks
     comm.barrier()
 
     if rank == 0:
