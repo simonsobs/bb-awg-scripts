@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from pixell import enmap, enplot
 from sotodlib.coords.demod import make_map
-#from sotodlib.coords.helpers import get_deflected_sightline
+from sotodlib.coords.helpers import get_deflected_sightline
 from sotodlib.coords import P
 
 
@@ -233,8 +233,7 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
         cuts = obs.flags.glitch_flags + ~obs.preprocess.split_flags.cuts[split_label]  # noqa
 
         if apply_wobble and ("wobble_params" in obs):
-            #sight = get_deflected_sightline(obs)
-            sight=None #sight
+            sight = get_deflected_sightline(obs)
         else:
             sight = None
         Proj = P.for_tod(obs, sight=sight, wcs_kernel=wcs, comps='TQU',
