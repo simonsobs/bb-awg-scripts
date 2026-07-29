@@ -95,8 +95,12 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
 
         if not file_stats_only:
             if pix_type == "car":
-                wmap = enmap.read_map(fname_wmap)
-                w = enmap.read_map(fname_w)
+                try:
+                    wmap = enmap.read_map(fname_wmap)
+                    w = enmap.read_map(fname_w)
+                except:
+                    print(fname_wmap)
+                    print(fname_w)
             elif pix_type == "hp":
                 wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
                 w = hp.read_map(fname_w, field=range(3), nest=True)
