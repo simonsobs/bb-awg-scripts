@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from pixell import enmap, enplot
 from sotodlib.coords.demod import make_map
-from sotodlib.coords.helpers import get_deflected_sightline
+#from sotodlib.coords.helpers import get_deflected_sightline
 from sotodlib.coords import P
 
 
@@ -98,9 +98,9 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
                 try:
                     wmap = enmap.read_map(fname_wmap)
                     w = enmap.read_map(fname_w)
-                except:
-                    print(fname_wmap)
-                    print(fname_w)
+                except Exception as e:
+                    print(f"Failed to read map files: {e}")
+                    raise
             elif pix_type == "hp":
                 wmap = hp.read_map(fname_wmap, field=range(3), nest=True)
                 w = hp.read_map(fname_w, field=range(3), nest=True)
@@ -233,7 +233,8 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
         cuts = obs.flags.glitch_flags + ~obs.preprocess.split_flags.cuts[split_label]  # noqa
 
         if apply_wobble and ("wobble_params" in obs):
-            sight = get_deflected_sightline(obs)
+            #sight = get_deflected_sightline(obs)
+            sight=None #sight
         else:
             sight = None
         Proj = P.for_tod(obs, sight=sight, wcs_kernel=wcs, comps='TQU',
