@@ -24,6 +24,49 @@ import filtering_utils as fu  # noqa
 import mpi_utils as mpi  # noqa
 
 
+def _validate_nmat_transfer_config(configs_proc):
+    # Return the data-snapshot key for a correctly configured Nmat step.
+    process_pipe = configs_proc["process_pipe"]
+    nmat_steps = [
+        (step_idx, step)
+        for step_idx, step in enumerate(process_pipe)
+        if step.get("name") == "joint_qu_nmat_filter"
+    ]
+    counter_1f_steps = [
+        step
+        for step in process_pipe
+        if step.get("name") == "fourier_filter"
+        and step.get("process", {}).get("filt_function")
+        == "counter_1_over_f"
+    ]
+
+    if not nmat_steps:
+        return None
+    if len(nmat_steps) != 1:
+        raise ValueError(
+            "Transfer preprocessing must contain exactly one "
+            "joint_qu_nmat_filter step"
+        )
+    if counter_1f_steps:
+        raise ValueError(
+            "joint_qu_nmat_filter replaces counter_1_over_f; remove the "
+            "counter filters from the transfer preprocessing config"
+        )
+
+    step_idx, step = nmat_steps[0]
+    if step.get("skip_on_sim") is not False:
+        raise ValueError(
+            "joint_qu_nmat_filter must set skip_on_sim: False for transfer "
+            "simulations"
+        )
+    if not step.get("use_data_aman", False):
+        raise ValueError(
+            "joint_qu_nmat_filter must set use_data_aman: True so the Nmat "
+            "is estimated from real data, not from the signal-only simulation"
+        )
+    return step_idx, step["name"]
+
+
 def main(args):
     """
     """
@@ -191,6 +234,12 @@ def main(args):
     configs_proc, ctx_proc = pp_util.get_preprocess_context(
         preprocess_config_proc
     )
+    nmat_data_key = _validate_nmat_transfer_config(configs_proc)
+    if nmat_data_key is not None and rank == 0:
+        logger.info(
+            "Nmat transfer filtering will estimate the operator from the "
+            "real-data snapshot at process step %s.", nmat_data_key[0]
+        )
 
     # Initialize tasks for MPI sharing
     mpi_shared_list = atomic_metadata["science"]
@@ -308,6 +357,13 @@ def main(args):
             logger.warning(f"NO DETECTORS LEFT AFTER RESTRICTING: "
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
+
+        if nmat_data_key is not None:
+            if data_aman is None or nmat_data_key not in data_aman:
+                raise RuntimeError(
+                    "Missing real-data AxisManager snapshot for the Nmat "
+                    f"filter at key {nmat_data_key}"
+                )
 
         for sim_id, sim_type in product(sim_ids, sim_types):
 
