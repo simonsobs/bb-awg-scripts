@@ -25,9 +25,20 @@ import mpi_utils as mpi  # noqa
 
 
 def _validate_nmat_transfer_config(configs_proc):
-    # Return the data-snapshot key for a correctly configured Nmat step.
+    """Check the Nmat steps are wired up correctly for transfer sims.
+
+    The operator is fit by joint_qu_nmat_model on the real-data run and saved
+    to the preprocess archive; joint_qu_nmat_filter reloads it here rather than
+    refitting it on the signal-only simulation. Returns the name the operator
+    is saved under, or None when the Nmat filter is not in use.
+    """
     process_pipe = configs_proc["process_pipe"]
-    nmat_steps = [
+    model_steps = [
+        (step_idx, step)
+        for step_idx, step in enumerate(process_pipe)
+        if step.get("name") == "joint_qu_nmat_model"
+    ]
+    filter_steps = [
         (step_idx, step)
         for step_idx, step in enumerate(process_pipe)
         if step.get("name") == "joint_qu_nmat_filter"
@@ -40,12 +51,13 @@ def _validate_nmat_transfer_config(configs_proc):
         == "counter_1_over_f"
     ]
 
-    if not nmat_steps:
+    if not model_steps and not filter_steps:
         return None
-    if len(nmat_steps) != 1:
+    if len(model_steps) != 1 or len(filter_steps) != 1:
         raise ValueError(
             "Transfer preprocessing must contain exactly one "
-            "joint_qu_nmat_filter step"
+            "joint_qu_nmat_model step and one joint_qu_nmat_filter step; "
+            f"found {len(model_steps)} and {len(filter_steps)}"
         )
     if counter_1f_steps:
         raise ValueError(
@@ -53,18 +65,38 @@ def _validate_nmat_transfer_config(configs_proc):
             "counter filters from the transfer preprocessing config"
         )
 
-    step_idx, step = nmat_steps[0]
-    if step.get("skip_on_sim") is not False:
+    model_idx, model_step = model_steps[0]
+    filter_idx, filter_step = filter_steps[0]
+    if model_idx > filter_idx:
+        raise ValueError(
+            "joint_qu_nmat_model must come before joint_qu_nmat_filter in "
+            "the process pipeline"
+        )
+    if model_step.get("skip_on_sim") is not True:
+        raise ValueError(
+            "joint_qu_nmat_model must set skip_on_sim: True so the operator "
+            "is reloaded from the real-data archive rather than refit on the "
+            "signal-only simulation"
+        )
+    if filter_step.get("skip_on_sim") is not False:
         raise ValueError(
             "joint_qu_nmat_filter must set skip_on_sim: False for transfer "
             "simulations"
         )
-    if not step.get("use_data_aman", False):
+    if not model_step.get("save"):
         raise ValueError(
-            "joint_qu_nmat_filter must set use_data_aman: True so the Nmat "
-            "is estimated from real data, not from the signal-only simulation"
+            "joint_qu_nmat_model needs a save block, otherwise the operator "
+            "is never written to the archive for the sim run to read back"
         )
-    return step_idx, step["name"]
+
+    saved_as = model_step["save"].get("wrap_name", "nmat_qu")
+    requested = (filter_step.get("process") or {}).get("nmat_model", "nmat_qu")
+    if saved_as != requested:
+        raise ValueError(
+            f"joint_qu_nmat_filter requests nmat_model {requested!r} but "
+            f"joint_qu_nmat_model saves the operator as {saved_as!r}"
+        )
+    return saved_as
 
 
 def main(args):
@@ -234,11 +266,26 @@ def main(args):
     configs_proc, ctx_proc = pp_util.get_preprocess_context(
         preprocess_config_proc
     )
-    nmat_data_key = _validate_nmat_transfer_config(configs_proc)
-    if nmat_data_key is not None and rank == 0:
+    nmat_model_name = _validate_nmat_transfer_config(configs_proc)
+    if nmat_model_name is not None and rank == 0:
         logger.info(
-            "Nmat transfer filtering will estimate the operator from the "
-            "real-data snapshot at process step %s.", nmat_data_key[0]
+            "Nmat transfer filtering will reload the operator saved as '%s' "
+            "by joint_qu_nmat_model on the real-data run.", nmat_model_name
+        )
+
+    # The real-data snapshot is only built when some step actually asks for it
+    # via use_data_aman (subtract_t2p does; the Nmat filter no longer needs to,
+    # since it reloads its operator from the archive instead).
+    needs_data_aman = any(
+        step.get("use_data_aman", False)
+        for cfgs in (configs_init, configs_proc)
+        for step in cfgs["process_pipe"]
+    )
+    if rank == 0:
+        logger.info(
+            "Real-data AxisManager snapshots %s",
+            "required by at least one process step"
+            if needs_data_aman else "not required; skipping the data pass"
         )
 
     # Initialize tasks for MPI sharing
@@ -341,7 +388,7 @@ def main(args):
                 logger=logger,
                 stop_for_sims=True,
                 ignore_cfg_check=True
-            )
+            ) if needs_data_aman else None
         # After focal plane thinning, the data AxisManager might not have any
         # detectors left, resulting in one of several errors caught below.
         # TODO: We should account for those directly in sotodlib. 
@@ -357,13 +404,6 @@ def main(args):
             logger.warning(f"NO DETECTORS LEFT AFTER RESTRICTING: "
                            f"({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
-
-        if nmat_data_key is not None:
-            if data_aman is None or nmat_data_key not in data_aman:
-                raise RuntimeError(
-                    "Missing real-data AxisManager snapshot for the Nmat "
-                    f"filter at key {nmat_data_key}"
-                )
 
         for sim_id, sim_type in product(sim_ids, sim_types):
 
