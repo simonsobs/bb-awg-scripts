@@ -272,6 +272,18 @@ def main(args):
             "Nmat transfer filtering will reload the operator saved as '%s' "
             "by joint_qu_nmat_model on the real-data run.", nmat_model_name
         )
+    if nmat_model_name is not None and args.fp_thin is not None:
+        raise ValueError(
+            "fp_thin cannot be used together with the joint Q/U Nmat filter. "
+            "Per-detector filters are unaffected by focal plane thinning, but "
+            "the Nmat filter is a joint multi-detector operator: the channel "
+            "count enters the Marchenko-Pastur threshold through "
+            "gamma = nchan / n_samples, so thinning changes the operator "
+            "itself. The data maps are made with the full focal plane, so "
+            "thinned simulations would be filtered by a different operator "
+            "than the data and the transfer function would not describe the "
+            "data. Set fp_thin to null for Nmat transfer runs."
+        )
 
     # The real-data snapshot is only built when some step actually asks for it
     # via use_data_aman (subtract_t2p does; the Nmat filter no longer needs to,
