@@ -273,17 +273,27 @@ def main(args):
             "by joint_qu_nmat_model on the real-data run.", nmat_model_name
         )
     if nmat_model_name is not None and args.fp_thin is not None:
-        raise ValueError(
-            "fp_thin cannot be used together with the joint Q/U Nmat filter. "
-            "Per-detector filters are unaffected by focal plane thinning, but "
-            "the Nmat filter is a joint multi-detector operator: the channel "
-            "count enters the Marchenko-Pastur threshold through "
-            "gamma = nchan / n_samples, so thinning changes the operator "
-            "itself. The data maps are made with the full focal plane, so "
-            "thinned simulations would be filtered by a different operator "
-            "than the data and the transfer function would not describe the "
-            "data. Set fp_thin to null for Nmat transfer runs."
-        )
+        if not getattr(args, "allow_fp_thin_with_nmat", False):
+            raise ValueError(
+                "fp_thin cannot be used with the joint Q/U Nmat filter unless "
+                "explicitly allowed. Per-detector filters are unaffected by "
+                "focal plane thinning, but the Nmat filter is a joint "
+                "multi-detector operator: the channel count enters the "
+                "Marchenko-Pastur threshold through gamma = nchan/n_samples, "
+                "so thinning changes the operator itself. The data maps use "
+                "the full focal plane, so thinned sims are filtered by a "
+                "different operator than the data and the transfer function "
+                "does not describe the data. Set fp_thin to null, or set "
+                "allow_fp_thin_with_nmat: True to run a thinning-convergence "
+                "test deliberately."
+            )
+        if rank == 0:
+            logger.warning(
+                "Running the Nmat transfer filtering with fp_thin=%s. The "
+                "resulting transfer function describes a thinned focal plane, "
+                "not the full-array operator the data maps received. Only "
+                "valid as a convergence test.", args.fp_thin
+            )
 
     # The real-data snapshot is only built when some step actually asks for it
     # via use_data_aman (subtract_t2p does; the Nmat filter no longer needs to,
