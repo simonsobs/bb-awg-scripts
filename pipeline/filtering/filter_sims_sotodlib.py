@@ -53,6 +53,25 @@ def _validate_nmat_transfer_config(configs_proc):
 
     if not model_steps and not filter_steps:
         return None
+
+    # Legacy form: a single filter step that fits the operator live from the
+    # data AxisManager. Kept so pre-split runs can be reproduced.
+    if not model_steps and len(filter_steps) == 1:
+        _, filter_step = filter_steps[0]
+        if filter_step.get("use_data_aman", False):
+            if counter_1f_steps:
+                raise ValueError(
+                    "joint_qu_nmat_filter replaces counter_1_over_f; remove "
+                    "the counter filters from the transfer preprocessing "
+                    "config"
+                )
+            if filter_step.get("skip_on_sim") is not False:
+                raise ValueError(
+                    "joint_qu_nmat_filter must set skip_on_sim: False for "
+                    "transfer simulations"
+                )
+            return "__live_fit__"
+
     if len(model_steps) != 1 or len(filter_steps) != 1:
         raise ValueError(
             "Transfer preprocessing must contain exactly one "
@@ -272,7 +291,8 @@ def main(args):
             "Nmat transfer filtering will reload the operator saved as '%s' "
             "by joint_qu_nmat_model on the real-data run.", nmat_model_name
         )
-    if nmat_model_name is not None and args.fp_thin is not None:
+    if (nmat_model_name is not None and nmat_model_name != "__live_fit__"
+            and args.fp_thin is not None):
         if not getattr(args, "allow_fp_thin_with_nmat", False):
             raise ValueError(
                 "fp_thin cannot be used with the joint Q/U Nmat filter unless "
