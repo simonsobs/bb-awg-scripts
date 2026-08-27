@@ -170,6 +170,7 @@ def main(args):
             alms_list[i] = alms
 
             if pix_type == "hp":
+                print("alms_list", len(alms_list), alms_list[0].shape)
                 map = hp.alm2map(
                     alms_list, nside, lmax=lmax
                 )
