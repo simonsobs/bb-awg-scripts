@@ -98,6 +98,21 @@ def read_map(map_file,
 
 
 def bandlim_sine2(x, xc, dx):
+    """
+    Apply a sine-shaped low-pass filter on array x.
+    Parameters
+    ----------
+    x: array-like
+        input array
+    xc: float
+        low-pass center
+    dx: float
+        low-pass width
+    Returns
+    -------
+    array-like
+        low-pass filtered array x
+    """
     xmin = xc - dx
     xmax = xc + dx
     return 1 - np.where(
@@ -113,6 +128,25 @@ def bandlim_sine2(x, xc, dx):
 
 def main(args):
     """
+    Generates power-law simulation sets keeping correlated T, E, B in each
+    realization, respectively. 
+
+    The power-law shape is C_ell ~ 1/(0.01+ell)**2.
+
+    The output file names will be
+    "{out_dir}/{pure_type}{pols_keep}_{res_string}_fwhm{beam_string}_sim{id_sim:04d}_{PIX_TYPE}.fits"
+
+    Command line arguments are:
+        - out_dir: str, output directory where to save sims at
+        - pix_type: str, "hp" or "car" pixelization.
+        - n_sims: int, number of realizations
+        - id_start: starting sim ID
+        - smooth_fwhm: float, FWHM of Gaussian beam the sims will be convolved
+          with.
+        - nside: HEALPix resolution parameter
+        - car_template: str, path to Pixell geometry template file
+        - pols_keep: str, can be "TEB" or any one- or two-letter subset; type
+          of simulations to be generated for each realizations
     """
     pix_type = args.pix_type
     n_sims = args.n_sims

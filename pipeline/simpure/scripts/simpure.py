@@ -441,30 +441,29 @@ class SimPure:
 
             # Save M_ij = s_ipn *s_jpn, where s is the simulation vector
             # of B-residuals
-            if os.path.isfile(deproj_mat_fn) and not overwrite:
-                pass
-            deproj_mat = []
-            for i, s in enumerate(deproj_sims):
-                if i % 50 == 0:
-                    print("   SAVE MAT", i)
-                if pix_type == "hp":
-                    deproj_mat.append(np.sum(np.array(deproj_sims)*s[None, :, :], axis=(1, 2)))  # noqa: E501
-                else:
-                    deproj_mat.append(np.sum(np.array(deproj_sims)*s[None, :, :, :],  # noqa: E501
-                                      axis=(1, 2, 3)))
-            deproj_mat = np.array(deproj_mat)
-            np.savez(deproj_mat_fn, deproj_mat=deproj_mat, deproj_sims=deproj_sims)  # noqa: E501
-            print("SAVED MAT", deproj_mat_fn, deproj_mat.shape)
+            if not os.path.isfile(deproj_mat_fn) and not overwrite:
+                deproj_mat = []
+                for i, s in enumerate(deproj_sims):
+                    if i % 50 == 0:
+                        print("   SAVE MAT", i)
+                    if pix_type == "hp":
+                        deproj_mat.append(np.sum(np.array(deproj_sims)*s[None, :, :], axis=(1, 2)))  # noqa: E501
+                    else:
+                        deproj_mat.append(np.sum(np.array(deproj_sims)*s[None, :, :, :],  # noqa: E501
+                                        axis=(1, 2, 3)))
+                deproj_mat = np.array(deproj_mat)
+                np.savez(deproj_mat_fn, deproj_mat=deproj_mat, deproj_sims=deproj_sims)  # noqa: E501
+                print("SAVED MAT", deproj_mat_fn, deproj_mat.shape)
 
-            if mat_plot_fn is not None:
-                # Visualize eigenvalues of M
-                w, _ = np.linalg.eigh(deproj_mat)
-                plt.figure()
-                plt.plot(w[::-1])
-                plt.yscale('log')
-                plt.savefig(mat_plot_fn, bbox_inches="tight")
-                print(f"    PLOT SAVED {mat_plot_fn}")
-                plt.close()
+                if mat_plot_fn is not None:
+                    # Visualize eigenvalues of M
+                    w, _ = np.linalg.eigh(deproj_mat)
+                    plt.figure()
+                    plt.plot(w[::-1])
+                    plt.yscale('log')
+                    plt.savefig(mat_plot_fn, bbox_inches="tight")
+                    print(f"    PLOT SAVED {mat_plot_fn}")
+                    plt.close()
         self.comm.barrier()
         deproj_mat, deproj_sims = [np.load(deproj_mat_fn, allow_pickle=True)[k]
                                    for k in ["deproj_mat", "deproj_sims"]]
@@ -544,10 +543,10 @@ class SimPure:
                                 mp, nmt_purify=True, return_just_field=True)
                         elif method == "matrix":
                             mp_masked = self.get_masked_map(mp,
-                                                            nmt_purify=False,
+                                                            nmt_purify=False,  # new method: False
                                                             binary=False)
                             mp_masked_pure = matpure.purify_observed_map(
-                                mp_masked)
+                                mp_masked, self.lmax)
                             f = self.compute_pspec(
                                 mp_masked_pure,
                                 return_just_field=True,
@@ -768,9 +767,10 @@ class SimPure:
                 elif "filtered_pure_matrix" in clab:
                     mp = self.load_val_sim(i, filtered=True, typ=map)
                     mp_masked = self.get_masked_map(mp,
-                                                    nmt_purify=False,
+                                                    nmt_purify=False,  # New method: False
                                                     binary=False)
-                    mp_masked_pure = matpure.purify_observed_map(mp_masked)
+                    mp_masked_pure = matpure.purify_observed_map(mp_masked,
+                                                                 self.lmax)
                     tf_type = None
                     if clab == "filtered_pure_matrix_tfed":
                         tf_type = "pure_matrix"
@@ -779,7 +779,7 @@ class SimPure:
                         transfer=tf,
                         tf_type=tf_type,
                         nmt_purify=False,
-                        nmt_purify_mcm=False,
+                        nmt_purify_mcm=True,  # New method: True
                         masked_on_input=True
                     )
 
