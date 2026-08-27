@@ -25,10 +25,10 @@ import mpi_utils as mpi
 # * 2026/03/04: added power-law simulation validation
 # * 2026/05/05: tested power-law simulation validation
 # * 2026/05/27: added matrix-based purification
+# * 2026/08/24: added optimizd matrix purif. Added BBmaster obsmat at nside 64
 
 
 def main():
-    print("  0. Initialization")
     # pixelization
     pix_type = "hp"
     nside = 64
@@ -42,13 +42,13 @@ def main():
 
     # Filtering choice
     # filter_setup = "toy_apo_nside128"  # Toy filter
-    filter_setup = f"obsmat_polyonly_apo_nside{nside}_binary_masked"  # Simple poly filter
-    # filter_setup = f"obsmat_apo_nside{nside}"  # BBMASTER paper
+    # filter_setup = f"obsmat_polyonly_apo_nside{nside}"  # Simple poly filter
+    filter_setup = f"obsmat_apo_nside{nside}"  # BBMASTER paper
 
     # General parameters
     overwrite = True  # If True, always recompute products.
-    purify_method = "deproj"  # Choose between "matrix", "deproj", None
-    nsims_purify = 1000  # number of pure-E sims used for template deprojection.
+    purify_method = "matrix"  # Choose between "matrix", "deproj", None
+    nsims_purify = 2000  # number of pure-E sims used for template deprojection.
                          # Only relevant if purify_method is "deproj"
     nsims_val = 200  # number of validation sims
     nsims_transfer = 200  # number of pure (E,B sims used for transfer function)
@@ -61,7 +61,7 @@ def main():
 
     # NOTE: This will be the name of the output folder.
     # Choose a representative name for the test case at hand.
-    test_label = f"{purify_method}_binary_masked"
+    test_label = f"paper_{purify_method}_bbmaster"
 
     out_dir = f"{base_dir}/purification/{test_label}"
     plot_dir = f"{out_dir}/plots"
@@ -116,8 +116,14 @@ def main():
                 deproj_sims = np.zeros((nsims_purify,) + mp.shape)
                 deproj_mat = np.eye(nsims_purify)
         elif purify_method == "matrix":
-            print("   1B. Prepare matrix purification")
-            eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_nside64.npz"
+            if sp.rank == 0:
+                print("   1B. Prepare matrix purification")
+            if filter_setup == "obsmat_polyonly_apo_nside64":
+                # NOTE: eigen_spectrum_nside64 is polyonly-filtered and apo-masked
+                eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_nside64.npz"
+            elif filter_setup == "obsmat_apo_nside64":
+                # NOTE: obsmat_apo_nside64 means bbmaster-filtered and apo-masked
+                eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_apo_mask_bbmaster_nside64.npz"
             matpure = MatrixPurification(sp.mask,
                                          eigspec_fn,
                                          thresh_lo=0.25,
@@ -200,7 +206,8 @@ def main():
             if id == 2:
                 print("  2H. TF with advanced purification")
                 if purify_method == "matrix":
-                    cls_tf_comp = cls_tf_unfiltered_nopure
+                    # cls_tf_comp = cls_tf_unfiltered_nopure
+                    cls_tf_comp = cls_tf_unfiltered_pure  # New method: pure
                 else:
                     cls_tf_comp = cls_tf_unfiltered_pure
                 transfer_pure_adv = ut.get_transfer_dict(
@@ -237,8 +244,12 @@ def main():
                 tf = {"nopure": transfer_nopure["full_tf"],
                       "pure": transfer_pure["full_tf"],
                       f"pure_{purify_method}": transfer_pure_adv["full_tf"]}[cc]
-                purify = {"nopure": False, "pure": True, "pure_deproj": True,
-                          "pure_matrix": False}[cc]
+                purify = {
+                    "nopure": False,
+                    "pure": True,
+                    "pure_deproj": True,
+                    "pure_matrix": True  # New method: True
+                }[cc]
                 _ = sp.get_inv_coupling(transfer=tf,
                                         tf_type=cc,
                                         nmt_purify=purify,
@@ -322,9 +333,9 @@ def main():
         _, bpw_fil_pure_adv = sp.get_inv_coupling(
             transfer=transfer_pure_adv["full_tf"],
             tf_type=f"pure_{purify_method}",
-            nmt_purify=True,
+            nmt_purify=True,  # NEW method: True
             return_bp_win=True,
-            overwrite=True
+            overwrite=overwrite
         )
 
     for mtyp in ["plaw", "cmb"]:
@@ -487,7 +498,7 @@ def main():
                 thbb = clth_fil_pure_adv[pols]
                 y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_adv_tfed]), axis=0)  # noqa: E501
                 yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_adv_tfed]), axis=0)  # noqa: E501
-                plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'g-', alpha=0.5, label=f"f{mtyp}, {purify_method}-purified (N={nsims_purify})")  # noqa: E501
+                plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'g-', alpha=0.5, label=f"f{mtyp}, {purify_method}-purified {'(N='+str(nsims_purify)+')' if purify_method == 'deproj' else ''}")  # noqa: E501
                 plt.axhline(0, color="r", ls="--")
 
                 plt.xlim([2, lmax_plot])
@@ -563,7 +574,7 @@ def main():
 
                 y = np.mean(np.array([cl[pols] for cl in cls_filtered_pure_adv]), axis=0)*cl2dl  # noqa: E501
                 yerr = np.std(np.array([cl[pols] for cl in cls_filtered_pure_adv]), axis=0)*cl2dl  # noqa: E501
-                plt.plot(sp.leff, y, color='g', ls="-", label=f"f{mtyp}, {purify_method}-purified (N={nsims_purify})")  # noqa: E501
+                plt.plot(sp.leff, y, color='g', ls="-", label=f"f{mtyp}, {purify_method}-purified {'(N='+str(nsims_purify)+')' if purify_method == 'deproj' else ''}")  # noqa: E501
                 plt.fill_between(sp.leff, y-yerr, y+yerr, color='g', alpha=0.2)
 
                 plt.fill_between(sp.leff, y-yerr, y+yerr, color='y', alpha=0.2)

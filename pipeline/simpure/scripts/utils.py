@@ -19,12 +19,13 @@ import toast
 # * 2026/02/20: add healpix toy filtering routines
 # * 2026/04/29: add class MatrixPurification
 # * 2026/06/18: add documentation
+# * 2026/08/24: add alternative matrix purification options.
 
 
 class MatrixPurification:
     def __init__(self, mask_apo, eigspec_fn, thresh_lo=0.25, thresh_hi=0.75):
         """
-        Removes E/B-ambiguous modes from an observed and masked map.
+        Keeps pure-E or pure-B modes in an observed and masked map.
 
         Parameters:
         mask_apo: np.array, shape (3, npix)
@@ -47,10 +48,10 @@ class MatrixPurification:
         norm_eigvecs = eigspec['norm_eigvecs']
         num_e = int(norm_eigvecs.shape[0]*thresh_lo)
         num_b = int(norm_eigvecs.shape[0]*thresh_hi)
-        v = np.hstack(
-            (norm_eigvecs[:, num_b:],  # from thresh_hi to 1
-             norm_eigvecs[:, :num_e]))  # from 0 to thresh_hi
-        self.pmat = np.tensordot(v, v, axes=((1,), (1,)))
+        vE = norm_eigvecs[:, :num_e]  # pure-B modes: from 0 to thresh_hi
+        vB = norm_eigvecs[:, num_b:]  # pure-E modes: from thresh_hi to 1 
+        self.pmatE = np.tensordot(vE, vE, axes=((1,), (1,)))
+        self.pmatB = np.tensordot(vB, vB, axes=((1,), (1,)))
 
     def observe_map(self, map, obsmat_fn, apply_mask=True):
         """
@@ -87,19 +88,53 @@ class MatrixPurification:
             return Rm
         return Rm * self.mask_apo[None, :]
 
-    def purify_observed_map(self, map, ):
+    def purify_observed_map(self, map_obs, lmax, purify_b=True, purify_e=False):
         """
         Apply matrix-based purification to observed and masked map.
 
-        TODO: This needs to be fixed
+        Parameters
+        ----------
+        map_obs: np.ndarray, shape (nmaps, npix)
+            Observed and masked HEALPix map. nmaps is either 2 or 3.
+        purify_b: bool
+            Whether to apply B-mode matrix purification
+        purify_e:
+            Whether to apply E-mode matrux purification
         """
-        if map.shape[0] != 3 or map.ndim != 2:
+        if not purify_b and not purify_e:
+            return map_obs
+        if map_obs.shape[0] != 3 or map_obs.ndim != 2:
             raise ValueError("Map must be TQU healpix map.")
-        pRm = np.zeros_like(map)
-        pRm[0] = map[0]  # don't do anything to temperature
+    
+        npix = len(map_obs[0])
+        nside = hp.npix2nside(npix)
         msk = self.mask_bool
-        pRm[1:, msk] = (self.pmat @ map.copy()[1:, msk].ravel()).reshape((2, -1))  # noqa: E501
-        return pRm
+        PZRm = np.zeros_like(map_obs)
+        PZRm[0] = map_obs[0]  # don't do anything to temperature
+
+        # Purify
+        if purify_b:
+            # Variant A: take B component of purified ZRm
+            Bpure_ZRm = np.zeros((3, npix))
+            Bpure_ZRm[1:, msk] = (self.pmatB @ map_obs[1:,msk].ravel()).reshape((2,-1))
+            _, _, almB = hp.map2alm(Bpure_ZRm)
+            # # Variant B: take purified B-component of ZRm
+            # Bpure_ZRm_B = np.zeros((3, npix))
+            # _, _, almB = hp.map2alm(map_obs)
+            # ZRm_B = hp.alm2map([np.zeros_like(almB), np.zeros_like(almB), almB], nside=nside)
+            # Bpure_ZRm_B[1:, msk] = (self.pmatB @ ZRm_B[1:,msk].ravel()).reshape((2,-1))
+            # _, _, almB = hp.map2alm(Bpure_ZRm_B)
+            if not purify_e:
+                _, almE, _ = hp.map2alm(map_obs)
+        if purify_e:
+            Epure_ZRm = np.zeros((3, npix))
+            Epure_ZRm[1:, msk] = (self.pmatE @ map_obs[1:,msk].ravel()).reshape((2,-1))
+            _, almE, _ = hp.map2alm(Epure_ZRm)
+            if not purify_b:
+                _, almB, _ = hp.map2alm(map_obs)
+
+        PZRm[1:] = hp.alm2map([np.zeros_like(almE), almE, almB], nside, lmax)[1:]
+        return PZRm
 
 
 def get_npix_integer_factors(nside):

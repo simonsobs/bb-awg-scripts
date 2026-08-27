@@ -4,10 +4,10 @@ pix_type=hp
 nside=64  # Ignored for CAR
 res_arcmin=5  # Ignored for HEALPIX
 smooth_fwhm=60
-n_sims=200
-id_sims_start=0
+n_sims=1000
+id_sims_start=1000
 # out_dir=/cephfs/soukdata/user_data/kwolz/simpure/plaw_sims  # SO:UK
-out_dir=/pscratch/sd/k/kwolz/bbdev/simpure/plaw_sims  # NERSC
+out_dir=/pscratch/sd/k/kwolz/bbdev/simpure/input_sims  # NERSC
 bb_awg_scripts_dir=/global/homes/k/kwolz/bbdev/bb-awg-scripts  # YOUR BB-AWG-SCRIPTS DIR
 car_template=${bb_awg_scripts_dir}/pipeline/simpure/band_car_fejer1_20arcmin.fits  # Ignored for HEALPIX
 
@@ -23,4 +23,5 @@ python ${bb_awg_scripts_dir}/pipeline/misc/get_plawTEB_simulations.py \
     --out_dir $out_dir \
     --car_template_map $car_template \
     --res_arcmin $res_arcmin \
-    --pols_keep B
+    --pols_keep E \
+    --map_label pure
