@@ -430,6 +430,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
-    config.update(vars(args))
+    if args.sim_ids is not None:
+        config.update(vars(args))
 
     main(config)
