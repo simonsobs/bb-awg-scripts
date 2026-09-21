@@ -1,0 +1,128 @@
+# These parameters are accessible to all stages.
+chains_dir: &chains_dir "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/satp3_iso_v4_calib_20260702_calib_fg_pxs_pxp-ell60-400_bn0_TEET"
+covar_sacc: &covar_sacc "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260702_bn0_cross-Planck/science/saccs/cl_and_cov_sacc.fits"
+output_dir: &output_dir "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/satp3_iso_v4_calib_20260702_calib_fg_pxs_pxp-ell60-400_bn0_TEET" 
+
+global:
+    nside: 256
+    delta_ell: 15
+    compute_dell: True
+    sim_ids: null
+    config_copy: !path [*output_dir, config_copy.yaml]
+
+    data:
+        cells_coadded: *covar_sacc
+        cells_noise: null
+        cells_fiducial: null
+        cells_coadded_cov: *covar_sacc
+
+    map_sets:
+        satp3_f090_south_science:
+            beam_file: "/scratch/gpfs/SIMONSOBS/sat-iso/beams/planets/20260602_bessel_analytic_cov_effective_v4_paper_20260520_science/satp3_science_v4_paper_f090_norm0.dat"
+        satp3_f150_south_science:
+            beam_file: "/scratch/gpfs/SIMONSOBS/sat-iso/beams/planets/20260602_bessel_analytic_cov_effective_v4_paper_20260520_science/satp3_science_v4_paper_f150_norm0.dat"
+        Planck_f100_filtered_satp3_f090_south_science:
+            beam_file: "/scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_100_long.txt"
+        Planck_f143_filtered_satp3_f090_south_science:
+            beam_file: "/scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_143_long.txt"
+        Planck_f353_filtered_satp3_f090_south_science:
+            beam_file: "/scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_353_long.txt"
+
+BBCompSep:
+    output_dir: *chains_dir
+
+    sampler: emcee
+    nlive: 50
+    nrepeat: 50
+    nwalkers: 76
+    n_iters: 5000
+    resume: True
+    predict_to_sacc: False
+
+    likelihood_type: chi2
+    covariance_mode: full
+    r_init: 1.e-3
+
+    pol_channels: ['T', 'E', 'B']
+    fit_spectrum_rules:
+    - name: gain_tt_planck_100_143
+      spectra: ['TT', 'TE', 'ET']
+      tracer1:
+      - 'satp3_*'
+      tracer2:
+      - 'planck_f100_*'
+      - 'planck_f143_*'
+    - name: dust_pol_all_sat_ext
+      spectra: ['EE', 'EB', 'BE']
+      tracer1:
+      - 'satp3_*'
+      - 'planck_f100_*'
+      - 'planck_f143_*'
+      - 'planck_f353_*'
+      tracer2:
+      - 'planck_f100_*'
+      - 'planck_f143_*'
+      - 'planck_f353_*'
+
+    l_min: 60
+    l_max: 400
+
+    cmb_model:
+        cmb_templates:
+        - /home/sa5705/software/BBPower/examples/data/camb_lens_nobb.dat
+        - /home/sa5705/software/BBPower/examples/data/camb_lens_r1.dat
+        params:
+            r_tensor: ['r_tensor', 'fixed', [0.00]]
+            A_lens: ['A_lens', 'fixed', [1.00]]
+
+    fg_model:
+        use_moments: False
+        moments_lmax: 192
+
+        component_1:
+            name: Dust
+            sed: Dust
+            cl:
+                EE: ClPowerLaw
+                BB: ClPowerLaw
+            sed_parameters:
+                beta_d: ['beta_d', 'Gaussian', [1.4, 0.3]]
+                temp_d: ['temp', 'fixed', [20.0]]
+                nu0_d: ['nu0', 'fixed', [353.0]]
+            cl_parameters:
+                EE:
+                    amp_d_ee: ['amp', 'Gaussian', [12.0, 10.0]]
+                    alpha_d_ee: ['alpha', 'tophat', [-2., -0.5, -0.01]]
+                    l0_d_ee: ['ell0', 'fixed', [80.0]]
+                BB:
+                    amp_d_bb: ['amp', 'Gaussian', [6.0, 5.0]]
+                    alpha_d_bb: ['alpha', 'tophat', [-2.0, -0.5, -0.01]]
+                    l0_d_bb: ['ell0', 'fixed', [80.0]]
+
+    systematics:
+        bandpasses:
+            satp3_f090_south_science:
+                parameters:
+                    gain_satp3_f090: ['gain', 'tophat', [0.70, 1.00, 1.30]]
+                    poleff_satp3_f090: ['poleff', 'tophat', [0.70, 0.87, 1.00]]
+                    angle_satp3_f090: ['angle', 'Gaussian', [0.5, 2.]]
+            satp3_f150_south_science:
+                parameters:
+                    gain_satp3_f150: ['gain', 'tophat', [0.70, 1.00, 1.30]]
+                    poleff_satp3_f150: ['poleff', 'tophat', [0.70, 0.92, 1.0]]
+                    angle_satp3_f150: ['angle', 'Gaussian', [0.0, 2.]]
+            Planck_f100_filtered_satp3_f090_south_science:
+                parameters:
+                    gain_planck_f100: ['gain', 'fixed', [1.0]]
+                    poleff_planck_f100: ['poleff', 'fixed', [1.0]]
+                    angle_planck_f100: ['angle', 'fixed', [0.0]]
+            Planck_f143_filtered_satp3_f090_south_science:
+                parameters:
+                    gain_planck_f143: ['gain', 'fixed', [1.0]]
+                    poleff_planck_f143: ['poleff', 'fixed', [1.0]]
+                    angle_planck_f143: ['angle', 'fixed', [0.0]]
+            Planck_f353_filtered_satp3_f090_south_science:
+                parameters:
+                    gain_planck_f353: ['gain', 'fixed', [1.0]]
+                    poleff_planck_f353: ['poleff', 'fixed', [1.0]]
+                    angle_planck_f353: ['angle', 'fixed', [0.0]]
