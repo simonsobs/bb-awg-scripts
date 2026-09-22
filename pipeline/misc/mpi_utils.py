@@ -128,9 +128,12 @@ def distribute_tasks(size, rank, ntasks, id_start=0, logger=None):
     if size > ntasks:
         local_start = rank
         local_stop = rank + 1
-        if rank == 0:
+        if rank == 0 and logger is not None:
             logger.warning(f"You assign {ntasks} tasks to {size} workers. "
                            "Consider using less workers.")
+        elif logger is None:
+            print(f"Warning: You assign {ntasks} tasks to {size} workers. "
+                  "Consider using less workers.")
     else:
         local_start = rank * (ntasks // size)
         local_stop = local_start + (ntasks // size)
