@@ -4,6 +4,10 @@ import os, shutil
 from pixell import enmap
 import argparse
 import bundling_utils as utils
+import sys
+sys.path.append(os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..')))
+from configs import Cfg
 
 def get_col_names(con, table_name):
     """Get column names from an sqlite table"""
@@ -75,8 +79,8 @@ def calc_science(atomic_path, coadd_pair, rows, shape, wcs, i_ctime, col_dict):
     return out, nmissing_sub
 def main(config, executor, as_completed_callable):
     shape, wcs = enmap.read_map_geometry(config.car_map_template)
-    coadd_pair = config.coadd_split_pair
-    atomic_path = config.map_dir
+    coadd_pair = config.bundling.coadd_split_pair
+    atomic_path = config.bundling.map_dir
     atomic_db = config.atomic_db
     backup_db = atomic_db + ".save"
     if not os.path.exists(backup_db):
@@ -128,5 +132,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     rank, executor, as_completed_callable = get_exec_env(args.nproc)
     if rank == 0:
-        config = utils.Cfg.from_yaml(args.config_file)        
+        config = Cfg.from_yaml(args.config_file)
         main(config, executor, as_completed_callable)
