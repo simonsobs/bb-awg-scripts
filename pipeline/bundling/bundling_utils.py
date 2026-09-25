@@ -5,18 +5,13 @@ import healpy as hp
 from astropy.io import fits
 import h5py
 import re
-from copy import deepcopy
 from matplotlib import pyplot as plt
-
-from typing import Optional
-from dataclasses import dataclass
-import yaml
 import pandas as pd
 
 ##############################################################################
 ## Map Operations ##
 ##############################################################################
-def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
+def read_map(map_file, pix_type='hp', fields_hp=None, nest=False,
              convert_K_to_muK=False, geometry=None, is_weights=False):
     """
     Read a map from a file, which can be either in HEALPix or CAR format.
@@ -29,7 +24,7 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
         Pixellization type.
     fields_hp: tuple, optional
         Fields to read from a HEALPix map.
-    nest_hp: boolean
+    nest: boolean
         Optional; whether to assume nested ording for HEALPix maps.
     convert_K_to_muK: bool, optional
         Convert K to muK.
@@ -47,7 +42,7 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
     conv = 1
     if convert_K_to_muK:
         conv = 1.e6
-    _check_pix_type(pix_type)
+    check_pix_type(pix_type)
     if pix_type == 'hp':
         if is_weights:
             # If num_fields == 9 then we are reading a TQU pixel weights matrix
@@ -56,7 +51,7 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
             fields_hp = (0, 4, 8) if (num_fields == 9) else (0, 1, 2)
         # Default to loading all fields (field = None) if fields_hp
         # is not provided
-        kwargs = {"field": fields_hp, }  # if fields_hp is not None else {}
+        kwargs = {"field": fields_hp, "nest": nest}  # if fields_hp is not None else {}
         m = hp.read_map(map_file, **kwargs)
     else:
         m = enmap.read_map(map_file, geometry=geometry)
@@ -69,7 +64,7 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest_hp=False,
 
 
 def write_map(map_file, map, dtype=None, pix_type='hp',
-              convert_muK_to_K=False):
+              convert_muK_to_K=False, nest=False):
     """
     Write a map to a file, regardless of the pixellization type.
 
@@ -85,16 +80,17 @@ def write_map(map_file, map, dtype=None, pix_type='hp',
         Pixellization type.
     convert_muK_to_K : bool, optional
         Convert muK to K.
+    nest: bool optional.
     """
     if convert_muK_to_K:
         map *= 1.e-6
-    _check_pix_type(pix_type)
+    check_pix_type(pix_type)
     if pix_type == 'hp':
-        hp.write_map(map_file, map, overwrite=True, dtype=dtype)
+        hp.write_map(map_file, map, overwrite=True, dtype=dtype, nest=nest)
     else:
         enmap.write_map(map_file, map)
 
-def write_maps(out_fname, pix_type, bundled_map, weights_map, hits_map=None, fnames=None, dtype=np.float64):
+def write_maps(out_fname, pix_type, bundled_map, weights_map, hits_map=None, fnames=None, dtype=np.float64, nest=False):
     """
     Save map, weights, hits, and optionally filenames going into bundles.
 
@@ -116,7 +112,7 @@ def write_maps(out_fname, pix_type, bundled_map, weights_map, hits_map=None, fna
         np.savetxt(out_filenames.format("fnames"), fnames, fmt='%s')
     for imap, tag in zip([bundled_map, weights_map, hits_map], ["map", "weights", "hits"]):
         if imap is not None:
-            write_map(out_fname.format(tag), imap, dtype=dtype, pix_type=pix_type)
+            write_map(out_fname.format(tag), imap, dtype=dtype, pix_type=pix_type, nest=nest)
 
 def read_hdf5_map(fname, to_nest=False):
     """
@@ -603,7 +599,7 @@ def _dbquery(db, query):
 ##############################################################################
 ## Internal Functions ##
 ##############################################################################
-def _check_pix_type(pix_type):
+def check_pix_type(pix_type):
     """
     Error handling for pixellization types.
 
@@ -679,7 +675,7 @@ def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
 
 def _add_map(imap, omap, pix_type):
     """Add a single map imap to an existing omap. omap is modified in place."""
-    _check_pix_type(pix_type)
+    check_pix_type(pix_type)
     if pix_type == 'hp':
         omap += imap
     elif pix_type == 'car':
@@ -721,178 +717,3 @@ def _make_parallel_proc(fn, parallelizor):
 
         return out
     return parallel_fn
-
-##############################################################################
-## Config ##
-##############################################################################
-@dataclass
-class Cfg:
-    """
-    Class to configure bundling
-
-    Args
-    --------
-    bundle_db: str
-        Path to bundling database
-    atomic_db: str
-        Path to atomic map database
-    n_bundles: int
-        Number of map bundles
-    seed: int
-        Random seed that determines the composition of bundles
-    bundle_duration: int
-        Width of the ctime bins that will be assigned bundles, in seconds.
-        Can also be the string 'obs' to bundle by obs_id instead.
-    bundle_t0: int
-        ctime of the lowest bin for bundle assignment. Sets phase of the binning.
-    query_restrict: str
-        SQL query to restrict obs from the atomic database
-    only_make_db: bool
-        Only make bundling database and do not bundle maps
-    base_dir: str
-        Optionally used at yaml level to reduce repetition in paths. Not used here.
-    patch: str
-        'north', 'south', or None. May be a list of strings.
-    inter_obs_props: dict
-        Null properties for bundling database.
-        Keys should be strings of (inter-obs null test)
-        props available in atomic db.
-        Values can be:
-          - "median" to separate into two groups based on median values
-          - {"splits": val_splits, "names": [name1, name2, ...]}
-          - None to use each string value in the atomic db as its own group
-        val_splits can be:
-          - [(min1, max1), (min2, max2), ...] to pick vals in a numerical range
-          - [(str1, str2, ...), (str3, str4, ...)] to group string values
-    overwrite: bool
-        Overwrite database if it exists
-    pix_type: str
-        'hp' or 'car'
-    map_dir: str
-        Path to directory containing atomic maps
-    output_dir: str
-        Path to output directory
-    map_string_format: str
-        String formatting for output bundles;
-        must contain {name_tag} and {bundle_id}.
-    freq_channel: str
-        Frequency channel, e.g. 'f090'. May be a list of strings.
-    intra_obs_splits: list
-        List of split labels for intra-obs splits, e.g. 'scan_left'.
-    intra_obs_pair: list
-        Pair of intra-obs labels that will be added to make full obs
-        for inter-obs splits
-    inter_obs_splits:
-        List of inter-obs split names for which to create bundles
-    car_map_template: str
-        Path to CAR map or geometry to be used as template
-    wafer: str
-        Wafer label, e.g. 'ws0'. May be a list of strings.
-    save_fnames: bool
-        Save the atomic map filenames for each bundle
-    atomic_list: str
-        Path to npy file of atomic map names to restrict the atomic db
-    abscal: dict
-        Multiplicative abscals {'f090': {'ws0': 1, 'ws1': 1,...}, ...}
-    coadd_splits_name: str
-        "split" name for the coadd of two splits
-    coadd_split_pair: list
-        List of two (or more) splits to coadd
-    coadd_bundles_splitname: str
-        Split name for which to coadd all bundles to a full map.
-        May also be a list of names.
-    n_sims: int
-        Number of sign flip realisations
-    make_plots: bool
-        If True make and save plots of the bundles
-    tel: str
-        **Deprecated** This doesn't do anything but kept for config compatibility
-    nproc: int
-        **Deprecated** This doesn't do anything but kept for config compatibility
-    """
-    bundle_db: str
-    n_bundles: int
-    atomic_db: str = ""
-    seed: int = 0
-    bundle_duration: int = 86400
-    bundle_t0: int = 1704121200
-    query_restrict: str = ""
-    only_make_db: bool = False
-    base_dir: Optional[str] = ""
-    patch: Optional[str] = None
-    inter_obs_props: Optional[dict] = None
-    overwrite: bool = False
-    pix_type: str = "hp"
-    map_dir: Optional[str] = None
-    output_dir: Optional[str] = None
-    map_string_format: Optional[str] = None
-    freq_channel: Optional[str] = None
-    intra_obs_splits: Optional[list] = None
-    intra_obs_pair: Optional[list] = None
-    inter_obs_splits: Optional[list] = None
-    car_map_template: Optional[str] = None
-    wafer: Optional[str] = None
-    save_fnames: bool = False
-    atomic_list: Optional[str] = None
-    abscal: Optional[dict] = None
-    coadd_splits_name: str = "full"
-    coadd_split_pair: Optional[list] = None
-    coadd_bundles_splitname: Optional[str] = None
-    n_sims: Optional[int] = None
-    make_plots: bool = False
-    tel: Optional[str] = None
-    nproc: Optional[int] = None
-
-    def __post_init__(self):
-        # Process patch argument
-        if type(self.patch) is str or self.patch is None:
-            self.patch_list = [self.patch]
-        else:
-            self.patch_list = self.patch
-            self.patch = None
-
-        self._update_attributes()
-
-    def _update_attributes(self):
-        """Do internal updating of certain attributes"""
-        # Check valid pixelization
-        _check_pix_type(self.pix_type)
-        # Load the atomic list
-        if type(self.atomic_list) is str:
-            self.atomic_list = load_atomic_list(self.atomic_list)
-        # Update query restrict with patch
-        self.query_restrict_patch = add_patch_to_query_restrict(self.patch, query_restrict=self.query_restrict)
-
-        # Update bundle db
-        patch_tag = "" if self.patch is None else self.patch
-        bundle_db_full = [(bundle_db.format(patch=patch_tag, seed=self.seed)).replace("__", "_") for bundle_db in np.atleast_1d(self.bundle_db)]
-        self.bundle_db_full = bundle_db_full[0] if (type(self.bundle_db) is str) else bundle_db_full
-
-    def update(self, **kwargs):
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-        self._update_attributes()
-
-    @classmethod
-    def from_yaml(cls, path) -> "Cfg":
-        with open(path, "r") as f:
-            d = _yaml_loader(f)
-            return cls(**d)
-
-    def copy(self):
-        return deepcopy(self)
-
-def _yaml_loader(config):
-    """
-    Custom yaml loader to load the configuration file.
-    """
-    def path_constructor(loader, node):
-        return "/".join(loader.construct_sequence(node))
-    yaml.SafeLoader.add_constructor("!path", path_constructor)
-    return yaml.load(config, Loader=yaml.SafeLoader)
-
-def child_config(config, **kwargs):
-    """Add key-value pairs in **kwargs to a copied config object and return."""
-    config1 = config.copy()
-    config1.update(**kwargs)
-    return config1
