@@ -19,6 +19,9 @@ sys.path.append(
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
 )
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+)
 import mpi_utils as mpi # noqa
 import bundling_utils as bu  # noqa
 import filtering_utils as fu  # noqa
@@ -48,10 +51,10 @@ def main(args):
         out_dirs[labels] = args.filtering.output_dir_filtering.format(
             patch=labels[0], freq_channel=labels[1], sim_type=labels[2])
 
-    if args.coadded_dirs is None:
+    if args.filtering.coadded_dirs is None:
         coadded_dir = f"{args.filtering.output_dir_filtering}/coadded_sims"
     else:
-        coadded_dir = args.coadded_dirs
+        coadded_dir = args.filtering.coadded_dirs
     coadded_dirs = {
         key: coadded_dir.format(patch=key[0], freq_channel=key[1], sim_type=key[2])
         for key in out_dirs
