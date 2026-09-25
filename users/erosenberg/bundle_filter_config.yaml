@@ -1,18 +1,17 @@
-#### TO CHANGE IN CODE ####
-# Filtering needs to parse {seed}  in bundle_db
-# bundling: output_dir -> output_dir_bundles
-# filtering: output_dir -> output_dir_filtering
-# signflip: output_dir -> output_dir_signflip
-# bundling: overwrite -> overwrite_bundle_db (also in signflip)
-# Combine "patch"/"patches" and "freq_channel"/"freq_channels"
-# Get atomic_db and preprocess configs from the mapmaking config
-
+# All
 base_dir: &base_dir '/cephfs/soukdata/user_data/erosenberg/iso/satp1_260916/'
-atomic_db: !path [*base_dir, 'mapmaking/atomic_db.sqlite']
 bundle_db: !path [*base_dir, 'bundling/bundles_{patch}_seed{seed}.db'] # Optional format fields {patch} and {seed}
+patch: ["south"]
+
+# Bundle DB and Bundling
+n_bundles: 2
 seed: 10
+
+# Bundle DB and Filtering
+atomic_db: !path [*base_dir, 'mapmaking/atomic_db.sqlite']
 query_restrict: " pwv < 2 AND number_dets > 10 "
-patch: ["south"]  # Only needed for make_bundle_db unless included in format for bundle_db or map_string_format
+
+# Bundling and Filtering
 freq_channel: ["f090", "f150"] # May be a single string or a list
 pix_type: 'car'
 car_map_template: "aux/sat_f090.fits"
@@ -25,55 +24,59 @@ intra_obs_pair:
 inter_obs_splits:
     - "low_pwv"
     - "high_pwv"
-    
-### Bundling ###
-n_bundles: 2
-only_make_db: False
-bundle_duration: 'obs'
-bundle_t0: 1704121200
-inter_obs_props:
-  pwv: "median"
-overwrite_bundle_db: False
-map_dir: !path [*base_dir, 'mapmaking/atomic_maps/']
-output_dir_bundles: !path [*base_dir, 'bundling/']
-# Format fields {split}, {bundle_id}, {freq_channel} required. {patch}, {wafer} optional.
-map_string_format: "{patch}/satp1_{freq_channel}_{wafer}_{split}_bundle{bundle_id}_{map_type}.fits"
-wafer: null  # null, string, or list of strings
-save_fnames: True
-atomic_list: null
-abscal: null
-## Coadding ##
-coadd_splits_name: "science"
-coadd_split_pair:
-  - "scan_left"
-  - "scan_right"
-coadd_bundles_splitname:
-    - "science"
+
+bundle_db_cfg:
+  bundle_duration: 'obs'
+  bundle_t0: 1704121200
+  inter_obs_props:
+    pwv: "median"
+  # Optional
+  overwrite: False
+  atomic_list: null
+  only_make_db: False
+
+bundling:
+  map_dir: !path [*base_dir, 'mapmaking/atomic_maps/']
+  output_dir_bundling: !path [*base_dir, 'bundling/']
+  # Format fields {split}, {bundle_id}, {freq_channel} required. {patch}, {wafer} optional.
+  map_string_format: "{patch}/satp1_{freq_channel}_{wafer}_{split}_bundle{bundle_id}_{map_type}.fits"
+
+  # Optional args for bundling
+  wafer: null  # null, string, or list of strings
+  abscal: null
+  make_plots: False
+  save_fnames: True
+
+  ## Coadding ##
+  coadd_splits_name: "science"
+  coadd_split_pair:
     - "scan_left"
     - "scan_right"
+  coadd_bundles_splitname:
+      - "science"
+      - "scan_left"
+      - "scan_right"
 
-### Filtering ###
-output_dir_filtering: &output_dir_filtering !path [*base_dir, 'transfer_function/{patch}/{freq_channel}/']
-sim_dir: '/cephfs/soukdata/user_data/alaposta/input_tf_sims'
-atomic_sim_dir: !path [*output_dir_filtering, atomic_sims, "{sim_id:04d}"]
-sim_string_format: "{sim_type}_1.0arcmin_fwhm30_sim{sim_id:04d}_CAR.fits"
+signflip:
+  output_dir_signflip: !path [*base_dir, 'signflip/']
+  n_sims: 200
+  overwrite_sf: False
 
-# For filtering on 4 tiger nodes, 2 sims take <~ 3 hours.
-sim_types: [pureT,pureE,pureB]
-sim_ids: 0,2
+filtering:
+  preprocess_config_init: configs/preprocessing_config_init.yaml
+  preprocess_config_proc: configs/preprocessing_config_proc.yaml
+  output_dir_filtering: &output_dir_filtering !path [*base_dir, 'transfer_function/{patch}/{freq_channel}/']
+  sim_dir: '/cephfs/soukdata/user_data/alaposta/input_tf_sims'
+  atomic_sim_dir: !path [*output_dir_filtering, atomic_sims, "{sim_id:04d}"]
+  sim_string_format: "{sim_type}_1.0arcmin_fwhm30_sim{sim_id:04d}_CAR.fits"
 
-bundle_id: 0
-
-## Required arguments for filter_sims_sotodlib ##
-preprocess_config_init: configs/preprocessing_config_init.yaml
-preprocess_config_proc: configs/preprocessing_config_proc.yaml
-
-## Optional arguments for filter_sims_sotodlib ##
-fp_thin: 8
-nbatch_atomics: 1
-overwrite_atomics: False
-verbosity: 3
-
-### Signflip ###
-n_sims: 200 # Number of sign-flips realizations
-output_dir_signflip: "/path/to/outputs/"
+  # Optional
+  sim_types: [pureT,pureE,pureB]
+  sim_ids: 0,2
+  bundle_id: 0
+  nside: null
+  fp_thin: 8
+  nbatch_atomics: 1
+  remove_atomics: False
+  overwrite_atomics: False
+  verbosity: 3
