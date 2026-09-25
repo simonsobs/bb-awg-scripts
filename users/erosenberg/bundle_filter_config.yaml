@@ -2,6 +2,7 @@
 base_dir: &base_dir '/cephfs/soukdata/user_data/erosenberg/iso/satp1_260916/'
 bundle_db: !path [*base_dir, 'bundling/bundles_{patch}_seed{seed}.db'] # Optional format fields {patch} and {seed}
 patch: ["south"]
+verbosity: 3
 
 # Bundle DB and Bundling
 n_bundles: 2
@@ -79,4 +80,3 @@ filtering:
   nbatch_atomics: 1
   remove_atomics: False
   overwrite_atomics: False
-  verbosity: 3

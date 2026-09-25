@@ -6,7 +6,8 @@ import numpy as np
 from coordinator import BundleCoordinator
 import itertools
 import sys
-sys.path.append("..")
+sys.path.append(os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..')))
 from configs import Cfg
 
 from procs_pool import get_exec_env
@@ -48,7 +49,7 @@ def main(config_file, parallelizor, atomic_list=None, error=True):
         return
 
     # Do bundling
-    its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
+    its = [np.atleast_1d(x) for x in [config.freq_channel, config.bundling.wafer]]
     # Main loop over patches
     for patch in patch_list:
         patch_tag = "" if patch is None else patch
@@ -73,7 +74,7 @@ def main(config_file, parallelizor, atomic_list=None, error=True):
                     bundle_maps(config_it, intra_obs, None, parallelizor, error=error)
 
             # Coadd bundles
-            coadd_bundles(config_it, wafer, freq, patch_tag, error=error, coadd_fnames=config.save_fnames)
+            coadd_bundles(config_it, wafer, freq, patch_tag, error=error, coadd_fnames=config.bundling.save_fnames)
 
 def make_bundle_db(config):
     """
@@ -152,7 +153,7 @@ def _bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizo
             parallelizor=parallelizor
         )
 
-        fnames = fnames if config.save_fnames else None
+        fnames = fnames if bcfg.save_fnames else None
 
         utils.write_maps(out_fname, config.pix_type, bundled_map, weights_map, hits_map, fnames)
 
@@ -165,7 +166,7 @@ def _bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizo
 
 def bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizor=None, verbose=True, error=True):
     """See _bundle_maps docstring"""
-    split_tag = utils.get_split_tag(split_intra_obs, split_inter_obs, config.intra_obs_pair, config.coadd_splits_name)
+    split_tag = utils.get_split_tag(split_intra_obs, split_inter_obs, config.intra_obs_pair, config.bundling.coadd_splits_name)
     if verbose:
         print(split_tag)
     if error:

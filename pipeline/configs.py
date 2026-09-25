@@ -193,7 +193,6 @@ class FilteringCfg(_Cfg):
         Removes atomic maps from disk upon coadding them
     overwrite_atomics: bool
         Overwrites atomic sim maps if they exist
-    verbosity: int
     """
     preprocess_config_init: str
     preprocess_config_proc: str
@@ -210,7 +209,6 @@ class FilteringCfg(_Cfg):
     nbatch_atomics: Optional[int] = None
     remove_atomics: bool = False
     overwrite_atomics: bool = True
-    verbosity: int = 2
 
 @dataclass
 class Cfg(_Cfg):
@@ -246,6 +244,7 @@ class Cfg(_Cfg):
         for inter-obs splits
     inter_obs_splits:
         List of inter-obs split names for which to create bundles
+    verbosity: int
     """
     # All
     base_dir: str
@@ -267,6 +266,7 @@ class Cfg(_Cfg):
     bundling: Optional[BundleCfg] = None
     filtering: Optional[FilteringCfg] = None
     signflip: Optional[SignFlipCfg] = None
+    verbosity: int = 2
 
     @property
     def current_patch(self):
