@@ -150,7 +150,7 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
             out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{}")
 
             # Skip existing maps if overwrite=False
-            if (not args.overwrite) and os.path.exists(out_fname.format("map")):
+            if (not args.signflip.overwrite_sf) and os.path.exists(out_fname.format("map")):
                 if rank == 0:
                     print(f"Skipping existing: {out_fname}")
                 continue
