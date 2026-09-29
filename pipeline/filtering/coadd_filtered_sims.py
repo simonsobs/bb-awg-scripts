@@ -317,18 +317,16 @@ def main(args):
     for patch, freq_channel, sim_id, split_label, sim_type, ib in loop_over:
         task_element = (patch, freq_channel, sim_id, split_label, sim_type)
         local_task_id = local_mpi_list.index(task_element)
-        if sim_id is None:
-            map_dir = atomic_sim_dir.format(
-                patch=patch,
-                freq_channel=freq_labels[freq_channel],
-                sim_type=sim_type
-            )
-        else:
-            map_dir = atomic_sim_dir.format(
-                patch=patch,
-                freq_channel=freq_labels[freq_channel],
-                sim_id=sim_id
-            )
+        map_dir = atomic_sim_dir.format(
+            patch=patch,
+            freq_channel=freq_labels[freq_channel],
+            sim_type=sim_type,
+            sim_id=sim_id
+        )
+        # Mirror filter_sims_sotodlib.py, which appends the sim_id
+        # subdirectory when the template has no {sim_id} placeholder.
+        if sim_id is not None and "{sim_id" not in atomic_sim_dir:
+            map_dir += f"/{sim_id:04d}"
         assert os.path.isdir(map_dir), map_dir
 
         if not ib:
