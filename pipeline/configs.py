@@ -4,40 +4,54 @@ from typing import Union, Sequence, Optional
 from dataclasses import dataclass
 import sys
 import copy
+
 sys.path.append("bundling")
 from bundling_utils import check_pix_type, load_atomic_list, add_patch_to_query_restrict
+
 
 def yaml_loader(config):
     """
     Custom yaml loader to load the configuration file.
     """
+
     def path_constructor(loader, node):
         return "/".join(loader.construct_sequence(node))
+
     yaml.SafeLoader.add_constructor("!path", path_constructor)
     with open(config, "r") as f:
         return yaml.load(f, Loader=yaml.SafeLoader)
 
+
 @dataclass
-class _Cfg():
+class _Cfg:
     """Configuration file base class"""
+
     def copy(self):
         return copy.deepcopy(self)
+
     def _update_attributes(self):
         """Keep all attributes up-to-date when some are changed
         using update()"""
         return
+
     def update(self, **kwargs):
         """Add extra private args not expected in config file"""
         for k, v in kwargs.items():
             setattr(self, k, v)
         self._update_attributes()
+
     def __post_init__(self):
         self._update_attributes()
 
     @classmethod
     def from_yaml(cls, path) -> "Cfg":
         d = yaml_loader(path)
-        sub_blocks = {'bundle_db_cfg': BundleDbCfg, 'bundling': BundleCfg, 'filtering': FilteringCfg, 'signflip': SignFlipCfg}
+        sub_blocks = {
+            'bundle_db_cfg': BundleDbCfg,
+            'bundling': BundleCfg,
+            'filtering': FilteringCfg,
+            'signflip': SignFlipCfg,
+        }
         for k, v in sub_blocks.items():
             if k in d.keys():
                 d[k] = v(**d[k])
@@ -51,6 +65,7 @@ class _Cfg():
                 raise KeyError(f"{k} does not exist")
         config1.update(**kwargs)
         return config1
+
 
 @dataclass
 class BundleDbCfg(_Cfg):
@@ -82,6 +97,7 @@ class BundleDbCfg(_Cfg):
     only_make_db: bool
         Only make bundling database and do not bundle maps
     """
+
     bundle_duration: Union[int, str] = 86400
     bundle_t0: int = 1704121200
     inter_obs_props: Optional[dict] = None
@@ -93,6 +109,7 @@ class BundleDbCfg(_Cfg):
         # Load the atomic list
         if type(self.atomic_list) is str:
             self.atomic_list = load_atomic_list(self.atomic_list)
+
 
 @dataclass
 class BundleCfg(_Cfg):
@@ -125,6 +142,7 @@ class BundleCfg(_Cfg):
         May also be a list of names or 'all' to do all inter/intra obs splits
         and coadd_splits_name.
     """
+
     map_dir: str
     map_string_format: str
     output_dir_bundling: Optional[str] = None
@@ -135,6 +153,7 @@ class BundleCfg(_Cfg):
     coadd_splits_name: Optional[str] = None
     coadd_split_pair: Optional[Sequence[str]] = None
     coadd_bundles_splitname: Optional[str] = None
+
 
 @dataclass
 class SignFlipCfg(_Cfg):
@@ -150,9 +169,11 @@ class SignFlipCfg(_Cfg):
     overwrite_sf: bool
         If True overwrite existing signflip maps
     """
+
     output_dir_signflip: Optional[str] = None
     n_sims: Optional[int] = None
     overwrite_sf: bool = False
+
 
 @dataclass
 class FilteringCfg(_Cfg):
@@ -195,6 +216,7 @@ class FilteringCfg(_Cfg):
     overwrite_atomics: bool
         Overwrites atomic sim maps if they exist
     """
+
     preprocess_config_init: str
     preprocess_config_proc: str
     output_dir_filtering: str
@@ -210,6 +232,7 @@ class FilteringCfg(_Cfg):
     nbatch_atomics: Optional[int] = None
     remove_atomics: bool = False
     overwrite_atomics: bool = True
+
 
 @dataclass
 class Cfg(_Cfg):
@@ -247,6 +270,7 @@ class Cfg(_Cfg):
         List of inter-obs split names for which to create bundles
     verbosity: int
     """
+
     # All
     base_dir: str
     bundle_db: str
@@ -275,13 +299,18 @@ class Cfg(_Cfg):
         if patch_list.size > 1:
             raise ValueError("Operation undefined for multiple patches. Set 'patch' to a string or len-1 list.")
         return patch_list[0]
+
     @property
     def query_restrict_patch(self):
         return add_patch_to_query_restrict(self.current_patch, query_restrict=self.query_restrict)
+
     @property
     def bundle_db_full(self):
         patch_tag = "" if self.current_patch is None else self.current_patch
-        bundle_db_full = [(bundle_db.format(patch=patch_tag, seed=self.seed)).replace("__", "_") for bundle_db in np.atleast_1d(self.bundle_db)]
+        bundle_db_full = [
+            (bundle_db.format(patch=patch_tag, seed=self.seed)).replace("__", "_")
+            for bundle_db in np.atleast_1d(self.bundle_db)
+        ]
         return bundle_db_full[0] if (type(self.bundle_db) is str) else bundle_db_full
 
     def _update_attributes(self):

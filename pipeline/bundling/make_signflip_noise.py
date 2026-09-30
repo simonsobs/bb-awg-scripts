@@ -12,6 +12,7 @@ sys.path.append(os.path.join(bundling_dir, ".."))
 from configs import Cfg
 import mpi_utils as mpi  # noqa
 
+
 def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs=None):
     """
     Main function to create sign-flipped noise realizations.
@@ -33,7 +34,9 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
     bundle_ids = range(args.n_bundles)
     n_sims = args.signflip.n_sims
 
-    split_tag = utils.get_split_tag(split_intra_obs, split_inter_obs, args.intra_obs_pair, args.bundling.coadd_splits_name)
+    split_tag = utils.get_split_tag(
+        split_intra_obs, split_inter_obs, args.intra_obs_pair, args.bundling.coadd_splits_name
+    )
     wafer_tag = args.bundling.wafer if args.bundling.wafer is not None else ""
     patch_tag = args.patch if args.patch is not None else ""
 
@@ -52,24 +55,28 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
                     wafer=wafer_tag,
                     patch=patch_tag,
                     freq_channel=args.freq_channel,
-                    map_type="{map_type}"
-                )
+                    map_type="{map_type}",
+                ),
             )
-            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{map_type}")
+            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}" + "_{map_type}")
             out_fname = out_fname.replace("__", "_")
             if not os.path.exists(out_fname.format(map_type="map")) or args.signflip.overwrite_sf:
-                #print(f"sim_num={sim_id:04d} out_fname={out_fname}")
+                # print(f"sim_num={sim_id:04d} out_fname={out_fname}")
                 missing_tasks.append((bundle_id, sim_id))
     # --------------------------------------------
 
     n_missing = len(missing_tasks)
-    if rank==0:
+    if rank == 0:
         print(f"{n_missing} tasks missing out of {args.n_bundles * n_sims} total.")
     if n_missing == 0:
         return
 
-    task_ids = mpi.distribute_tasks(size, rank, n_missing,)
-    #local_mpi_list = [mpi_shared_list[i] for i in task_ids]
+    task_ids = mpi.distribute_tasks(
+        size,
+        rank,
+        n_missing,
+    )
+    # local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
     # Group tasks by bundle_id so we can reuse SignFlipper. SignFlipper reads the
     # per-bundle atomics into memory, and reusing it avoids repeating that work
@@ -83,21 +90,23 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
     for bundle_id, sim_ids in sim_ids_by_bundle.items():
         signflippers = []
         for bundle_db, map_dir_i in zip(sat_bundle_dbs, sat_map_dirs):
-            signflippers.append((
-                bundle_db,
-                SignFlipper(
-                    bundle_db=bundle_db,
-                    freq_channel=args.freq_channel,
-                    wafer=args.bundling.wafer,
-                    bundle_id=bundle_id,
-                    null_prop_val=split_inter_obs,
-                    pix_type=args.pix_type,
-                    car_map_template=args.car_map_template,
-                    split_label=split_intra_obs,
-                    map_dir=map_dir_i,
-                    abscal=args.bundling.abscal
+            signflippers.append(
+                (
+                    bundle_db,
+                    SignFlipper(
+                        bundle_db=bundle_db,
+                        freq_channel=args.freq_channel,
+                        wafer=args.bundling.wafer,
+                        bundle_id=bundle_id,
+                        null_prop_val=split_inter_obs,
+                        pix_type=args.pix_type,
+                        car_map_template=args.car_map_template,
+                        split_label=split_intra_obs,
+                        map_dir=map_dir_i,
+                        abscal=args.bundling.abscal,
+                    ),
                 )
-            ))
+            )
 
         for sim_id in sim_ids:
             print(f"Running bundle_id={bundle_id} sim_id={sim_id}")
@@ -115,7 +124,9 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
                 try:
                     result = signflipper.signflip(seed=12345 * bundle_id + sim_id)
                     if not isinstance(result, (tuple, list)) or len(result) != 2:
-                        print(f"SignFlipper returned unexpected result for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {result}")
+                        print(
+                            f"SignFlipper returned unexpected result for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {result}"
+                        )
                         continue
                     noise_map, noise_weight = result
                 except Exception as e:
@@ -143,11 +154,11 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
                     wafer=wafer_tag,
                     patch=patch_tag,
                     freq_channel=args.freq_channel,
-                    map_type='{map_type}'
-                )
+                    map_type='{map_type}',
+                ),
             )
             out_fname = out_fname.replace("__", "_")
-            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{}")
+            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}" + "_{}")
 
             # Skip existing maps if overwrite=False
             if (not args.signflip.overwrite_sf) and os.path.exists(out_fname.format("map")):
@@ -156,16 +167,17 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
                 continue
 
             # Save maps
-            print('writing maps: '+out_fname)
+            print('writing maps: ' + out_fname)
             utils.write_maps(out_fname, args.pix_type, combined_map, combined_weight, dtype=np.float32)
 
         # Quickplots
-        #if sim_id % (n_sims // 3) == 0:
+        # if sim_id % (n_sims // 3) == 0:
         #    savename_plot = out_fname[:out_fname.find(".fits")] + ".png"
         #    utils.plot_map(savename_plot.format("Q"), args.pix_type, combined_map[1], unit_fac=1e6, vrange=50)
         #    utils.plot_map(savename_plot.format("U"), args.pix_type, combined_map[2], unit_fac=1e6, vrange=50)
 
     comm.Barrier()
+
 
 def make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs=None):
     try:
@@ -197,12 +209,15 @@ def main(args):
             # Inter-obs splits
             if config_it.inter_obs_splits is not None:
                 for null_prop_val in config_it.inter_obs_splits:
-                    make_signflip(config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=null_prop_val)
+                    make_signflip(
+                        config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=null_prop_val
+                    )
 
             # Intra-obs splits
             if config_it.intra_obs_splits is not None:
                 for split_val in config_it.intra_obs_splits:
                     make_signflip(config_it, size, rank, comm, split_intra_obs=split_val, split_inter_obs=None)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled noise maps.")
