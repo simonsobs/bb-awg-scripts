@@ -10,15 +10,9 @@ import sotodlib.preprocess.preprocess_util as pp_util
 from sotodlib.core.metadata import loader
 
 # TODO: Make it an actual module
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'bundling'))
-)
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
-)
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'bundling')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import coordinator as coord  # noqa
 import filtering_utils as fu  # noqa
@@ -26,9 +20,9 @@ import mpi_utils as mpi  # noqa
 from bundling_utils import read_map, write_map
 from configs import Cfg
 
+
 def main(args):
-    """
-    """
+    """ """
     # MPI related initialization
     rank, size, comm = mpi.init(True)
 
@@ -55,15 +49,13 @@ def main(args):
         for sim_type in sim_types:
             for sim_id in sim_ids:
                 atomic_sim_dir = args.filtering.atomic_sim_dir.format(
-                    patch=patch, freq_channel=freq_channel,
-                    sim_type=sim_type, sim_id=sim_id
+                    patch=patch, freq_channel=freq_channel, sim_type=sim_type, sim_id=sim_id
                 )
                 dir_key = sim_id if sim_id is not None else sim_type
                 atomics_dir[patch, freq_channel][dir_key] = atomic_sim_dir  # noqa
                 if sim_id is not None and "{sim_id" not in args.filtering.atomic_sim_dir:
                     atomics_dir[patch, freq_channel][dir_key] += f"/{sim_id:04d}"  # noqa
-                os.makedirs(atomics_dir[patch, freq_channel][dir_key],
-                            exist_ok=True)
+                os.makedirs(atomics_dir[patch, freq_channel][dir_key], exist_ok=True)
 
     # Arguments related to pixellization
     pix_type, mfmt, car_map_template, nside, wcs = fu.get_pix_type_args(args)
@@ -94,8 +86,7 @@ def main(args):
         bundle_db = args_patch.bundle_db_full
         if os.path.isfile(bundle_db):
             logger.info(f"Loading from {bundle_db}.")
-            bundle_coordinator = coord.BundleCoordinator.from_dbfile(
-                bundle_db, bundle_id=bundle_id)
+            bundle_coordinator = coord.BundleCoordinator.from_dbfile(bundle_db, bundle_id=bundle_id)
         else:
             raise ValueError(f"DB file does not exist: {bundle_db}")
 
@@ -114,42 +105,31 @@ def main(args):
             db_cur.close()
 
             for obs_id, wafer in res_science:
-                atomic_metadata["science"] += [(patch, freq_channel,
-                                                obs_id, wafer)]
+                atomic_metadata["science"] += [(patch, freq_channel, obs_id, wafer)]
             for split_label in intra_obs_splits:
-                query = fu.get_query_atomics(freq_channel, ctime,
-                                             split_label=split_label,
-                                             query_restrict=query_restrict)
+                query = fu.get_query_atomics(
+                    freq_channel, ctime, split_label=split_label, query_restrict=query_restrict
+                )
                 db_cur = sqlite3.connect(atom_db).cursor()
                 res_split = db_cur.execute(query)
                 res_split = res_split.fetchall()
                 db_cur.close()
                 for obs_id, wafer in res_split:
                     if (obs_id, wafer) in res_science:
-                        atomic_metadata[split_label] += [
-                            (patch, freq_channel, obs_id, wafer)
-                        ]
-            logger.info(
-                f"{patch}, {freq_channel}, 'science': "
-                f"{len(res_science)} atomic maps to filter."
-            )
+                        atomic_metadata[split_label] += [(patch, freq_channel, obs_id, wafer)]
+            logger.info(f"{patch}, {freq_channel}, 'science': {len(res_science)} atomic maps to filter.")
 
     # Load preprocessing pipeline and extract from it list of preprocessing
     # metadata (detectors, samples, etc.) corresponding to each atomic map
-    configs_init, _ = pp_util.get_preprocess_context(
-        preprocess_config_init
-    )
-    configs_proc, ctx_proc = pp_util.get_preprocess_context(
-        preprocess_config_proc
-    )
+    configs_init, _ = pp_util.get_preprocess_context(preprocess_config_init)
+    configs_proc, ctx_proc = pp_util.get_preprocess_context(preprocess_config_proc)
 
     # Initialize tasks for MPI sharing
     mpi_shared_list = atomic_metadata["science"]
 
     # Every rank must have the same shared list
     mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
-    task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list),
-                                    logger=logger)
+    task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list), logger=logger)
     local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
     # Ensure that idle workers finish and don't hang
@@ -164,29 +144,20 @@ def main(args):
     for task_element in local_mpi_list:
         patch, freq_channel, obs_id, wafer = task_element
         local_task_id = local_mpi_list.index(task_element)
-        logger.debug(f"Starting task: "
-                     f"({patch}, {freq_channel}, {obs_id}, {wafer})")
-        
+        logger.debug(f"Starting task: ({patch}, {freq_channel}, {obs_id}, {wafer})")
+
         start = time.time()
 
         # First, check if atomic maps already exist.
         maps_exist = True
         for sim_id, sim_type in product(sim_ids, sim_types):
             # Path to unfiltered simulation
-            map_fname = sim_string_format.format(
-                sim_id=sim_id,
-                sim_type=sim_type,
-                freq_channel=freq_channel
-            )
+            map_fname = sim_string_format.format(sim_id=sim_id, sim_type=sim_type, freq_channel=freq_channel)
 
             for split_label in intra_obs_splits:
                 if (patch, freq_channel, obs_id, wafer) in atomic_metadata[split_label]:  # noqa
-
                     # Saving filtered atomics to disk
-                    atomic_fname = map_fname.split("/")[-1].replace(
-                        mfmt,
-                        f"_{obs_id}_{wafer}_{split_label}{mfmt}"
-                    )
+                    atomic_fname = map_fname.split("/")[-1].replace(mfmt, f"_{obs_id}_{wafer}_{split_label}{mfmt}")
 
                     dir_key = sim_id if sim_id is not None else sim_type
                     f_wmap = atomics_dir[patch, freq_channel][dir_key]
@@ -201,8 +172,7 @@ def main(args):
         # If they exist and we don't overwrite, skip this atomic.
         if maps_exist and not args.filtering.overwrite_atomics:
             logger.info(
-                f"Map exists: ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                f" to filter sims {sim_ids}, {sim_types}"
+                f"Map exists: ({patch}, {freq_channel}, {obs_id}, {wafer}) to filter sims {sim_ids}, {sim_types}"
             )
             continue
 
@@ -212,21 +182,16 @@ def main(args):
         try:
             meta = ctx_proc.get_meta(obs_id=obs_id, dets=dets)
         except loader.LoaderError:
-            logger.warning(f"NO METADATA: "
-                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            logger.warning(f"NO METADATA: ({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
         except OSError as err:
-            logger.warning(f"{err}: "
-                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            logger.warning(f"{err}: ({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
 
         # Focal plane thinning
         if args.filtering.fp_thin is not None:
             fp_thin = int(args.filtering.fp_thin)
-            thinned = [
-                m for im, m in enumerate(meta.dets.vals)
-                if im % fp_thin == 0
-            ]
+            thinned = [m for im, m in enumerate(meta.dets.vals) if im % fp_thin == 0]
             meta.restrict("dets", thinned)
 
         # Process data here to have t2p leakage template
@@ -236,42 +201,27 @@ def main(args):
         # dict.
         try:
             data_aman = pp_util.multilayer_load_and_preprocess(
-                obs_id,
-                configs_init,
-                configs_proc,
-                meta=meta,
-                logger=logger,
-                stop_for_sims=True,
-                ignore_cfg_check=True
+                obs_id, configs_init, configs_proc, meta=meta, logger=logger, stop_for_sims=True, ignore_cfg_check=True
             )
         # After focal plane thinning, the data AxisManager might not have any
         # detectors left, resulting in one of several errors caught below.
-        # TODO: We should account for those directly in sotodlib. 
+        # TODO: We should account for those directly in sotodlib.
         except loader.LoaderError:
-            logger.warning(f"NO METADATA: "
-                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            logger.warning(f"NO METADATA: ({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
         except OSError as err:
-            logger.warning(f"{err}: "
-                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            logger.warning(f"{err}: ({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
         except IndexError:
-            logger.warning(f"NO DETECTORS LEFT AFTER RESTRICTING: "
-                           f"({patch}, {freq_channel}, {obs_id}, {wafer})")
+            logger.warning(f"NO DETECTORS LEFT AFTER RESTRICTING: ({patch}, {freq_channel}, {obs_id}, {wafer})")
             continue
 
         for sim_id, sim_type in product(sim_ids, sim_types):
-
             # Path to unfiltered simulation
-            map_fname = sim_string_format.format(
-                sim_id=sim_id,
-                sim_type=sim_type,
-                freq_channel=freq_channel
-            )
+            map_fname = sim_string_format.format(sim_id=sim_id, sim_type=sim_type, freq_channel=freq_channel)
             map_file = f"{sim_dir}/{map_fname}"
 
-            logger.debug(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer})"
-                         f" to filter {sim_type}, sim {sim_id}")
+            logger.debug(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer}) to filter {sim_type}, sim {sim_id}")
             start0 = time.time()
 
             logger.debug(f"Loading {pix_type} map: {map_file}")
@@ -286,43 +236,28 @@ def main(args):
                     meta=meta,
                     logger=logger,
                     ignore_cfg_check=True,
-                    data_amans=data_aman
+                    data_amans=data_aman,
                 )
             # After focal plane thinning, the sim AxisManager might not have
             # any detectors, resulting in one of several errors caught below.
-            # TODO: We should account for those directly in sotodlib. 
+            # TODO: We should account for those directly in sotodlib.
             except loader.LoaderError:
-                logger.warning(
-                    "METADATA MISSING: "
-                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
-                    "SKIPPING."
-                )
+                logger.warning(f"METADATA MISSING: ({patch}, {freq_channel}, {obs_id}, {wafer}) SKIPPING.")
                 continue
             except (OSError, KeyError) as err:
-                logger.warning(
-                    f"{err} "
-                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
-                    "SKIPPING."
-                )
+                logger.warning(f"{err} ({patch}, {freq_channel}, {obs_id}, {wafer}) SKIPPING.")
                 continue
 
             if aman is None:
-                logger.warning(
-                    "No detectors left in this atomic."
-                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
-                )
+                logger.warning(f"No detectors left in this atomic.({patch}, {freq_channel}, {obs_id}, {wafer}) ")
                 continue
             if aman.dets.count <= 1:
-                logger.warning(
-                    "No detectors left in this atomic."
-                    f"({patch}, {freq_channel}, {obs_id}, {wafer}) "
-                )
+                logger.warning(f"No detectors left in this atomic.({patch}, {freq_channel}, {obs_id}, {wafer}) ")
                 continue
 
             # Run the mapmaker
             wmap_dict, weights_dict = fu.make_map_wrapper(
-                aman, intra_obs_splits, pix_type, shape=None, wcs=wcs,
-                nside=nside, logger=logger
+                aman, intra_obs_splits, pix_type, shape=None, wcs=wcs, nside=nside, logger=logger
             )
 
             for split_label in intra_obs_splits:
@@ -333,10 +268,7 @@ def main(args):
                     w = weights_dict[split_label]
 
                     # Saving filtered atomics to disk
-                    atomic_fname = map_fname.split("/")[-1].replace(
-                        mfmt,
-                        f"_{obs_id}_{wafer}_{split_label}{mfmt}"
-                    )
+                    atomic_fname = map_fname.split("/")[-1].replace(mfmt, f"_{obs_id}_{wafer}_{split_label}{mfmt}")
 
                     dir_key = sim_id if sim_id is not None else sim_type
                     f_wmap = atomics_dir[patch, freq_channel][dir_key]
@@ -346,15 +278,18 @@ def main(args):
                     write_map(f_wmap, wmap, pix_type=pix_type, dtype=np.float32, nest=True)
                     write_map(f_w, w, pix_type=pix_type, dtype=np.float32, nest=True)
             end0 = time.time()
-            logger.debug(f"Filtered in {end0 - start0:.1f} seconds: "
-                         f"{sim_type}, sim {sim_id} with setup "
-                         f"({patch}, {freq_channel}, {obs_id}, {wafer})")
-        logger.debug(f"Processed {len(sim_ids)} simulations for "
-                     f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
-                     f"{time.time() - start:.1f} seconds.")
-        logger.info(f"Done: {local_task_id+1}/{len(local_mpi_list)} "
-                    f"for rank {rank}.")
-        
+            logger.debug(
+                f"Filtered in {end0 - start0:.1f} seconds: "
+                f"{sim_type}, sim {sim_id} with setup "
+                f"({patch}, {freq_channel}, {obs_id}, {wafer})"
+            )
+        logger.debug(
+            f"Processed {len(sim_ids)} simulations for "
+            f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
+            f"{time.time() - start:.1f} seconds."
+        )
+        logger.info(f"Done: {local_task_id + 1}/{len(local_mpi_list)} for rank {rank}.")
+
     comm.Barrier()
     if rank == 0:
         end = time.time()
@@ -363,13 +298,12 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--config_file", type=str, help="yaml file with configuration.")
     parser.add_argument(
-        "--config_file", type=str, help="yaml file with configuration."
-    )
-    parser.add_argument(
-        "--sim_ids", type=str, default=None,
-        help="Simulations to be processed, in format [first],[last]."
-             "Overwrites the yaml file configs."
+        "--sim_ids",
+        type=str,
+        default=None,
+        help="Simulations to be processed, in format [first],[last].Overwrites the yaml file configs.",
     )
     args = parser.parse_args()
     config = Cfg.from_yaml(args.config_file)

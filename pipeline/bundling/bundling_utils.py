@@ -8,11 +8,13 @@ import re
 from matplotlib import pyplot as plt
 import pandas as pd
 
+
 ##############################################################################
 ## Map Operations ##
 ##############################################################################
-def read_map(map_file, pix_type='hp', fields_hp=None, nest=False,
-             convert_K_to_muK=False, geometry=None, is_weights=False):
+def read_map(
+    map_file, pix_type='hp', fields_hp=None, nest=False, convert_K_to_muK=False, geometry=None, is_weights=False
+):
     """
     Read a map from a file, which can be either in HEALPix or CAR format.
 
@@ -41,7 +43,7 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest=False,
     """
     conv = 1
     if convert_K_to_muK:
-        conv = 1.e6
+        conv = 1.0e6
     check_pix_type(pix_type)
     if pix_type == 'hp':
         if is_weights:
@@ -60,11 +62,10 @@ def read_map(map_file, pix_type='hp', fields_hp=None, nest=False,
             if m.ndim > 3 and m.shape[0] == m.shape[1]:
                 m = np.moveaxis(m.diagonal(), -1, 0)
 
-    return conv*m
+    return conv * m
 
 
-def write_map(map_file, map, dtype=None, pix_type='hp',
-              convert_muK_to_K=False, nest=False):
+def write_map(map_file, map, dtype=None, pix_type='hp', convert_muK_to_K=False, nest=False):
     """
     Write a map to a file, regardless of the pixellization type.
 
@@ -83,12 +84,13 @@ def write_map(map_file, map, dtype=None, pix_type='hp',
     nest: bool optional.
     """
     if convert_muK_to_K:
-        map *= 1.e-6
+        map *= 1.0e-6
     check_pix_type(pix_type)
     if pix_type == 'hp':
         hp.write_map(map_file, map, overwrite=True, dtype=dtype, nest=nest)
     else:
         enmap.write_map(map_file, map)
+
 
 def write_maps(out_fname, pix_type, bundled_map, weights_map, hits_map=None, fnames=None, dtype=np.float64, nest=False):
     """
@@ -108,11 +110,12 @@ def write_maps(out_fname, pix_type, bundled_map, weights_map, hits_map=None, fna
     """
     os.makedirs(os.path.dirname(out_fname), exist_ok=True)
     if fnames is not None:
-        out_filenames = out_fname[:out_fname.find(".fits")] + ".txt"
+        out_filenames = out_fname[: out_fname.find(".fits")] + ".txt"
         np.savetxt(out_filenames.format("fnames"), fnames, fmt='%s')
     for imap, tag in zip([bundled_map, weights_map, hits_map], ["map", "weights", "hits"]):
         if imap is not None:
             write_map(out_fname.format(tag), imap, dtype=dtype, pix_type=pix_type, nest=nest)
+
 
 def read_hdf5_map(fname, to_nest=False):
     """
@@ -136,8 +139,8 @@ def read_hdf5_map(fname, to_nest=False):
 
     return mapdata
 
-def write_hdf5_map(fname, nside, dict_maps, list_of_obsid,
-                   nest_or_ring='RING'):
+
+def write_hdf5_map(fname, nside, dict_maps, list_of_obsid, nest_or_ring='RING'):
     """
     Write a HEALPix map into hdf5 format.
     """
@@ -148,30 +151,40 @@ def write_hdf5_map(fname, nside, dict_maps, list_of_obsid,
         for k, v in dict_maps.items():
             f.create_dataset(k, data=v)
 
+
 def plot_map(out_fname, pix_type, imap, unit_fac=1, vrange=None):
     """Make and save plots of maps. Maps should be single component."""
     if pix_type == "car":
         vmin = -vrange if vrange is not None else None
-        plot = enplot.plot(imap*unit_fac, colorbar=True,
-                           min=vmin, max=vrange, ticks=10, downgrade=2)
+        plot = enplot.plot(imap * unit_fac, colorbar=True, min=vmin, max=vrange, ticks=10, downgrade=2)
         if out_fname[-4:] in ['.png', '.jpg', '.pdf']:
             out_fname = out_fname[:-4]  # Remove file extensions for enplot
         enplot.write(out_fname, plot)
 
     elif pix_type == "hp":
-        hp.mollview(imap * unit_fac, cmap="RdYlBu_r",
-                    min=vmin, max=vrange)
+        hp.mollview(imap * unit_fac, cmap="RdYlBu_r", min=vmin, max=vrange)
         if out_fname[-4:] not in ['.png', '.jpg', '.pdf']:
             out_fname += ".png"  # Add png if no extension
         plt.savefig(out_fname)
         plt.close()
 
+
 ##############################################################################
 ## Bundling / Coaddition utility functions #
 ##############################################################################
-def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
-               pix_type="hp", res_car=5., car_template_map=None,
-               dec_cut_car=None, fields_hp=None, abscal=1, parallelizor=None):
+def coadd_maps(
+    maps_list,
+    weights_list,
+    hits_list=None,
+    sign_list=None,
+    pix_type="hp",
+    res_car=5.0,
+    car_template_map=None,
+    dec_cut_car=None,
+    fields_hp=None,
+    abscal=1,
+    parallelizor=None,
+):
     """
     Coadd a list of weighted maps, a list of map weights, and
     (optionally) a list of hits maps corresponding to a set of atomics.
@@ -227,28 +240,14 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     sum_fn = _make_parallel_proc(sum_maps, parallelizor) if parallelizor is not None else sum_maps
 
     if pix_type == "car":
-        template = _get_map_template_car(car_template_map, res_car,
-                                         dec_cut_car)
+        template = _get_map_template_car(car_template_map, res_car, dec_cut_car)
     elif pix_type == "hp":
         template = _get_map_template_hp(maps_list[0])
 
     # Assume multiplicative abscal A: map_cal = map_uncal*A.
     # Then wmap_cal = wmap_uncal*A**-1 and weights_cal = weights_uncal*A**-2
-    map_coadd = sum_fn(
-        maps_list,
-        template,
-        pix_type,
-        mult=sign_list*abscal**-1,
-        fields_hp=fields_hp
-    )
-    weights_coadd = sum_fn(
-        weights_list,
-        template,
-        pix_type,
-        mult=abscal**-2,
-        fields_hp=fields_hp,
-        is_weights=True
-    )
+    map_coadd = sum_fn(maps_list, template, pix_type, mult=sign_list * abscal**-1, fields_hp=fields_hp)
+    weights_coadd = sum_fn(weights_list, template, pix_type, mult=abscal**-2, fields_hp=fields_hp, is_weights=True)
     if hits_list is not None:
         hits_coadd = sum_fn(hits_list, template[0], pix_type)
 
@@ -260,8 +259,8 @@ def coadd_maps(maps_list, weights_list, hits_list=None, sign_list=None,
     else:
         return map_coadd, weights_coadd
 
-def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x: True,
-             islice=slice(None), **read_map_kwargs):
+
+def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x: True, islice=slice(None), **read_map_kwargs):
     """Coadd CAR or healpix maps
 
     Parameters
@@ -303,8 +302,8 @@ def sum_maps(filenames, template, pix_type, mult=1, condition=lambda x: True,
             _add_map(imap, out, pix_type)
     return out
 
-def coadd_bundles(template, sum_vals, pix_type, coadd_hits=True, coadd_fnames=False,
-                  savename=None, **read_map_kwargs):
+
+def coadd_bundles(template, sum_vals, pix_type, coadd_hits=True, coadd_fnames=False, savename=None, **read_map_kwargs):
     """Add bundled maps together. Maps are assumed to be unweighted and
     the same shape/geometry
 
@@ -328,10 +327,8 @@ def coadd_bundles(template, sum_vals, pix_type, coadd_hits=True, coadd_fnames=Fa
     """
     out = {'map': None, 'weights': None, 'hits': None, 'filenames': None}
     for val in sum_vals:
-        imap = read_map(template.format(val, 'map'), pix_type=pix_type,
-                        **read_map_kwargs)
-        weights = read_map(template.format(val, 'weights'), pix_type=pix_type,
-                           **read_map_kwargs)
+        imap = read_map(template.format(val, 'map'), pix_type=pix_type, **read_map_kwargs)
+        weights = read_map(template.format(val, 'weights'), pix_type=pix_type, **read_map_kwargs)
         if out['map'] is None:
             out['map'] = imap * weights
             out['weights'] = weights
@@ -339,18 +336,17 @@ def coadd_bundles(template, sum_vals, pix_type, coadd_hits=True, coadd_fnames=Fa
             out['map'] += imap * weights
             out['weights'] += weights
         if coadd_hits:
-            hits = read_map(template.format(val, 'hits'), pix_type=pix_type,
-                            **read_map_kwargs)
+            hits = read_map(template.format(val, 'hits'), pix_type=pix_type, **read_map_kwargs)
             if out['hits'] is None:
                 out['hits'] = hits
             else:
                 out['hits'] += hits
         if coadd_fnames:
-            filenames_fn = template[:template.find(".fits")] + ".txt"
+            filenames_fn = template[: template.find(".fits")] + ".txt"
             filenames_fn = filenames_fn.format(val, 'fnames')
             filenames = np.loadtxt(filenames_fn, dtype=str)
             if out['filenames'] is None:
-                out['filenames']  = filenames
+                out['filenames'] = filenames
             else:
                 out['filenames'] = np.concatenate([out['filenames'], filenames])
 
@@ -360,15 +356,12 @@ def coadd_bundles(template, sum_vals, pix_type, coadd_hits=True, coadd_fnames=Fa
     wmap[good] /= weights[good]
 
     if savename is not None:
-        write_map(savename.format("map"), wmap, dtype=wmap.dtype,
-                  pix_type=pix_type)
-        write_map(savename.format("weights"), weights, dtype=weights.dtype,
-                  pix_type=pix_type)
+        write_map(savename.format("map"), wmap, dtype=wmap.dtype, pix_type=pix_type)
+        write_map(savename.format("weights"), weights, dtype=weights.dtype, pix_type=pix_type)
         if coadd_hits:
-            write_map(savename.format("hits"), out['hits'], dtype=hits.dtype,
-                      pix_type=pix_type)
+            write_map(savename.format("hits"), out['hits'], dtype=hits.dtype, pix_type=pix_type)
         if coadd_fnames:
-            savename_fnames = savename[:savename.find(".fits")] + ".txt"
+            savename_fnames = savename[: savename.find(".fits")] + ".txt"
             np.savetxt(savename_fnames.format("fnames"), sorted(out['filenames']), fmt='%s')
 
     if coadd_hits:
@@ -377,8 +370,17 @@ def coadd_bundles(template, sum_vals, pix_type, coadd_hits=True, coadd_fnames=Fa
         return wmap, weights
 
 
-def make_full(template, split_pair, nbundles, pix_type, coadd_hits=True,
-              coadd_fnames=False, savename=None, return_maps=True, **read_map_kwargs):
+def make_full(
+    template,
+    split_pair,
+    nbundles,
+    pix_type,
+    coadd_hits=True,
+    coadd_fnames=False,
+    savename=None,
+    return_maps=True,
+    **read_map_kwargs,
+):
     """Add two splits to make a 'full' split for each bundle.
 
     Parameters
@@ -404,19 +406,26 @@ def make_full(template, split_pair, nbundles, pix_type, coadd_hits=True,
     out = []
     for ibundle in range(nbundles):
         sn = savename.format(ibundle, "{}") if savename is not None else None
-        ans = coadd_bundles(template.format("{}", ibundle, "{}"),
-                            split_pair, pix_type, coadd_hits=coadd_hits,
-                            coadd_fnames=coadd_fnames, savename=sn, **read_map_kwargs)
+        ans = coadd_bundles(
+            template.format("{}", ibundle, "{}"),
+            split_pair,
+            pix_type,
+            coadd_hits=coadd_hits,
+            coadd_fnames=coadd_fnames,
+            savename=sn,
+            **read_map_kwargs,
+        )
         if return_maps:
             out.append(ans)
     if return_maps:
         return out
 
+
 ##############################################################################
 ## Misc Utility ##
 ##############################################################################
 def filter_by_atomic_list(arr, atomic_list, obs_id_only=False, return_index=False):
-    """ Filter an array by atomic_list
+    """Filter an array by atomic_list
 
     Parameters
     ----------
@@ -447,8 +456,8 @@ def filter_by_atomic_list(arr, atomic_list, obs_id_only=False, return_index=Fals
     else:
         atomic_list = np.asarray(atomic_list)
         if obs_id_only:
-            arr_query = arr if arr.ndim == 1 else arr[:,0]
-            atomic_list_query = atomic_list if atomic_list.ndim == 1 else atomic_list[:,0]
+            arr_query = arr if arr.ndim == 1 else arr[:, 0]
+            atomic_list_query = atomic_list if atomic_list.ndim == 1 else atomic_list[:, 0]
             ind = np.isin(arr_query, atomic_list_query)
         else:
             tags1 = [' '.join(line[:3]) for line in arr]
@@ -458,6 +467,7 @@ def filter_by_atomic_list(arr, atomic_list, obs_id_only=False, return_index=Fals
             return arr[ind], ind
         else:
             return arr[ind]
+
 
 def filter_by_atomic_list_df(df, atomic_list, obs_id_only=False, return_index=False, reindex=True):
     """Filter a DataFrame by atomic_list; see filter_by_atomic_list"""
@@ -470,6 +480,7 @@ def filter_by_atomic_list_df(df, atomic_list, obs_id_only=False, return_index=Fa
         return (df[ind]).reset_index(drop=True)
     else:
         return df[ind]
+
 
 def extract_ws_freq(input_str):
     """
@@ -490,19 +501,20 @@ def extract_ws_freq(input_str):
     pattern = r'ws\d+|f\d+'
     matches = re.findall(pattern, input_str)
     ws = next((match for match in matches if match.startswith('ws')), None)
-    freq = next((match for match in matches if match.startswith('f')),
-                None)
+    freq = next((match for match in matches if match.startswith('f')), None)
     return ws, freq
 
+
 def get_basename(prefix_path, depth):
-    """ Get the base filename from a path, to a level given by depth.
+    """Get the base filename from a path, to a level given by depth.
     depth=0 is just the filename, depth=1 includes the first directory, etc.
     """
     split_prefix = [dr for dr in prefix_path.split('/') if dr]  # Split and remove double slashes
-    return '/'.join(split_prefix[-depth-1:])
+    return '/'.join(split_prefix[-depth - 1 :])
+
 
 def get_abscal(abscal_dict, wafers, freqs):
-    """ Get an array of abscal values for specific wafers/freqs.
+    """Get an array of abscal values for specific wafers/freqs.
 
     Parameters
     ----------
@@ -525,16 +537,22 @@ def get_abscal(abscal_dict, wafers, freqs):
         abscal = np.ones(len(wafers))
     return abscal
 
+
 def validate_map_string_format(map_string_format, wafer_tag, patch_tag):
     """Check that map filename format string has required and requested optional format tags."""
     for required_tag in ["{split}", "{bundle_id}", "{freq_channel}", "{map_type}"]:
         if required_tag not in map_string_format:
-            raise ValueError(f"map_string_format does not have \
-                               required placeholder {required_tag}")
+            raise ValueError(
+                f"map_string_format does not have \
+                               required placeholder {required_tag}"
+            )
     for optional_tag, tag_val in zip(["{wafer}", "{patch}"], [wafer_tag, patch_tag]):
         if optional_tag not in map_string_format and tag_val:
-            print(f"Warning: map_string_format does not have optional \
-                   placeholder {optional_tag} but value is passed")
+            print(
+                f"Warning: map_string_format does not have optional \
+                   placeholder {optional_tag} but value is passed"
+            )
+
 
 def get_split_tag(split_intra_obs, split_inter_obs, coadd_pair, full_name='full'):
     """Parse intra/inter obs and set correct split tag."""
@@ -553,6 +571,7 @@ def get_split_tag(split_intra_obs, split_inter_obs, coadd_pair, full_name='full'
         split_tag = '_'.join(split_tag)
     return split_tag
 
+
 def add_patch_to_query_restrict(patch, query_restrict=""):
     """Take a string patch name and add the correct az query to an existing restrict."""
     if patch is None:
@@ -566,12 +585,13 @@ def add_patch_to_query_restrict(patch, query_restrict=""):
         raise ValueError(f"patch {patch} not recognized.")
 
     if patch_query in query_restrict:
-        return query_restrict # Don't duplicate
+        return query_restrict  # Don't duplicate
 
     if query_restrict:
         query_restrict += " AND "
     query_restrict += patch_query
     return query_restrict
+
 
 def load_atomic_list(atomic_list_fn):
     """Load an atomic list from .npy or .npz format."""
@@ -583,10 +603,11 @@ def load_atomic_list(atomic_list_fn):
     elif ext == '.npy':
         load_fn = np.load
     elif ext == '.npz':
-        load_fn = lambda fn : np.load(fn)["atomic_list"]
+        load_fn = lambda fn: np.load(fn)["atomic_list"]
     else:
         raise ValueError(f"Error in loading atomic list: file extension {ext} cannot be loaded.")
     return load_fn(atomic_list_fn)
+
 
 ##############################################################################
 ## SQLite ##
@@ -595,6 +616,7 @@ def _dbquery(db, query):
     cursor = db.cursor()
     result = cursor.execute(query).fetchall()
     return np.asarray(result).flatten()
+
 
 ##############################################################################
 ## Internal Functions ##
@@ -611,8 +633,8 @@ def check_pix_type(pix_type):
     if not (pix_type in ['hp', 'car']):
         raise ValueError(f"Unknown pixelisation type {pix_type}.")
 
-def _get_map_template_car(template_map=None, res=5., dec_cut=None,
-                          variant='fejer1', dtype=np.float64):
+
+def _get_map_template_car(template_map=None, res=5.0, dec_cut=None, variant='fejer1', dtype=np.float64):
     """
     Get a map template for CAR
 
@@ -638,16 +660,15 @@ def _get_map_template_car(template_map=None, res=5., dec_cut=None,
     elif dec_cut is not None:
         print(f"Using band geometry with dec_cut = {dec_cut}")
         shape, wcs = enmap.band_geometry(
-            (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])),
-            res=np.deg2rad(res/60), variant=variant
+            (np.deg2rad(dec_cut[0]), np.deg2rad(dec_cut[1])), res=np.deg2rad(res / 60), variant=variant
         )
     else:
         print("Using full-sky geometry.")
-        shape, wcs = enmap.fullsky_geometry(res=np.deg2rad(res/60), proj='car',
-                                            variant="fejer1")
+        shape, wcs = enmap.fullsky_geometry(res=np.deg2rad(res / 60), proj='car', variant="fejer1")
 
     atom_coadd = enmap.zeros((3, *shape), wcs, dtype=dtype)
     return atom_coadd
+
 
 def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
     """
@@ -673,14 +694,15 @@ def _get_map_template_hp(template_map=None, nside=512, dtype=np.float64):
     atom_coadd = np.zeros((3, npix), dtype=dtype)
     return atom_coadd
 
+
 def _add_map(imap, omap, pix_type):
     """Add a single map imap to an existing omap. omap is modified in place."""
     check_pix_type(pix_type)
     if pix_type == 'hp':
         omap += imap
     elif pix_type == 'car':
-        enmap.extract(imap, omap.shape, omap.wcs, omap=omap,
-                      op=np.ndarray.__iadd__)
+        enmap.extract(imap, omap.shape, omap.wcs, omap=omap, op=np.ndarray.__iadd__)
+
 
 def _make_parallel_proc(fn, parallelizor):
     """Parallelize a coaddition function using ProcessPoolExecutor.
@@ -700,14 +722,13 @@ def _make_parallel_proc(fn, parallelizor):
         nproc=num_workers from parallelizor
     """
     exe, as_completed, nproc = parallelizor
+
     def parallel_fn(filenames, template, *args, nproc=nproc, **kwargs):
-        ibin = int(np.ceil(len(filenames)/nproc))
-        slices = [slice(iproc*ibin, (iproc+1)*ibin) for iproc in range(nproc)]
+        ibin = int(np.ceil(len(filenames) / nproc))
+        slices = [slice(iproc * ibin, (iproc + 1) * ibin) for iproc in range(nproc)]
         out = None
 
-        futures = [exe.submit(fn, filenames, template, *args,
-                              islice=slices[iproc], **kwargs)
-                   for iproc in range(nproc)]
+        futures = [exe.submit(fn, filenames, template, *args, islice=slices[iproc], **kwargs) for iproc in range(nproc)]
         for future in as_completed(futures):
             if out is None:
                 out = future.result()
@@ -716,4 +737,5 @@ def _make_parallel_proc(fn, parallelizor):
             futures.remove(future)
 
         return out
+
     return parallel_fn
