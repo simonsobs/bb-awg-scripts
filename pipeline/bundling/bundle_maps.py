@@ -6,11 +6,12 @@ import numpy as np
 from coordinator import BundleCoordinator
 import itertools
 import sys
-sys.path.append(os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '..')))
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from configs import Cfg
 
 from procs_pool import get_exec_env
+
 
 def main(config_file, parallelizor, atomic_list=None, error=True):
     """
@@ -76,6 +77,7 @@ def main(config_file, parallelizor, atomic_list=None, error=True):
             # Coadd bundles
             coadd_bundles(config_it, wafer, freq, patch_tag, error=error, coadd_fnames=config.bundling.save_fnames)
 
+
 def make_bundle_db(config):
     """
     Make bundle db as determined by config.
@@ -83,15 +85,19 @@ def make_bundle_db(config):
     print(f"Writing to {config.bundle_db_full}.")
     bdb_cfg = config.bundle_db_cfg
     bundle_coordinator = BundleCoordinator(
-        config.atomic_db, n_bundles=config.n_bundles,
-        seed=config.seed, null_props=bdb_cfg.inter_obs_props,
+        config.atomic_db,
+        n_bundles=config.n_bundles,
+        seed=config.seed,
+        null_props=bdb_cfg.inter_obs_props,
         query_restrict=config.query_restrict_patch,
-        atomic_list=bdb_cfg.atomic_list, bundle_duration=bdb_cfg.bundle_duration,
-        bundle_t0=bdb_cfg.bundle_t0
+        atomic_list=bdb_cfg.atomic_list,
+        bundle_duration=bdb_cfg.bundle_duration,
+        bundle_t0=bdb_cfg.bundle_t0,
     )
     if os.path.dirname(config.bundle_db_full):
         os.makedirs(os.path.dirname(config.bundle_db_full), exist_ok=True)
     bundle_coordinator.save_db(config.bundle_db_full)
+
 
 def _bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizor=None):
     """
@@ -131,12 +137,14 @@ def _bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizo
         utils.validate_map_string_format(bcfg.map_string_format, wafer_tag, patch_tag)
         out_fname = os.path.join(
             out_dir,
-            bcfg.map_string_format.format(split=split_tag,
-                                          bundle_id=bundle_id,
-                                          wafer=wafer_tag,
-                                          patch=patch_tag,
-                                          freq_channel=config.freq_channel,
-                                          map_type="{}")
+            bcfg.map_string_format.format(
+                split=split_tag,
+                bundle_id=bundle_id,
+                wafer=wafer_tag,
+                patch=patch_tag,
+                freq_channel=config.freq_channel,
+                map_type="{}",
+            ),
         )
         out_fname = out_fname.replace("__", "_")  # Again hacky removal of hopefully accidental double underscores
 
@@ -150,14 +158,14 @@ def _bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizo
             split_label=split_intra_obs,
             null_prop_val=split_inter_obs,
             abscal=bcfg.abscal,
-            parallelizor=parallelizor
+            parallelizor=parallelizor,
         )
 
         fnames = fnames if bcfg.save_fnames else None
 
         utils.write_maps(out_fname, config.pix_type, bundled_map, weights_map, hits_map, fnames)
 
-        savename_plot = out_fname[:out_fname.find(".fits")] + ".png"
+        savename_plot = out_fname[: out_fname.find(".fits")] + ".png"
         if bcfg.make_plots:
             utils.plot_map(savename_plot.format("hits"), config.pix_type, hits_map)
             utils.plot_map(savename_plot.format("Q"), config.pix_type, bundled_map[1], unit_fac=1e6, vrange=100)
@@ -166,7 +174,9 @@ def _bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizo
 
 def bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizor=None, verbose=True, error=True):
     """See _bundle_maps docstring"""
-    split_tag = utils.get_split_tag(split_intra_obs, split_inter_obs, config.intra_obs_pair, config.bundling.coadd_splits_name)
+    split_tag = utils.get_split_tag(
+        split_intra_obs, split_inter_obs, config.intra_obs_pair, config.bundling.coadd_splits_name
+    )
     if verbose:
         print(split_tag)
     if error:
@@ -177,13 +187,17 @@ def bundle_maps(config, split_intra_obs=None, split_inter_obs=None, parallelizor
         except ValueError as e:
             print("Error: ", e)
 
+
 def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True):
     """Coadd bundles together to get full-split single-bundle or single-split all-bundle coadds."""
     wafer_tag = "" if wafer is None else wafer
     bcfg = config.bundling
-    template = os.path.join(bcfg.output_dir_bundling, bcfg.map_string_format.format(
-        split="{}", bundle_id="{}", wafer=wafer_tag, patch=patch_tag,
-        freq_channel=freq, map_type="{}"))
+    template = os.path.join(
+        bcfg.output_dir_bundling,
+        bcfg.map_string_format.format(
+            split="{}", bundle_id="{}", wafer=wafer_tag, patch=patch_tag, freq_channel=freq, map_type="{}"
+        ),
+    )
     template = template.replace("__", "_")
 
     # Make full coadds
@@ -191,8 +205,16 @@ def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True
         print("Making full maps")
         savename = template.format(bcfg.coadd_splits_name, "{}", "{}")
         try:
-            utils.make_full(template, bcfg.coadd_split_pair, config.n_bundles, config.pix_type,
-                            coadd_hits=True, coadd_fnames=coadd_fnames, savename=savename, return_maps=False)
+            utils.make_full(
+                template,
+                bcfg.coadd_split_pair,
+                config.n_bundles,
+                config.pix_type,
+                coadd_hits=True,
+                coadd_fnames=coadd_fnames,
+                savename=savename,
+                return_maps=False,
+            )
         except FileNotFoundError as e:
             if error:
                 raise e
@@ -212,10 +234,11 @@ def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True
             sum_vals = list(range(config.n_bundles))
             savename = temp.format("!", "{}").replace("_bundle!", "")
             try:
-                coadd_map, _, coadd_hits = utils.coadd_bundles(temp, sum_vals, config.pix_type,
-                                                               coadd_hits=True, coadd_fnames=coadd_fnames, savename=savename)
+                coadd_map, _, coadd_hits = utils.coadd_bundles(
+                    temp, sum_vals, config.pix_type, coadd_hits=True, coadd_fnames=coadd_fnames, savename=savename
+                )
                 if bcfg.make_plots:
-                    savename_plot = savename[:savename.find(".fits")] + ".png"
+                    savename_plot = savename[: savename.find(".fits")] + ".png"
                     utils.plot_map(savename_plot.format("hits"), config.pix_type, coadd_hits)
                     utils.plot_map(savename_plot.format("mapQ"), config.pix_type, coadd_map[1], unit_fac=1e6, vrange=20)
                     utils.plot_map(savename_plot.format("mapU"), config.pix_type, coadd_map[2], unit_fac=1e6, vrange=20)
@@ -226,20 +249,13 @@ def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True
                 else:
                     print("Error: ", e)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled maps")
-    parser.add_argument(
-        "--config_file", type=str, help="yaml file with configuration."
-    )
-    parser.add_argument(
-        "--atomic_list", type=str, help="atomic list"
-    )
-    parser.add_argument(
-        "--nproc", type=int, default=1, help="Number of parallel processes for concurrent futures."
-    )
-    parser.add_argument(
-        "--error", action="store_true", help="Raise errors instead of catching and printing"
-    )
+    parser.add_argument("--config_file", type=str, help="yaml file with configuration.")
+    parser.add_argument("--atomic_list", type=str, help="atomic list")
+    parser.add_argument("--nproc", type=int, default=1, help="Number of parallel processes for concurrent futures.")
+    parser.add_argument("--error", action="store_true", help="Raise errors instead of catching and printing")
 
     args = parser.parse_args()
     rank, executor, as_completed_callable = get_exec_env(args.nproc)
