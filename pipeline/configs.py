@@ -117,12 +117,13 @@ class BundleCfg(_Cfg):
     save_fnames: bool
         Save the atomic map filenames for each bundle
     coadd_splits_name: str
-        "split" name for the coadd of two splits
+        "split" name for the coadd of two splits. If None, do not coadd.
     coadd_split_pair: list
         List of two (or more) splits to coadd
     coadd_bundles_splitname: str
         Split name for which to coadd all bundles to a full map.
-        May also be a list of names.
+        May also be a list of names or 'all' to do all inter/intra obs splits
+        and coadd_splits_name.
     """
     map_dir: str
     map_string_format: str
@@ -131,7 +132,7 @@ class BundleCfg(_Cfg):
     abscal: Optional[dict] = None
     make_plots: bool = False
     save_fnames: bool = False
-    coadd_splits_name: str = "full"
+    coadd_splits_name: Optional[str] = None
     coadd_split_pair: Optional[Sequence[str]] = None
     coadd_bundles_splitname: Optional[str] = None
 

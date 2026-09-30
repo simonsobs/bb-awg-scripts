@@ -187,7 +187,7 @@ def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True
     template = template.replace("__", "_")
 
     # Make full coadds
-    if bcfg.coadd_split_pair is not None:
+    if bcfg.coadd_splits_name is not None:
         print("Making full maps")
         savename = template.format(bcfg.coadd_splits_name, "{}", "{}")
         try:
@@ -201,7 +201,12 @@ def coadd_bundles(config, wafer, freq, patch_tag, coadd_fnames=False, error=True
 
     if bcfg.coadd_bundles_splitname is not None:
         print("Co-adding bundles")
-        for coadd_bundles_splitname in np.atleast_1d(bcfg.coadd_bundles_splitname):
+        if bcfg.coadd_bundles_splitname == "all":
+            all_splits = [bcfg.coadd_splits_name, config.inter_obs_splits, config.intra_obs_splits]
+            all_splits = np.concatenate([np.atleast_1d(x) for x in all_splits if x is not None])
+        else:
+            all_splits = np.atleast_1d(bcfg.coadd_bundles_splitname)
+        for coadd_bundles_splitname in all_splits:
             print(coadd_bundles_splitname)
             temp = template.format(coadd_bundles_splitname, "{}", "{}")
             sum_vals = list(range(config.n_bundles))

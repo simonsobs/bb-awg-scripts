@@ -19,7 +19,7 @@ car_map_template: "aux/sat_f090.fits"
 intra_obs_splits:
     - "scan_left"
     - "scan_right"
-intra_obs_pair:
+intra_obs_pair: &intra_obs_pair
     - "scan_left"
     - "scan_right"
 inter_obs_splits:
@@ -49,14 +49,10 @@ bundling:
   save_fnames: True
 
   ## Coadding ##
+  #  Set these to null to not coadd splits / bundles
   coadd_splits_name: "science"
-  coadd_split_pair:
-    - "scan_left"
-    - "scan_right"
-  coadd_bundles_splitname:
-      - "science"
-      - "scan_left"
-      - "scan_right"
+  coadd_split_pair: *intra_obs_pair
+  coadd_bundles_splitname: "all"  # "all" to do coadd_splits_name + inter_obs_splits + intra_obs_splits.
 
 signflip:
   output_dir_signflip: !path [*base_dir, 'signflip/']
