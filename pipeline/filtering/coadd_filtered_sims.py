@@ -19,18 +19,18 @@ sys.path.append(
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'misc'))
 )
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+)
 import mpi_utils as mpi # noqa
 import bundling_utils as bu  # noqa
 import filtering_utils as fu  # noqa
 import coordinator as coord  # noqa
-
+from configs import Cfg
 
 def main(args):
     """
     """
-    if args.pix_type not in ["hp", "car"]:
-        raise ValueError("Unknown pixel type, must be 'car' or 'hp'.")
-
     # MPI related initialization
     rank, size, comm = mpi.init(True)
 
@@ -39,64 +39,24 @@ def main(args):
     if rank == 0:
         start = time.time()
 
-    # Ensure that freq_channels for the metadata follow the "f090" convention.
-    # We keep the original labels in a dict called freq_labels.
-    freq_labels = {}
-    for f in args.freq_channels:  # If these don't contain the "f", add
-        freq_channel = f"f{f}" if "f" not in f else f
-        freq_labels[freq_channel] = f  # dict values are original labels
-    freq_channels = list(freq_labels.keys())
-
-    # Sim related arguments
-    if args.sim_types is None:
-        sim_types = [None]
-        if rank == 0:
-            logger.warning("No sim_types considered. If this is by mistake, "
-                           "please ensure to add in the filtering yaml.")
-    else:
-        sim_types = args.sim_types
-    sim_string_format = args.sim_string_format
-    if args.sim_ids is None:
-        sim_ids = [None]
-        if rank == 0:
-            logger.warning("No sim_ids considered. If this is by mistake, "
-                           "please ensure to add in the filtering yaml.")
-    else:
-        sim_ids = args.sim_ids
-    if isinstance(sim_ids, str):
-        if "," in sim_ids:
-            id_min, id_max = sim_ids.split(",")
-            sim_ids = np.arange(int(id_min), int(id_max)+1)
-        else:
-            sim_ids = np.array([int(sim_ids)])
-    elif not isinstance(sim_ids, list):
-        raise ValueError("Argument 'sim_ids' has the wrong format")
-    if rank == 0:
-        logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
-
-    # Input directory
-    atomic_sim_dir = args.atomic_sim_dir
+    sim_types, sim_ids, sim_dir, sim_string_format = fu.process_sim_args(args, rank, logger)
+    atomic_sim_dir = args.filtering.atomic_sim_dir
+    freq_channels = np.atleast_1d(args.freq_channel)
+    patches = np.atleast_1d(args.patch)
+    atom_db = args.atomic_db
 
     # Output directories
-    patches = args.patches
-    out_dirs = {
-        (patch, freq_channel, sim_type):
-        args.output_dir.format(
-            patch=patch, freq_channel=freq_labels[freq_channel],
-            sim_type=sim_type
-        )
-        for patch, freq_channel, sim_type in product(patches,
-                                                     freq_channels,
-                                                     sim_types)
-    }
-    if args.coadded_dirs is None:
-        coadded_dir = f"{args.output_dir}/coadded_sims"
+    out_dirs = {}
+    for labels in product(patches, freq_channels, sim_types):
+        out_dirs[labels] = args.filtering.output_dir_filtering.format(
+            patch=labels[0], freq_channel=labels[1], sim_type=labels[2])
+
+    if args.filtering.coadded_dirs is None:
+        coadded_dir = f"{args.filtering.output_dir_filtering}/coadded_sims"
     else:
-        coadded_dir = args.coadded_dirs
+        coadded_dir = args.filtering.coadded_dirs
     coadded_dirs = {
-        key: coadded_dir.format(patch=key[0],
-                                freq_channel=freq_labels[key[1]],
-                                sim_type=key[2])
+        key: coadded_dir.format(patch=key[0], freq_channel=key[1], sim_type=key[2])
         for key in out_dirs
     }
     plot_dirs = {key: f"{out_dir}/plots" for key, out_dir in out_dirs.items()}
@@ -106,18 +66,7 @@ def main(args):
         os.makedirs(plot_dirs[key], exist_ok=True)
 
     # Pixelization arguments
-    pix_type = args.pix_type
-    if pix_type == "hp":
-        mfmt = ".fits"  # TODO: test fits.gz for HEALPix
-        car_map_template = None
-    elif pix_type == "car":
-        mfmt = ".fits"
-        car_map_template = args.car_map_template
-
-    # Databases
-    atom_db = args.atomic_db
-    bundle_dbs = {patch: args.bundle_db.format(patch=patch)
-                  for patch in patches}
+    pix_type, mfmt, car_map_template, _, _ = fu.get_pix_type_args(args)
 
     # Bundle query arguments
     inter_obs_splits = args.inter_obs_splits
@@ -128,15 +77,6 @@ def main(args):
             inter_obs_splits = inter_obs_splits.split(",")
         else:
             inter_obs_splits = [inter_obs_splits]
-
-    # Load all data from bundle dbs without filtering
-    bundle_id = args.bundle_id
-    bundles = {
-        patch:
-        coord.BundleCoordinator.from_dbfile(
-            bundle_dbs[patch], bundle_id=bundle_id
-        ) for patch in patches
-    }
 
     # Gather all split labels of atomics to be coadded
     if args.intra_obs_splits in [None, [], [None], "None"]:
@@ -170,36 +110,38 @@ def main(args):
 
     # Extract list of ctimes from bundle database for the given
     # bundle_id and without atomic batches - inter obs null label
-    ctimes = {
-        (patch, inter_obs_split, None):
-        bundles[patch].get_ctimes(
-            bundle_id=bundle_id, null_prop_val=inter_obs_split
-        ) for inter_obs_split in inter_obs_splits
-        for patch in patches
-    }
-    # Add the science split without atomic batches
-    for patch in patches:
-        ctimes[patch, "science", None] = bundles[patch].get_ctimes(
-            bundle_id=bundle_id
-        )
-
+    bundle_id = args.filtering.bundle_id
+    bundles = {}
+    ctimes = {}
     # Randomly split science ctimes into batches (optional)
-    nbatches = 1 if args.nbatch_atomics is None else args.nbatch_atomics
+    nbatches = args.filtering.nbatch_atomics
+    if nbatches is None:
+        nbatches = 1
     nbatches_dict = {}
+    batches = {}
     for patch in patches:
+        args_patch = args.child(patch=patch)
+        bundle = coord.BundleCoordinator.from_dbfile(
+            args_patch.bundle_db_full, bundle_id=bundle_id)
+        bundles[patch] = bundle
+
+        for inter_obs_split in inter_obs_splits:
+            ctime = bundle.get_ctimes(bundle_id=bundle_id, null_prop_val=inter_obs_split)
+            ctimes[(patch, inter_obs_split, None)] = ctime
+
+        ctimes[patch, "science", None] = bundle.get_ctimes(bundle_id=bundle_id)
+
         # Limit number of batches to one half the number of ctimes
         if nbatches > len(ctimes[patch, "science", None]) // 2:
             nbatches_dict[patch] = len(ctimes[patch, "science", None]) // 2
         # Must have at least two batches
         if nbatches < 2:
             nbatches_dict[patch] = None
-    batches = {}
-    for patch in patches:
+        nbatch = nbatches_dict[patch]
         batches[patch] = [None]
-        if nbatches_dict[patch] is None:
+        if nbatch is None:
             pass
-        elif nbatches_dict[patch] > 1:
-            nbatch = nbatches_dict[patch]
+        elif nbatch > 1:
             batches[patch] = range(nbatch)
             nctimes = len(ctimes[patch, "science", None])
             if rank == 0:
@@ -215,7 +157,6 @@ def main(args):
                 ]
 
     # Restrict the inter-obs null splits to the ctimes of the "science" split
-    for patch in patches:
         for inter_obs_split, ib in product(inter_obs_splits, batches[patch]):
             ctimes[patch, inter_obs_split, ib] = [
                 ct
@@ -228,7 +169,7 @@ def main(args):
     db_cur = db_con.cursor()
 
     # TODO: check if query_restrict is channel- or patch-specific
-    query_restrict = args.query_restrict
+    query_restrict = args.query_restrict  # Could add patch query but shouldn't be necessary
 
     relevant_splits = list(set(["science"] + intra_obs_splits + intra_obs_pair))  # noqa
     queries = {
@@ -320,13 +261,13 @@ def main(args):
         if sim_id is None:
             map_dir = atomic_sim_dir.format(
                 patch=patch,
-                freq_channel=freq_labels[freq_channel],
+                freq_channel=freq_channel,
                 sim_type=sim_type
             )
         else:
             map_dir = atomic_sim_dir.format(
                 patch=patch,
-                freq_channel=freq_labels[freq_channel],
+                freq_channel=freq_channel,
                 sim_id=sim_id
             )
         assert os.path.isdir(map_dir), map_dir
@@ -344,7 +285,7 @@ def main(args):
                 wmap_l, w_l = fu.get_atomics_maps_list(
                     sim_id, sim_type,
                     atomic_metadata[patch, freq_channel, coadd, ib],
-                    freq_labels[freq_channel], map_dir, coadd,
+                    freq_channel, map_dir, coadd,
                     sim_string_format, mfmt=mfmt, pix_type=pix_type,
                     logger=logger
                 )
@@ -387,7 +328,7 @@ def main(args):
         out_fname = sim_string_format.format(
             sim_id=sim_id,
             sim_type=sim_type,
-            freq_channel=freq_labels[freq_channel]
+            freq_channel=freq_channel
         ).split("/")[-1]
         batch_label = "" if ib is None else f"_batch{ib}of{nbatches}"
         out_fname = out_fname.replace(
@@ -429,8 +370,8 @@ if __name__ == "__main__":
              "Overwrites the yaml file configs."
     )
     args = parser.parse_args()
-    config = fu.Cfg.from_yaml(args.config_file)
+    config = Cfg.from_yaml(args.config_file)
     if args.sim_ids is not None:
-        config.update(vars(args))
+        config.filtering.update(sim_ids=args.sim_ids)
 
     main(config)
