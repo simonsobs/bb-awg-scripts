@@ -8,8 +8,10 @@ import bundling_utils as utils
 
 bundling_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(bundling_dir, "../misc"))
-
+sys.path.append(os.path.join(bundling_dir, ".."))
+from configs import Cfg
 import mpi_utils as mpi  # noqa
+
 
 def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs=None):
     """
@@ -19,24 +21,23 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
 
     # Read bundle.db
     sat_bundle_dbs = np.atleast_1d(getattr(args, "bundle_db_full", []))
-    sat_map_dirs = np.atleast_1d(args.map_dir)
+    sat_map_dirs = np.atleast_1d(args.bundling.map_dir)
 
     # Validate each bundle_db exists before proceeding
     for db in sat_bundle_dbs:
         if not os.path.isfile(db):
             raise FileNotFoundError(f"File {db} does not exist.")
 
-    out_dir = args.output_dir
+    out_dir = args.signflip.output_dir_signflip
     os.makedirs(out_dir, exist_ok=True)
 
     bundle_ids = range(args.n_bundles)
-    #n_sims = config.n_sims
-    n_sims = getattr(args, "n_sims", None) or getattr(globals().get("config", object()), "n_sims", None)
-    if n_sims is None:
-        raise ValueError("n_sims not found on args or global config.")
+    n_sims = args.signflip.n_sims
 
-    split_tag = utils.get_split_tag(split_intra_obs, split_inter_obs, args.intra_obs_pair, args.coadd_splits_name)
-    wafer_tag = args.wafer if args.wafer is not None else ""
+    split_tag = utils.get_split_tag(
+        split_intra_obs, split_inter_obs, args.intra_obs_pair, args.bundling.coadd_splits_name
+    )
+    wafer_tag = args.bundling.wafer if args.bundling.wafer is not None else ""
     patch_tag = args.patch if args.patch is not None else ""
 
     # --------------------------------------------
@@ -48,30 +49,34 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
         for sim_id in range(n_sims):
             out_fname = os.path.join(
                 out_dir,
-                args.map_string_format.format(
+                args.bundling.map_string_format.format(
                     split=split_tag,
                     bundle_id=bundle_id,
                     wafer=wafer_tag,
                     patch=patch_tag,
                     freq_channel=args.freq_channel,
-                    map_type="{map_type}"
-                )
+                    map_type="{map_type}",
+                ),
             )
-            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{map_type}")
+            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}" + "_{map_type}")
             out_fname = out_fname.replace("__", "_")
-            if not os.path.exists(out_fname.format(map_type="map")) or args.overwrite:
-                #print(f"sim_num={sim_id:04d} out_fname={out_fname}")
+            if not os.path.exists(out_fname.format(map_type="map")) or args.signflip.overwrite_sf:
+                # print(f"sim_num={sim_id:04d} out_fname={out_fname}")
                 missing_tasks.append((bundle_id, sim_id))
     # --------------------------------------------
 
     n_missing = len(missing_tasks)
-    if rank==0:
+    if rank == 0:
         print(f"{n_missing} tasks missing out of {args.n_bundles * n_sims} total.")
     if n_missing == 0:
         return
 
-    task_ids = mpi.distribute_tasks(size, rank, n_missing,)
-    #local_mpi_list = [mpi_shared_list[i] for i in task_ids]
+    task_ids = mpi.distribute_tasks(
+        size,
+        rank,
+        n_missing,
+    )
+    # local_mpi_list = [mpi_shared_list[i] for i in task_ids]
 
     # Group tasks by bundle_id so we can reuse SignFlipper. SignFlipper reads the
     # per-bundle atomics into memory, and reusing it avoids repeating that work
@@ -85,22 +90,23 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
     for bundle_id, sim_ids in sim_ids_by_bundle.items():
         signflippers = []
         for bundle_db, map_dir_i in zip(sat_bundle_dbs, sat_map_dirs):
-            signflippers.append((
-                bundle_db,
-                SignFlipper(
-                    bundle_db=bundle_db,
-                    freq_channel=args.freq_channel,
-                    wafer=args.wafer,
-                    bundle_id=bundle_id,
-                    null_prop_val=split_inter_obs,
-                    pix_type=args.pix_type,
-                    car_map_template=args.car_map_template,
-                    split_label=split_intra_obs,
-                    map_dir=map_dir_i,
-                    atomic_list=args.atomic_list,
-                    abscal=args.abscal
+            signflippers.append(
+                (
+                    bundle_db,
+                    SignFlipper(
+                        bundle_db=bundle_db,
+                        freq_channel=args.freq_channel,
+                        wafer=args.bundling.wafer,
+                        bundle_id=bundle_id,
+                        null_prop_val=split_inter_obs,
+                        pix_type=args.pix_type,
+                        car_map_template=args.car_map_template,
+                        split_label=split_intra_obs,
+                        map_dir=map_dir_i,
+                        abscal=args.bundling.abscal,
+                    ),
                 )
-            ))
+            )
 
         for sim_id in sim_ids:
             print(f"Running bundle_id={bundle_id} sim_id={sim_id}")
@@ -118,7 +124,9 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
                 try:
                     result = signflipper.signflip(seed=12345 * bundle_id + sim_id)
                     if not isinstance(result, (tuple, list)) or len(result) != 2:
-                        print(f"SignFlipper returned unexpected result for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {result}")
+                        print(
+                            f"SignFlipper returned unexpected result for bundle_id={bundle_id} sim_id={sim_id} from {bundle_db}: {result}"
+                        )
                         continue
                     noise_map, noise_weight = result
                 except Exception as e:
@@ -140,35 +148,36 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
             # Output filenames
             out_fname = os.path.join(
                 out_dir,
-                args.map_string_format.format(
+                args.bundling.map_string_format.format(
                     split=split_tag,
                     bundle_id=bundle_id,
                     wafer=wafer_tag,
                     patch=patch_tag,
                     freq_channel=args.freq_channel,
-                    map_type='{map_type}'
-                )
+                    map_type='{map_type}',
+                ),
             )
             out_fname = out_fname.replace("__", "_")
-            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}"+"_{}")
+            out_fname = out_fname.replace("{map_type}", f"{sim_id:04d}" + "_{}")
 
             # Skip existing maps if overwrite=False
-            if (not args.overwrite) and os.path.exists(out_fname.format("map")):
+            if (not args.signflip.overwrite_sf) and os.path.exists(out_fname.format("map")):
                 if rank == 0:
                     print(f"Skipping existing: {out_fname}")
                 continue
 
             # Save maps
-            print('writing maps: '+out_fname)
+            print('writing maps: ' + out_fname)
             utils.write_maps(out_fname, args.pix_type, combined_map, combined_weight, dtype=np.float32)
 
         # Quickplots
-        #if sim_id % (n_sims // 3) == 0:
+        # if sim_id % (n_sims // 3) == 0:
         #    savename_plot = out_fname[:out_fname.find(".fits")] + ".png"
         #    utils.plot_map(savename_plot.format("Q"), args.pix_type, combined_map[1], unit_fac=1e6, vrange=50)
         #    utils.plot_map(savename_plot.format("U"), args.pix_type, combined_map[2], unit_fac=1e6, vrange=50)
 
     comm.Barrier()
+
 
 def make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs=None):
     try:
@@ -179,18 +188,19 @@ def make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs=
 
 def main(args):
     # Load config
-    config = utils.Cfg.from_yaml(args.config_file)
+    config = Cfg.from_yaml(args.config_file)
 
     # Build frequency x wafer combinations
-    its = [np.atleast_1d(x) for x in [config.freq_channel, config.wafer]]
-    patch_list = config.patch_list
+    its = [np.atleast_1d(x) for x in [config.freq_channel, config.bundling.wafer]]
+    patch_list = np.atleast_1d(config.patch)
 
     # MPI initialization
     rank, size, comm = mpi.init(True)
 
-    for patch in np.atleast_1d(patch_list):
+    for patch in patch_list:
         for it in itertools.product(*its):
-            config_it = utils.child_config(config, patch=patch, freq_channel=it[0], wafer=it[1])
+            config_it = config.child(patch=patch, freq_channel=it[0])
+            config_it.bundling.update(wafer=it[1])
             intra_pair = config_it.intra_obs_pair
 
             # --- science/full run: coadd the pair, no inter-obs null ---
@@ -199,12 +209,15 @@ def main(args):
             # Inter-obs splits
             if config_it.inter_obs_splits is not None:
                 for null_prop_val in config_it.inter_obs_splits:
-                    make_signflip(config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=null_prop_val)
+                    make_signflip(
+                        config_it, size, rank, comm, split_intra_obs=intra_pair, split_inter_obs=null_prop_val
+                    )
 
             # Intra-obs splits
             if config_it.intra_obs_splits is not None:
                 for split_val in config_it.intra_obs_splits:
                     make_signflip(config_it, size, rank, comm, split_intra_obs=split_val, split_inter_obs=None)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make bundled noise maps.")

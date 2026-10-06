@@ -1,9 +1,6 @@
 import os
-import yaml
 import numpy as np
 import healpy as hp
-from typing import Optional
-from dataclasses import dataclass
 import matplotlib.pyplot as plt
 
 from pixell import enmap, enplot
@@ -12,22 +9,20 @@ from sotodlib.coords.helpers import get_deflected_sightline
 from sotodlib.coords import P
 
 
-def yaml_loader(config):
-    """
-    Custom yaml loader to load the configuration file.
-    """
-    def path_constructor(loader, node):
-        return "/".join(loader.construct_sequence(node))
-    yaml.SafeLoader.add_constructor("!path", path_constructor)
-    with open(config, "r") as f:
-        return yaml.load(f, Loader=yaml.SafeLoader)
-
-
-def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
-                          atomic_sim_dir, split_label, sim_string_format,
-                          mfmt=".fits", pix_type="car",
-                          logger=None, ignore_if_nan=True,
-                          file_stats_only=False):
+def get_atomics_maps_list(
+    sim_id,
+    sim_type,
+    atomic_metadata,
+    freq_label,
+    atomic_sim_dir,
+    split_label,
+    sim_string_format,
+    mfmt=".fits",
+    pix_type="car",
+    logger=None,
+    ignore_if_nan=True,
+    file_stats_only=False,
+):
     """
     Returns a list of filtered atomic maps that correpsond to a given
     simulation ID, given a list of atomic metadata.
@@ -69,20 +64,12 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
     num_real = 0
     for id, (obs_id, wafer) in enumerate(atomic_metadata):
         if sim_id is None:
-            atomic_fname = sim_string_format.format(sim_id="NULL",
-                                                    sim_type=sim_type,
-                                                    freq_channel=freq_label)
+            atomic_fname = sim_string_format.format(sim_id="NULL", sim_type=sim_type, freq_channel=freq_label)
         else:
-            atomic_fname = sim_string_format.format(sim_id=sim_id,
-                                                    sim_type=sim_type,
-                                                    freq_channel=freq_label)
-        atomic_fname = atomic_fname.replace(
-            mfmt,
-            f"_{obs_id}_{wafer}_{split_label}{mfmt}"
-        ).split("/")[-1]
+            atomic_fname = sim_string_format.format(sim_id=sim_id, sim_type=sim_type, freq_channel=freq_label)
+        atomic_fname = atomic_fname.replace(mfmt, f"_{obs_id}_{wafer}_{split_label}{mfmt}").split("/")[-1]
         fname_wmap, fname_w = (
-            f"{atomic_sim_dir}/{atomic_fname.replace(mfmt, f'_{s}{mfmt}')}"
-            for s in ("wmap", "weights")
+            f"{atomic_sim_dir}/{atomic_fname.replace(mfmt, f'_{s}{mfmt}')}" for s in ("wmap", "weights")
         )
 
         # Observations can vanish if the FP thinning and the detector cuts
@@ -110,7 +97,7 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
             else:
                 wmap_list.append(wmap)
                 w_list.append(w)
-    num_ideal = id+1
+    num_ideal = id + 1
     if not file_stats_only:
         num_real = len(wmap_list)
     completeness = float(num_real / num_ideal)
@@ -127,8 +114,7 @@ def get_atomics_maps_list(sim_id, sim_type, atomic_metadata, freq_label,
     return wmap_list, w_list
 
 
-def save_and_plot_map(map, out_fname, out_dir, plot_dir, pix_type="car",
-                      do_plot=True):
+def save_and_plot_map(map, out_fname, out_dir, plot_dir, pix_type="car", do_plot=True):
     """
     Saves and optionally plots TQU map.
     """
@@ -136,10 +122,7 @@ def save_and_plot_map(map, out_fname, out_dir, plot_dir, pix_type="car",
         enmap.write_map(f"{out_dir}/{out_fname}", map)
 
     elif pix_type == "hp":
-        hp.write_map(
-            f"{out_dir}/{out_fname}", map, dtype=np.float64, overwrite=True,
-            nest=True
-        )
+        hp.write_map(f"{out_dir}/{out_fname}", map, dtype=np.float64, overwrite=True, nest=True)
     if not do_plot:
         return
 
@@ -147,29 +130,18 @@ def save_and_plot_map(map, out_fname, out_dir, plot_dir, pix_type="car",
         if pix_type == "car":
             if isinstance(map, tuple):
                 map = map[0]  # For enmap.ndmaps
-            plot = enplot.plot(
-                map[i], color="planck", ticks=10, range=1.7, colorbar=True
-            )
-            enplot.write(
-                f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}", plot
-            )
+            plot = enplot.plot(map[i], color="planck", ticks=10, range=1.7, colorbar=True)
+            enplot.write(f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}", plot)
 
         elif pix_type == "hp":
             plt.figure()
-            hp.mollview(
-                map[i], cmap="RdYlBu_r", min=-1.7, max=1.7,
-                cbar=True, nest=True, unit=r"$\mu$K"
-            )
-            plt.savefig(
-                f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}.png"
-            )
+            hp.mollview(map[i], cmap="RdYlBu_r", min=-1.7, max=1.7, cbar=True, nest=True, unit=r"$\mu$K")
+            plt.savefig(f"{plot_dir}/{out_fname.replace('.fits', '')}_{f}.png")
             plt.close()
 
 
-def get_query_atomics(freq_channel, ctimes, split_label="science",
-                      query_restrict="median_weight_qu < 2e10"):
-    """
-    """
+def get_query_atomics(freq_channel, ctimes, split_label="science", query_restrict="median_weight_qu < 2e10"):
+    """ """
     ctimes = list(map(int, ctimes))
     ctimes_write = tuple(np.asarray(ctimes).tolist())
     if len(ctimes) == 1:
@@ -192,18 +164,18 @@ def get_query_atomics(freq_channel, ctimes, split_label="science",
     return query
 
 
-def get_fullsky_geometry(res_arcmin=5., variant="fejer1"):
+def get_fullsky_geometry(res_arcmin=5.0, variant="fejer1"):
     """
     Generates a fullsky CAR template at resolution res-arcmin.
     """
-    res = res_arcmin * np.pi/180/60
+    res = res_arcmin * np.pi / 180 / 60
     return enmap.fullsky_geometry(res=res, proj='car', variant=variant)
 
 
-def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
-                     nside=None, site=None, logger=None, apply_wobble=False):
-    """
-    """
+def make_map_wrapper(
+    obs, split_labels, pix_type="hp", shape=None, wcs=None, nside=None, site=None, logger=None, apply_wobble=False
+):
+    """ """
     obs.wrap("weather", np.full(1, "toco"))
     obs.wrap("site", np.full(1, site))
     if pix_type == "car":
@@ -215,14 +187,13 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
 
     if hasattr(obs.preprocess, "noiseQ_mapmaking"):  # ISO v2 and v3
         if hasattr(obs.preprocess.noiseQ_mapmaking, "std"):
-            inv_var = 1 / obs.preprocess.noiseQ_mapmaking.std ** 2
+            inv_var = 1 / obs.preprocess.noiseQ_mapmaking.std**2
         elif hasattr(obs.preprocess.noiseQ_mapmaking, "white_noise"):
-            inv_var = 1 / obs.preprocess.noiseQ_mapmaking.white_noise ** 2
+            inv_var = 1 / obs.preprocess.noiseQ_mapmaking.white_noise**2
         else:
-            raise ValueError("obs.preprocess.noiseQ_mapmaking does not have "
-                             "either a std or white_noise")
+            raise ValueError("obs.preprocess.noiseQ_mapmaking does not have either a std or white_noise")
     elif hasattr(obs.preprocess, "noiseQ_nofit"):  # ISO v1
-        inv_var = 1 / obs.preprocess.noiseQ_nofit.white_noise ** 2
+        inv_var = 1 / obs.preprocess.noiseQ_nofit.white_noise**2
     else:
         logger.error("No white noise fits available in the metadata.")
 
@@ -236,117 +207,64 @@ def make_map_wrapper(obs, split_labels, pix_type="hp", shape=None, wcs=None,
             sight = get_deflected_sightline(obs)
         else:
             sight = None
-        Proj = P.for_tod(obs, sight=sight, wcs_kernel=wcs, comps='TQU',
-                         cuts=cuts, hwp=True, interpol=None)
-        result = make_map(obs, P=Proj, det_weights=2 * inv_var,
-                          det_weights_demod=inv_var)
+        Proj = P.for_tod(obs, sight=sight, wcs_kernel=wcs, comps='TQU', cuts=cuts, hwp=True, interpol=None)
+        result = make_map(obs, P=Proj, det_weights=2 * inv_var, det_weights_demod=inv_var)
         wmap_dict[split_label] = result['weighted_map']
         weights_dict[split_label] = result['weight']
         # transform (3, 3, N, n) array to (3, N, n) keeping only diagonals
         # in the first two dimensions
-        weights_dict[split_label] = np.moveaxis(
-            weights_dict[split_label].diagonal(), -1, 0
-        )
+        weights_dict[split_label] = np.moveaxis(weights_dict[split_label].diagonal(), -1, 0)
 
     return wmap_dict, weights_dict
 
 
-@dataclass
-class Cfg:
-    """
-    Class to configure filtering
+def check_none(item, label, logger=None, rank=0):
+    if item is None:
+        out = [None]
+        if rank == 0 and logger is not None:
+            logger.warning(f"No {label} considered. If this is by mistake, please ensure to add in the config.")
+    else:
+        out = item
+    return out
 
-    Args
-    --------
-    bundle_db: str
-        Path to bundling database
-    atomic_db: str
-        Path to atomic map database
-    preprocess_config_init: str
-        Path to preprocessing init yaml file
-    preprocess_config_proc: str
-        Path to preprocessing proc yaml file
-    query_restrict: str
-        SQL query to restrict obs from the atomic database
-    pix_type: str
-        'hp' or 'car'
-    sim_dir: str
-        Path to directory containing unfiltered input sims
-    atomic_sim_dir: str
-        Path to directory containing filtered atomic sims
-    output_dir: str
-        Path to output directory
-    sim_ids: list
-        Simulation seeds to be filtered, passed as integers
-    bundle_id: int
-        Bundle ID to be filtered
-    sim_string_format: str
-        String formatting for unfiltered input sims
-        must contain {sim_id} and {sim_type}.
-    sim_types: list
-        Strings that define the simulation types to be filtered, e.g.
-        ['pureT', 'pureE', 'pureB'], or ['cmbEB', 'cmbB'] etc.
-    freq_channels: list
-        Frequency channels, e.g. ['f090', 'f150'].
-    patches: list
-        Sky patches, e.g. ['south', 'north'].
-    intra_obs_splits: list
-        List of split labels for intra-obs splits, e.g. 'scan_left'.
-    intra_obs_pair: list
-        Pair of intra-obs labels that will be added to make full obs
-        for inter-obs splits
-    inter_obs_splits:
-        List of inter-obs split names for which to create bundles
-    car_map_template: str
-        Path to CAR map or geometry to be used as template
-    nside: int
-        HEALPix NSIDE parameter
-    fp_thin: int
-        Focal plane thinning factor applied to the sim filtering
-    nbatch_atomics: int
-        Number of batches to divide the bundle into, based on random timestamp
-        splits
-    remove_atomics: bool
-        Removes atomic maps from disk upon coadding them
-    overwrite_atomics: bool
-        Overwrites atomic sim maps if they exist
-    base_dir: str
-        Optional directory path for compatibility reasons
-    """
-    bundle_db: str
-    atomic_db: str
-    preprocess_config_init: str
-    preprocess_config_proc: str
-    sim_dir: str
-    atomic_sim_dir: str
-    output_dir: str
-    sim_string_format: str
-    freq_channels: list
-    patches: list
-    coadded_dirs: Optional[str] = None
-    query_restrict: Optional[str] = ""
-    pix_type: Optional[str] = "car"
-    bundle_id: Optional[int] = 0
-    intra_obs_splits: Optional[list] = None
-    sim_ids: Optional[list] = None
-    sim_types: Optional[list] = None
-    intra_obs_pair: Optional[list] = None
-    inter_obs_splits: Optional[list] = None
-    car_map_template: Optional[str] = None
-    nside: Optional[int] = None
-    fp_thin: Optional[int] = 8
-    nbatch_atomics: Optional[int] = None
-    remove_atomics: Optional[bool] = False
-    overwrite_atomics: Optional[bool] = True
-    base_dir: Optional[str] = None
-    verbosity: Optional[int] = 2
 
-    def update(self, dict):
-        # Add extra private args not expected in config file
-        for k, v in dict.items():
-            setattr(self, k, v)
+def process_sim_ids(sim_ids):
+    if isinstance(sim_ids, str):
+        if "," in sim_ids:
+            id_min, id_max = sim_ids.split(",")
+            sim_ids = np.arange(int(id_min), int(id_max) + 1)
+        else:
+            sim_ids = np.array([int(sim_ids)])
+    elif not isinstance(sim_ids, list):
+        raise ValueError("Argument 'sim_ids' has the wrong format")
+    return sim_ids
 
-    @classmethod
-    def from_yaml(cls, path) -> "Cfg":
-        d = yaml_loader(path)
-        return cls(**d)
+
+def process_sim_args(args, rank, logger):
+    sim_types = check_none(args.filtering.sim_types, 'sim_types', logger, rank)
+    sim_ids = check_none(args.filtering.sim_ids, 'sim_ids', logger, rank)
+    sim_ids = process_sim_ids(sim_ids)
+    if rank == 0:
+        logger.debug(f"Processing sim_ids {sim_ids} in parallel.")
+    sim_dir = args.filtering.sim_dir
+    sim_string_format = args.filtering.sim_string_format
+
+    return sim_types, sim_ids, sim_dir, sim_string_format
+
+
+def get_pix_type_args(args):
+    # Pixelization arguments
+    pix_type = args.pix_type
+    if pix_type == "hp":
+        nside = args.filtering.nside
+        mfmt = ".fits"  # TODO: test fits.gz for HEALPix
+        car_map_template = None
+    elif pix_type == "car":
+        nside = None
+        mfmt = ".fits"
+        car_map_template = args.car_map_template
+        if car_map_template is not None:
+            _, wcs = enmap.read_map_geometry(car_map_template)
+        else:
+            _, wcs = get_fullsky_geometry()  # Could be problematic if using all default values! # noq
+    return pix_type, mfmt, car_map_template, nside, wcs
