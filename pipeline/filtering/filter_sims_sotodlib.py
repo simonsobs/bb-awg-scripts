@@ -51,7 +51,7 @@ def main(args):
                 atomic_sim_dir = args.filtering.atomic_sim_dir.format(
                     patch=patch, freq_channel=freq_channel, sim_type=sim_type, sim_id=sim_id
                 )
-                dir_key = sim_id if sim_id is not None else sim_type
+                dir_key = (sim_id, sim_type)
                 atomics_dir[patch, freq_channel][dir_key] = atomic_sim_dir  # noqa
                 if sim_id is not None and "{sim_id" not in args.filtering.atomic_sim_dir:
                     atomics_dir[patch, freq_channel][dir_key] += f"/{sim_id:04d}"  # noqa
@@ -159,7 +159,7 @@ def main(args):
                     # Saving filtered atomics to disk
                     atomic_fname = map_fname.split("/")[-1].replace(mfmt, f"_{obs_id}_{wafer}_{split_label}{mfmt}")
 
-                    dir_key = sim_id if sim_id is not None else sim_type
+                    dir_key = (sim_id, sim_type)
                     f_wmap = atomics_dir[patch, freq_channel][dir_key]
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
@@ -270,7 +270,7 @@ def main(args):
                     # Saving filtered atomics to disk
                     atomic_fname = map_fname.split("/")[-1].replace(mfmt, f"_{obs_id}_{wafer}_{split_label}{mfmt}")
 
-                    dir_key = sim_id if sim_id is not None else sim_type
+                    dir_key = (sim_id, sim_type)
                     f_wmap = atomics_dir[patch, freq_channel][dir_key]
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
