@@ -231,7 +231,7 @@ def main(args):
         local_task_id = local_mpi_list.index(task_element)
         map_dir = atomic_sim_dir.format(
             patch=patch,
-            freq_channel=freq_labels[freq_channel],
+            freq_channel=freq_channel,
             sim_type=sim_type,
             sim_id=sim_id
         )
