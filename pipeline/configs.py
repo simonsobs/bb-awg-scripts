@@ -263,6 +263,7 @@ class Cfg(_Cfg):
         Path to CAR map or geometry to be used as template
     intra_obs_splits: list
         List of split labels for intra-obs splits, e.g. 'scan_left'.
+        May be in pairs ['scan_left', 'scan_right'], etc.
     intra_obs_pair: list
         Pair of intra-obs labels that will be added to make full obs
         for inter-obs splits
@@ -284,7 +285,7 @@ class Cfg(_Cfg):
     freq_channel: Union[str, Sequence[str], None] = None
     pix_type: str = 'car'
     car_map_template: Optional[str] = None
-    intra_obs_splits: Optional[Sequence[str]] = None
+    intra_obs_splits: Optional[Sequence] = None
     intra_obs_pair: Optional[Sequence[str]] = None
     inter_obs_splits: Optional[Sequence[str]] = None
     bundle_db_cfg: Optional[BundleDbCfg] = None
@@ -315,3 +316,18 @@ class Cfg(_Cfg):
 
     def _update_attributes(self):
         check_pix_type(self.pix_type)
+
+        # Flatten split lists
+        self.intra_obs_splits, self.intra_obs_split_pairs = flatten_splits(self.intra_obs_splits)
+        self.inter_obs_splits, self.inter_obs_split_pairs = flatten_splits(self.inter_obs_splits)
+
+def flatten_splits(split_list):
+    """Flatten a 2d list. Return flat and original. If not 2d, return original and None"""
+    sl = copy.deepcopy(split_list)
+    np_splits = np.array(sl)
+    if np_splits.ndim == 2:
+        old_list = sl
+        sl = (np_splits.flatten()).tolist()
+    else:
+        old_list = None
+    return sl, old_list
