@@ -154,6 +154,11 @@ class BundleCfg(_Cfg):
     coadd_split_pair: Optional[Sequence[str]] = None
     coadd_bundles_splitname: Optional[str] = None
 
+    def _update_attributes(self):
+        self.coadd_split_pair, _ = flatten_splits(self.coadd_split_pair)
+        if self.coadd_split_pair is not None and len(self.coadd_split_pair) < 2:
+            raise ValueError(f"coadd_split_pair {self.coadd_split_pair} should be at least 2 entries")
+
 
 @dataclass
 class SignFlipCfg(_Cfg):
@@ -263,6 +268,7 @@ class Cfg(_Cfg):
         Path to CAR map or geometry to be used as template
     intra_obs_splits: list
         List of split labels for intra-obs splits, e.g. 'scan_left'.
+        May be in pairs ['scan_left', 'scan_right'], etc.
     intra_obs_pair: list
         Pair of intra-obs labels that will be added to make full obs
         for inter-obs splits
@@ -284,7 +290,7 @@ class Cfg(_Cfg):
     freq_channel: Union[str, Sequence[str], None] = None
     pix_type: str = 'car'
     car_map_template: Optional[str] = None
-    intra_obs_splits: Optional[Sequence[str]] = None
+    intra_obs_splits: Optional[Sequence] = None
     intra_obs_pair: Optional[Sequence[str]] = None
     inter_obs_splits: Optional[Sequence[str]] = None
     bundle_db_cfg: Optional[BundleDbCfg] = None
@@ -315,3 +321,23 @@ class Cfg(_Cfg):
 
     def _update_attributes(self):
         check_pix_type(self.pix_type)
+
+        # Flatten split lists
+        # It is useful to pass in a 2d list to retain pair information, but the main code needs a flat list
+        self.intra_obs_splits, self.intra_obs_split_pairs = flatten_splits(self.intra_obs_splits)
+        self.inter_obs_splits, self.inter_obs_split_pairs = flatten_splits(self.inter_obs_splits)
+        self.intra_obs_pair, _ = flatten_splits(self.intra_obs_pair)
+        if self.intra_obs_pair is not None and len(self.intra_obs_pair) < 2:
+            raise ValueError(f"intra_obs_pair {self.intra_obs_pair} should be at least 2 entries")
+
+
+def flatten_splits(split_list):
+    """Flatten a 2d list. Return flat and original. If not 2d, return original and None"""
+    sl = copy.deepcopy(split_list)
+    np_splits = np.array(sl)
+    if np_splits.ndim == 2:
+        old_list = sl
+        sl = (np_splits.flatten()).tolist()
+    else:
+        old_list = None
+    return sl, old_list
