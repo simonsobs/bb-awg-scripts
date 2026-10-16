@@ -2,7 +2,7 @@ import numpy as np
 import os
 import bundling_utils as utils
 from coordinator import BundleCoordinator
-
+import re
 
 class _Coadder:
     def __init__(self, bundle_db, freq_channel, wafer=None,
@@ -125,7 +125,7 @@ class _Coadder:
             maps_exist = hits_exist and maps_exist
         return maps_exist
 
-    def _get_bundle_info(self,  bundle_id, map_dir, null_prop_val=None, split_label=None):
+    def _get_bundle_info(self,  bundle_id, map_dir, null_prop_val=None, split_label=None, cache=True):
         """
         Extract info from the bundle db and cache in self.bundle_info.
         info is all from atomics table:  obs_id, wafer, freq_channel,
@@ -175,8 +175,9 @@ class _Coadder:
         if self.atomic_list is not None:
             info = utils.filter_by_atomic_list(info, self.atomic_list)
 
-        self.bundle_info = info  # Cache
-        self.info_meta = info_meta
+        if cache:
+            self.bundle_info = info  # Cache
+            self.info_meta = info_meta
         return info
 
 
@@ -253,7 +254,7 @@ class SignFlipper(_Coadder):
     """
     def __init__(self, bundle_db, freq_channel, car_map_template, map_dir,
                  split_label=None, wafer=None, abscal=None,
-                 bundle_id=None, null_prop_val=None, pix_type="hp", atomic_list=None):
+                 bundle_id=None, null_prop_val=None, pix_type="hp", atomic_list=None, method="obs_weight"):
         """
         Constructor for the SignFlipper class. Creates a SignFlipper object,
         given map and bundling information from bundle_db.
@@ -289,9 +290,20 @@ class SignFlipper(_Coadder):
         atomic_list: list
             External list of string tuples (obs_id, wafer, freq_channel) of
             atomic maps that are to be used for the bundling.
+        method: str
+            - 'obs_weight': Signs matched at obs level using the 'obs_weight' from bundle_db.
+              Atomics from the same obs for all freqs/wafers/splits will have the same sign.
+              Weight balancing attempted using the sum of science weights for all wafer/freqs.
+            - 'split_weight': Within a given signflip (split/freq) all atomic with the same obs
+              will have the same sign. Weight balancing with the combined weight of all such atomics.
+            - 'random_obs': (obs_id, seed) is randomly mapped to a sign. No weight balancing.
         """
         super().__init__(bundle_db, freq_channel, wafer,
                          pix_type=pix_type, car_map_template=car_map_template, atomic_list=atomic_list)
+
+        self.method = method
+        if method not in ['obs_weight', 'split_weight', 'random_obs']:
+            raise ValueError(f"Method {method} not recognized.")
 
         bundle_info = self._get_bundle_info(bundle_id, map_dir, null_prop_val=null_prop_val, split_label=split_label)
         self.fnames = list(bundle_info['filename'])
@@ -314,6 +326,35 @@ class SignFlipper(_Coadder):
                         for fname in self.fnames]
         print("weights: ", len(self.wmaps))
         self._weights_noise = None
+
+        # Generate weights needed for obs-level balancing
+        self.obs_ids = self.bundle_info.obs_id.to_numpy()
+        if method == "obs_weight":
+            self.obs_weights = self.bundle_info.obs_weights.to_numpy()
+        elif method == "split_weight":
+            weights = np.zeros_like(self.obs_ids)
+            for obs_id in np.unique(self.obs_ids):
+                inds= np.where(self.obs_ids == obs_id)[0]
+                weights[inds] = np.sum(self.bundle_info['weight'].to_numpy()[inds])
+            self.obs_weights = weights
+
+
+    def get_signs_from_weights(self, seed):
+        weights = self.obs_weights
+        gen = np.random.default_rng(seed)
+        perm_idx = gen.permutation(len(weights))
+        weights_random = weights[perm_idx]
+        weight_cumsum = np.cumsum(weights_random)/np.sum(weights_random)
+        pm_one = np.random.choice([-1, 1])
+        sign_list = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
+        return sign_list
+
+    def get_signs_from_obs(self, seed):
+        signs = []
+        for obs_id in self.obs_ids:
+            gen = np.random.default_rng(get_seed(obs_id, seed))
+            signs.append(gen.choice([-1, 1]))
+        return signs
 
 
     def signflip(self, seed=None):
@@ -344,36 +385,35 @@ class SignFlipper(_Coadder):
                 out *= other
                 return out
 
-        if seed is not None:
-            np.random.seed(seed)
-        perm_idx = np.random.permutation(len(self.wmaps))
-        maps_list = [_NoInplaceScale(self.wmaps[i]) for i in perm_idx]
+        if self.method in ['obs_weight', 'split_weight']:
+            sign_list = self.get_signs_from_weights(seed)
+        elif self.method  == 'random_obs':
+            sign_list = self.get_signs_from_obs(seed)
 
-        mean_wQU_list = [self.ws[i] for i in perm_idx]
-        abscal = self.full_abscal[perm_idx]
-
-        weight_cumsum = np.cumsum(mean_wQU_list) / np.sum(mean_wQU_list)
-        pm_one = np.random.choice([-1, 1])
-        sign_list = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
-
+        maps_list = [_NoInplaceScale(imap) for imap in self.wmaps]
+        weights_list = [_NoInplaceScale(imap) for imap in self.weights]
         if self._weights_noise is None:
-            weights_list = [self.weights[i] for i in perm_idx]
-            signflip_noise, weights_noise = utils.coadd_maps(
-                maps_list, weights_list, pix_type=self.pix_type,
-                sign_list=sign_list, car_template_map=self.car_map_template,
-                abscal=abscal
-            )
+            signflip_noise, weights_noise = utils.coadd_maps(maps_list, weights_list,
+                                                             pix_type=self.pix_type, sign_list=sign_list,
+                                                             car_template_map=self.car_map_template,
+                                                             abscal=self.full_abscal)
             self._weights_noise = weights_noise
             return signflip_noise, weights_noise
 
         signflip_noise = utils.sum_maps(
             maps_list,
-            self._weights_noise,
-            self.pix_type,
-            mult=sign_list * abscal**-1,
-            fields_hp=self.fields_hp
-        )
+            template=self._weights_noise,
+            pix_type=self.pix_type,
+            mult=sign_list * self.full_abscal**-1,
+            fields_hp=self.fields_hp,
+            )
 
         good_weights = self._weights_noise > 0
         signflip_noise[good_weights] /= self._weights_noise[good_weights]
         return signflip_noise, self._weights_noise
+
+def get_seed(obs_id, seed0, MAXSEED=1e6):
+    ctime = int(re.findall(r"(?<=obs_)\d+", obs_id)[0])
+    if seed0 > MAXSEED:
+        raise ValueError("seed too large")
+    return ctime * MAXSEED + seed0

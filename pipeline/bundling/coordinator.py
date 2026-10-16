@@ -87,7 +87,6 @@ class BundleCoordinator:
             atomics=atomics.rename(columns={weight: 'weight'})
         else:
             atomics['weight'] = np.full(atomics.shape[0], None)
-        self.atomics = atomics
 
         # Get all props used to assign bundle properties
         query = f"SELECT {', '.join(self.to_query)} FROM atomic"
@@ -96,12 +95,25 @@ class BundleCoordinator:
         cursor = conn.cursor()
         all_props = cursor.execute(query).fetchall()  # First load directly to deal with timestamp/ctime rename
         all_props = pd.DataFrame(all_props, columns=self.to_query)
+
+        obs_ids, unique_indices = np.unique(all_props.obs_id, return_index=True)
+        obs_ids, idx = filter_by_atomic_list(obs_ids, atomic_list, obs_id_only=True, return_index=True)
+        unique_indices = unique_indices[idx]
+
+        all_weights = []
+        obs_weights_atomic = np.full(atomics.shape[0], None)
+        for oid in obs_ids:
+            weights = pd.read_sql_query(f"SELECT obs_id, wafer, freq_channel, {weight} FROM atomic WHERE split_label='science' AND obs_id='{oid}'", conn)
+            weights = filter_by_atomic_list(weights, valid_waferbands)
+            weights = np.sum(weights.get(weight))
+            all_weights.append(weights)
+            obs_weights_atomic[atomics.obs_id == oid] = weights
         cursor.close()
         conn.close()
 
-        unique_indices = np.unique(all_props.obs_id, return_index=True)[1]
         all_props = all_props.loc[unique_indices]
-        all_props = filter_by_atomic_list(all_props, atomic_list, obs_id_only=True)
+        all_props['obs_weights'] = all_weights
+        atomics['obs_weights'] = obs_weights_atomic
 
         # Replace numerical null_props data from atomic db with labels for bundle db
         self.bundle_db = pd.DataFrame()
@@ -120,6 +132,7 @@ class BundleCoordinator:
 
         self.gen_bundles()
         self.bundle_db['bundle_id'] = self.bundle_id
+        self.atomics = atomics
 
         metadata = _get_metadata(self.null_props)
         self.metadata = pd.DataFrame.from_dict(metadata, orient='columns')
