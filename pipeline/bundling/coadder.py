@@ -329,15 +329,14 @@ class SignFlipper(_Coadder):
 
         # Generate weights needed for obs-level balancing
         self.obs_ids = self.bundle_info.obs_id.to_numpy()
+        self.unique_obs = np.unique(self.obs_ids)
+        self.obs_inds = {obs: np.where(self.obs_ids == obs_id) for obs_id in self.unique_obs}
         if method == "obs_weight":
-            self.obs_weights = self.bundle_info.obs_weights.to_numpy()
+            # Need to get the obs_weight from the bundle_db. You can probably remove them from the atomic table.
+            # Maybe if you pull the complete info table that's good enough but you can't preselect 
+            raise NotImplementedError
         elif method == "split_weight":
-            weights = np.zeros_like(self.obs_ids)
-            for obs_id in np.unique(self.obs_ids):
-                inds= np.where(self.obs_ids == obs_id)[0]
-                weights[inds] = np.sum(self.bundle_info['weight'].to_numpy()[inds])
-            self.obs_weights = weights
-
+            self.obs_weights = np.array([np.sum(bundle_info['weight'].to_numpy()[self.obs_inds[obs_id]]) for obs_id in self.unique_obs])
 
     def get_signs_from_weights(self, seed):
         weights = self.obs_weights
@@ -346,7 +345,11 @@ class SignFlipper(_Coadder):
         weights_random = weights[perm_idx]
         weight_cumsum = np.cumsum(weights_random)/np.sum(weights_random)
         pm_one = np.random.choice([-1, 1])
-        sign_list = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
+        sign_list_obs = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
+        sign_list_obs = sign_list_obs[np.argsort(perm_idx)]  # Undo the permutation
+        sign_list = np.zeros_like(self.obs_ids)
+        for obs_id, ii in enumerate(self.unique_obs):
+            sign_list[self.obs_inds[obs_id]] = sign_list_obs[ii]
         return sign_list
 
     def get_signs_from_obs(self, seed):
