@@ -416,4 +416,4 @@ def get_seed(obs_id, seed0, MAXSEED=1e6):
     ctime = int(re.findall(r"(?<=obs_)\d+", obs_id)[0])
     if seed0 > MAXSEED:
         raise ValueError("seed too large")
-    return ctime * MAXSEED + seed0
+    return int(ctime * MAXSEED + seed0)
