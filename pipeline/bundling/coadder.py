@@ -337,23 +337,26 @@ class SignFlipper(_Coadder):
             conn = sqlite3.connect(self.bundle_db)
             df = pd.read_sql_query("SELECT obs_id, obs_weight FROM bundles WHERE bundle_id=bundle_id", conn)
             conn.close()
-            df_dict = {df['obs_id'][ii]: df['obs_weight'][ii] for ii in range(len(df))}
-            self.obs_weights = np.array([df_dict[obs_id] for obs_id in self.unique_obs])
+            self.obs_weights = df['obs_weight'].to_numpy()
+            self.obs_weight_ids = df['obs_id'].to_numpy()
+
         elif method == "split_weight":
             self.obs_weights = np.array([np.sum(bundle_info['weight'].to_numpy()[self.obs_inds[obs_id]]) for obs_id in self.unique_obs])
+            self.obs_weight_ids = self.unique_obs
 
     def get_signs_from_weights(self, seed):
         weights = self.obs_weights
         gen = np.random.default_rng(seed)
+        pm_one = gen.choice([-1, 1])
         perm_idx = gen.permutation(len(weights))
         weights_random = weights[perm_idx]
         weight_cumsum = np.cumsum(weights_random)/np.sum(weights_random)
-        pm_one = np.random.choice([-1, 1])
         sign_list_obs = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
         sign_list_obs = sign_list_obs[np.argsort(perm_idx)]  # Undo the permutation
         sign_list = np.zeros_like(self.obs_ids, dtype=int)
-        for ii, obs_id in enumerate(self.unique_obs):
-            sign_list[self.obs_inds[obs_id]] = sign_list_obs[ii]
+        for obs_id in self.unique_obs:
+            idx = np.where(obs_id == self.obs_weight_ids)[0][0]
+            sign_list[self.obs_inds[obs_id]] = sign_list_obs[idx]
         return sign_list
 
     def get_signs_from_obs(self, seed):
