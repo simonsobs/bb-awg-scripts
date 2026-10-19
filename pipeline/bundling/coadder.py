@@ -3,6 +3,8 @@ import os
 import bundling_utils as utils
 from coordinator import BundleCoordinator
 import re
+import sqlite3
+import pandas as pd
 
 class _Coadder:
     def __init__(self, bundle_db, freq_channel, wafer=None,
@@ -330,11 +332,13 @@ class SignFlipper(_Coadder):
         # Generate weights needed for obs-level balancing
         self.obs_ids = self.bundle_info.obs_id.to_numpy()
         self.unique_obs = np.unique(self.obs_ids)
-        self.obs_inds = {obs: np.where(self.obs_ids == obs_id) for obs_id in self.unique_obs}
+        self.obs_inds = {obs_id: np.where(self.obs_ids == obs_id) for obs_id in self.unique_obs}
         if method == "obs_weight":
-            # Need to get the obs_weight from the bundle_db. You can probably remove them from the atomic table.
-            # Maybe if you pull the complete info table that's good enough but you can't preselect 
-            raise NotImplementedError
+            conn = sqlite3.connect(self.bundle_db)
+            df = pd.read_sql_query("SELECT obs_id, obs_weight FROM bundles WHERE bundle_id=bundle_id", conn)
+            conn.close()
+            df_dict = {df['obs_id'][ii]: df['obs_weight'][ii] for ii in range(len(df))}
+            self.obs_weights = np.array([df_dict[obs_id] for obs_id in self.unique_obs])
         elif method == "split_weight":
             self.obs_weights = np.array([np.sum(bundle_info['weight'].to_numpy()[self.obs_inds[obs_id]]) for obs_id in self.unique_obs])
 
@@ -347,8 +351,8 @@ class SignFlipper(_Coadder):
         pm_one = np.random.choice([-1, 1])
         sign_list_obs = np.where(weight_cumsum < 0.5, pm_one, -pm_one)
         sign_list_obs = sign_list_obs[np.argsort(perm_idx)]  # Undo the permutation
-        sign_list = np.zeros_like(self.obs_ids)
-        for obs_id, ii in enumerate(self.unique_obs):
+        sign_list = np.zeros_like(self.obs_ids, dtype=int)
+        for ii, obs_id in enumerate(self.unique_obs):
             sign_list[self.obs_inds[obs_id]] = sign_list_obs[ii]
         return sign_list
 
@@ -357,7 +361,7 @@ class SignFlipper(_Coadder):
         for obs_id in self.obs_ids:
             gen = np.random.default_rng(get_seed(obs_id, seed))
             signs.append(gen.choice([-1, 1]))
-        return signs
+        return np.array(signs, dtype=int)
 
 
     def signflip(self, seed=None):
