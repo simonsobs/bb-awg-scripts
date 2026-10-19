@@ -335,7 +335,7 @@ class SignFlipper(_Coadder):
         self.obs_inds = {obs_id: np.where(self.obs_ids == obs_id) for obs_id in self.unique_obs}
         if method == "obs_weight":
             conn = sqlite3.connect(self.bundle_db)
-            df = pd.read_sql_query("SELECT obs_id, obs_weight FROM bundles WHERE bundle_id=bundle_id", conn)
+            df = pd.read_sql_query(f"SELECT obs_id, obs_weight FROM bundles WHERE bundle_id={bundle_id}", conn)
             conn.close()
             self.obs_weights = df['obs_weight'].to_numpy()
             self.obs_weight_ids = df['obs_id'].to_numpy()
