@@ -335,7 +335,8 @@ class SignFlipper(_Coadder):
         self.obs_inds = {obs_id: np.where(self.obs_ids == obs_id) for obs_id in self.unique_obs}
         if method == "obs_weight":
             conn = sqlite3.connect(self.bundle_db)
-            df = pd.read_sql_query(f"SELECT obs_id, obs_weight FROM bundles WHERE bundle_id={bundle_id}", conn)
+            bundle_id_query = f" WHERE bundle_id={bundle_id}" if bundle_id is not None else ""
+            df = pd.read_sql_query("SELECT obs_id, obs_weight FROM bundles" + bundle_id_query + " ORDER BY obs_id", conn)
             conn.close()
             self.obs_weights = df['obs_weight'].to_numpy()
             self.obs_weight_ids = df['obs_id'].to_numpy()
@@ -360,6 +361,8 @@ class SignFlipper(_Coadder):
         return sign_list
 
     def get_signs_from_obs(self, seed):
+        if seed is None:
+            raise ValueError("random_obs requires a seed to be passed")
         signs = []
         for obs_id in self.obs_ids:
             gen = np.random.default_rng(get_seed(obs_id, seed))
@@ -424,6 +427,6 @@ class SignFlipper(_Coadder):
 
 def get_seed(obs_id, seed0, MAXSEED=1e6):
     ctime = int(re.findall(r"(?<=obs_)\d+", obs_id)[0])
-    if seed0 > MAXSEED:
+    if seed0 >= MAXSEED:
         raise ValueError("seed too large")
     return int(ctime * MAXSEED + seed0)
