@@ -218,7 +218,7 @@ class Bundler(_Coadder):
             indicating the inter-observation null split that observations
             belong to.
         abscal: dict
-            Nested dict in format {'f090': {'ws0': 1, 'ws1': 1, ...}, ...}.
+            Nested dict in format {'f090': {'ws0': 1, 'ws1': 1,...}, ...}.
             Maps will be multiplied by the abscal factor.
         parallelizor: tuple
             (MPICommExecutor or ProcessPoolExecutor, as_completed_callable, num_workers)
@@ -276,7 +276,7 @@ class SignFlipper(_Coadder):
             Optional; label indicating the telescope wafer to include.
             If no wafer is provided, coadd maps made for all the wafers.
         abscal: dict
-            Nested dict in format {'f090': {'ws0': 1, 'ws1': 1, ...}, ...}.
+            Nested dict in format {'f090': {'ws0': 1, 'ws1': 1,...}, ...}.
             Maps will be multiplied by the abscal factor.
         bundle_id: int
             Optional; ID corresponding to the bundle that observations belong
@@ -299,7 +299,7 @@ class SignFlipper(_Coadder):
         self.ws = bundle_info['weight'].to_numpy().copy()
 
         self.full_abscal = utils.get_abscal(abscal, bundle_info['wafer'], bundle_info['freq_channel'])
-        self.ws *= self.full_abscal**-2  # ivar gets -2 powers of abscal
+        self.ws = self.ws * (self.full_abscal**-2)  # ivar gets -2 powers of abscal
         self.wmaps = [utils.read_map(fname%'wmap',
                                      pix_type=self.pix_type,
                                      fields_hp=self.fields_hp)

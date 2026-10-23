@@ -793,7 +793,7 @@ class Cfg:
     atomic_list: str
         Path to npy file of atomic map names to restrict the atomic db
     abscal: dict
-        Multiplicative abscals {'ws0': {'f090': 0.8, 'f150': 0.9}, ...}
+        Multiplicative abscals {'f090': {'ws0': 1, 'ws1': 1,...}, ...}
     coadd_splits_name: str
         "split" name for the coadd of two splits
     coadd_split_pair: list

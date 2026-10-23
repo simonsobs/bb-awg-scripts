@@ -201,7 +201,7 @@ def main(args):
         elif nbatches_dict[patch] > 1:
             nbatch = nbatches_dict[patch]
             batches[patch] = range(nbatch)
-            nctimes = len(ctimes[patch, 'science', None])
+            nctimes = len(ctimes[patch, "science", None])
             if rank == 0:
                 logger.info(
                     f"{patch}: splitting atomics into {nbatch} random "
@@ -313,10 +313,6 @@ def main(args):
     loop_over = [(patch, freq, sim, split, sim_type, ib)
                  for ib in batches[patch]
                  for patch, freq, sim, split, sim_type in local_mpi_list]
-    
-    # Ensure that idle workers finish and don't hang
-    if not task_ids:
-        comm.barrier()
 
     for patch, freq_channel, sim_id, split_label, sim_type, ib in loop_over:
         task_element = (patch, freq_channel, sim_id, split_label, sim_type)
@@ -413,7 +409,10 @@ def main(args):
         if ib in [None, batches[patch][-1]]:
             logger.info(f"Done: {local_task_id+1}/{len(local_mpi_list)} "
                         f"for rank {rank}.")
-        comm.Barrier()
+
+    # All ranks sync here after completing their tasks
+    comm.barrier()
+
     if rank == 0:
         end = time.time()
         print(f"Coadding completed in (wall time) {int(end - start)}s.")
@@ -431,6 +430,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     config = fu.Cfg.from_yaml(args.config_file)
-    config.update(vars(args))
+    if args.sim_ids is not None:
+        config.update(vars(args))
 
     main(config)
