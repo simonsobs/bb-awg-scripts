@@ -1,0 +1,253 @@
+# These parameters are accessible to all stages.
+chains_dir: &chains_dir "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/satp3_iso_v4_calib_20260702_calib_fg_pxs_pxp-ell60-400_bn0_TEET" # _calib_fg_pxs_pxp-ell60-400" #_fg_wBB_pxs_pxp-ell60-400"
+covar_sacc: &covar_sacc "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260702_bn0_cross-Planck/science/saccs/cl_and_cov_sacc.fits" #cl_and_cov_sacc_rotated_calibrated.fits" #
+output_dir: &output_dir "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/satp3_iso_v4_calib_20260702_calib_fg_pxs_pxp-ell60-400_bn0_TEET" 
+
+global:
+    nside: 256
+    delta_ell: 15
+    compute_dell: True
+    sim_ids: null
+    config_copy: !path [*output_dir, config_copy.yaml]
+
+    data:
+        cells_coadded: *covar_sacc
+        cells_noise: null
+        cells_fiducial: null
+        cells_coadded_cov: *covar_sacc
+
+    # Tracer names must match the SACC file (SATp1 capitalized, satp3
+    # lowercase, as produced by the satp1xsatp3 cross-Planck SOOPERCOOL run).
+    # Beams are the same files used in
+    # paramfile_satp1_south_science_full_cross-Planck.yaml for each tracer
+    # class: bessel_analytic planet beams for the SATs, Planck
+    # beam_pol_*_long.txt window functions, WMAP 9yr v5p1 window functions.
+    map_sets:
+        satp3_f090_south_science:
+            #beam_file: "/scratch/gpfs/SIMONSOBS/sat-iso/beams/planets/20260602_bessel_analytic_cov_effective_v4_paper_20260520_science/satp3_science_v4_paper_f090.dat"
+            beam_file: "/scratch/gpfs/SIMONSOBS/sat-iso/beams/planets/20260602_bessel_analytic_cov_effective_v4_paper_20260520_science/satp3_science_v4_paper_f090_norm0.dat"
+        satp3_f150_south_science:
+            #beam_file: "/scratch/gpfs/SIMONSOBS/sat-iso/beams/planets/20260602_bessel_analytic_cov_effective_v4_paper_20260520_science/satp3_science_v4_paper_f150.dat"
+            beam_file: "/scratch/gpfs/SIMONSOBS/sat-iso/beams/planets/20260602_bessel_analytic_cov_effective_v4_paper_20260520_science/satp3_science_v4_paper_f150_norm0.dat"
+        Planck_f100_filtered_satp3_f090_south_science:
+            beam_file: "/scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_100_long.txt"
+        Planck_f143_filtered_satp3_f090_south_science:
+            beam_file: "/scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_143_long.txt"
+        Planck_f353_filtered_satp3_f090_south_science:
+            beam_file: "/scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_353_long.txt"
+
+BBCompSep:
+    output_dir: *chains_dir
+
+    # A best-fit minimization is always run and saved in chi2.npz/chi2.txt.
+    # Switch to emcee for posterior chains after the fast best-fit smoke test.
+    sampler: emcee
+    #sampler: maximum_likelihood
+    #sampler: single_point
+    nlive: 50
+    nrepeat: 50
+    nwalkers: 76 #48
+    n_iters: 5000
+    resume: True
+    predict_to_sacc: False
+
+    likelihood_type: chi2
+    # The SOOPERCOOL SACC was produced with compute_Dl=True. Its values and
+    # covariance are D_ell-like, and its bandpower windows map C_ell theory
+    # into D_ell bandpowers, so no extra C_ell/D_ell conversion is needed here.
+    # 'ell_band' keeps all spectrum-spectrum correlations within
+    # +-covariance_ell_band ell bins and zeroes the rest (band 0 = full
+    # same-ell correlations, no ell-to-ell coupling). Eigenvalues below
+    # covariance_band_eig_floor_rel * max_eigenvalue (default 1.e-12) are
+    # floored to keep the banded matrix invertible.
+    #covariance_mode: ell_band
+    #covariance_ell_band: 1
+    #
+    #covariance_mode: diagonal
+    #covariance_eig_floor_rel: 1.e-2
+    #
+    covariance_mode: full
+    r_init: 1.e-3
+
+    # Keep T available for CMB-based gain calibration, but select spectra by
+    # tracer pair below so dusty Planck 353 temperature does not enter.
+    pol_channels: ['T', 'E', 'B']
+    # Pair-specific likelihood selection:
+    # - TT uses SAT x Planck 100/143 only to separate gain from pol efficiency.
+    # - EE/EB/BB use SAT x SAT and SAT x external channels to constrain
+    #   polarized dust (anchored at 353) and synchrotron (anchored by
+    #   Planck 030 and WMAP K/Ka).
+    # Rules are unordered by default, so they match either tracer ordering in
+    # the SACC/vector iterator.
+    fit_spectrum_rules:
+    - name: gain_tt_planck_100_143
+      spectra: ['TT', 'TE', 'ET']
+      #spectra: ['TT'] 
+      tracer1:
+      - 'satp3_*'
+      tracer2:
+      - 'planck_f100_*'
+      - 'planck_f143_*'
+    - name: dust_pol_all_sat_ext
+      spectra: ['EE', 'EB', 'BE'] #,'BB'] #
+      #spectra: ['EE','BB'] #
+      tracer1:
+      - 'satp3_*'
+      - 'planck_f100_*'
+      - 'planck_f143_*'
+      - 'planck_f353_*'
+      tracer2:
+      #- 'satp3_*'
+      - 'planck_f100_*'
+      - 'planck_f143_*'
+      - 'planck_f353_*'
+    #include_sat_auto: True
+    #include_planck_auto: True
+
+    l_min: 60
+    l_max: 400
+
+    cmb_model:
+        cmb_templates:
+        - /home/sa5705/software/BBPower/examples/data/camb_lens_nobb.dat
+        - /home/sa5705/software/BBPower/examples/data/camb_lens_r1.dat
+        params:
+            #r_tensor: ['r_tensor', 'tophat', [-0.1, 0.00, 0.1]]
+            r_tensor: ['r_tensor', 'fixed', [0.00]]
+            #A_lens: ['A_lens', 'tophat', [0.00,1.0,2.00]]
+            A_lens: ['A_lens', 'fixed', [1.00]]
+
+    fg_model:
+        use_moments: False
+        moments_lmax: 192
+
+        component_1:
+            name: Dust
+            sed: Dust
+            cl:
+                EE: ClPowerLaw
+                BB: ClPowerLaw
+            sed_parameters:
+                # beta_d fitted (Gaussian prior), per request.
+                beta_d: ['beta_d', 'Gaussian', [1.4, 0.3]]
+                temp_d: ['temp', 'fixed', [20.0]]
+                nu0_d: ['nu0', 'fixed', [353.0]]
+            cl_parameters:
+                EE:
+                    amp_d_ee: ['amp', 'Gaussian', [12.0, 10.0]]
+                    alpha_d_ee: ['alpha', 'tophat', [-2., -0.5, -0.01]]
+                    #alpha_d_ee: ['alpha', 'fixed', [-0.5]]
+                    l0_d_ee: ['ell0', 'fixed', [80.0]]
+                BB:
+                    amp_d_bb: ['amp', 'Gaussian', [6.0, 5.0]]
+                    alpha_d_bb: ['alpha', 'tophat', [-2.0, -0.5, -0.01]]
+                    #alpha_d_bb: ['alpha', 'fixed', [-0.5]]
+                    l0_d_bb: ['ell0', 'fixed', [80.0]]
+            #cross:
+            #    # Dust x synchrotron correlation, free over the physical range.
+            #    #epsilon_ds: ['component_2', 'tophat', [-1.0, 0.0, 1.0]]
+            #    epsilon_ds: ['component_2', 'fixed', [0.]]
+            moments:
+                gamma_d_beta: ['gamma_beta', 'tophat', [-6.0, -3.5, -2.0]]
+                amp_d_beta: ['amp_beta', 'tophat', [0.0, 0.0, 1.0]]
+
+        #component_2:
+        #    name: Synchrotron
+        #    sed: Synchrotron
+        #    cl:
+        #        EE: ClPowerLaw
+        #        BB: ClPowerLaw
+        #    sed_parameters:
+        #        beta_s: ['beta_pl', 'Gaussian', [-3.0, 0.5]]
+        #        nu0_s: ['nu0', 'fixed', [23.0]]
+        #    cl_parameters:
+        #        EE:
+        #            amp_s_ee: ['amp', 'tophat', [0.0, 1.0, 10.0]]
+        #            alpha_s_ee: ['alpha', 'tophat', [-3.0, -0.6, 2.0]]
+        #            #alpha_s_ee: ['alpha', 'fixed', [-0.3]]
+        #            l0_s_ee: ['ell0', 'fixed', [80.0]]
+        #        BB:
+        #            amp_s_bb: ['amp', 'tophat', [0.0, 0.1, 2.0]]
+        #            alpha_s_bb: ['alpha', 'tophat', [-3.0, -0.4, 3.0]]
+        #            l0_s_bb: ['ell0', 'fixed', [80.0]]
+        #    moments:
+        #        gamma_s_beta: ['gamma_beta', 'tophat', [-6.0, -3.5, -2.0]]
+        #        amp_s_beta: ['amp_beta', 'tophat', [0.0, 0.0, 1.0]]
+
+    systematics:
+        bandpasses:
+            # SATs: fit gain, polarization efficiency and angle at both freqs.
+            satp3_f090_south_science:
+                parameters:
+                    #gain_satp3_f090: ['gain', 'tophat', [0.70, 0.85, 1.10]]
+                    gain_satp3_f090: ['gain', 'tophat', [0.70, 1.00, 1.30]]
+                    poleff_satp3_f090: ['poleff', 'tophat', [0.70, 0.87, 1.00]]
+                    angle_satp3_f090: ['angle', 'Gaussian', [0.5, 2.]]
+                    #gain_satp3_f090: ['gain', 'fixed', [1.00]]
+                    #poleff_satp3_f090: ['poleff', 'fixed', [1.00]]
+                    #angle_satp3_f090: ['angle', 'fixed', [1.00]]
+                    #gain_satp3_f090: ['gain', 'fixed', [0.79]]
+                    #poleff_satp3_f090: ['poleff', 'fixed', [0.91]]
+                    #angle_satp3_f090: ['angle', 'fixed', [-0.40]]
+            satp3_f150_south_science:
+                parameters:
+                    #gain_satp3_f150: ['gain', 'tophat', [0.70, 0.90, 1.10]]
+                    gain_satp3_f150: ['gain', 'tophat', [0.70, 1.00, 1.30]]
+                    poleff_satp3_f150: ['poleff', 'tophat', [0.70, 0.92, 1.0]]
+                    angle_satp3_f150: ['angle', 'Gaussian', [0.0, 2.]]
+                    #gain_satp3_f150: ['gain', 'fixed', [1.00]]
+                    #poleff_satp3_f150: ['poleff', 'fixed', [1.00]]
+                    #angle_satp3_f150: ['angle', 'fixed', [1.00]]
+                    #gain_satp3_f150: ['gain', 'fixed', [0.85]]
+                    #poleff_satp3_f150: ['poleff', 'fixed', [0.92]]
+                    #angle_satp3_f150: ['angle', 'fixed', [0.17]]
+            # Externals: calibration fixed. Beam windows come from the
+            # map_sets beam_file entries, so no fixed FWHM 'beam' parameter.
+            Planck_f100_filtered_satp3_f090_south_science:
+                parameters:
+                    gain_planck_f100: ['gain', 'fixed', [1.0]]
+                    poleff_planck_f100: ['poleff', 'fixed', [1.0]]
+                    angle_planck_f100: ['angle', 'fixed', [0.0]]
+            Planck_f143_filtered_satp3_f090_south_science:
+                parameters:
+                    gain_planck_f143: ['gain', 'fixed', [1.0]]
+                    poleff_planck_f143: ['poleff', 'fixed', [1.0]]
+                    angle_planck_f143: ['angle', 'fixed', [0.0]]
+            Planck_f353_filtered_satp3_f090_south_science:
+                parameters:
+                    gain_planck_f353: ['gain', 'fixed', [1.0]]
+                    poleff_planck_f353: ['poleff', 'fixed', [1.0]]
+                    angle_planck_f353: ['angle', 'fixed', [0.0]]
+
+BBPlotter:
+    pol_channels: ['E', 'B']
+    lmin_plot: 90
+    lmax_plot: 400
+    plot_coadded_total: False
+    plot_noise: False
+    plot_nulls: False
+    plot_likelihood: True
+    params_plot:
+    - beta_d
+    - amp_d_ee
+    - alpha_d_ee
+    - amp_d_bb
+    - alpha_d_bb
+    - beta_s
+    - amp_s_ee
+    - alpha_s_ee
+    - amp_s_bb
+    - alpha_s_bb
+    - epsilon_ds
+    - gain_satp1_f090
+    - poleff_satp1_f090
+    - angle_satp1_f090
+    - gain_satp1_f150
+    - poleff_satp1_f150
+    - angle_satp1_f150
+    - gain_satp3_f090
+    - poleff_satp3_f090
+    - angle_satp3_f090
+    - gain_satp3_f150
+    - poleff_satp3_f150
+    - angle_satp3_f150

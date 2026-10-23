@@ -5,7 +5,7 @@ atomic_db: '/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/mapmaking/satp3_20260417_no
 output_dir: &output_dir /scratch/gpfs/SIMONSOBS/users/sa5705/SO/ISO_v4_paper/filtered_ext_data_20260417_noazss/planck/f{sim_type}/satp3/{patch}/{freq_channel}
 sim_dir: /scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/maps
 atomic_sim_dir: !path [*output_dir, atomic_maps]
-sim_string_format: "planck_car_{sim_type}_bundle0_res1.0amin_coords_c.fits"
+sim_string_format: "planck_car_{sim_type}_bundle0_res1.0amin_coords_c.efits"
 
 # For filtering on 4 tiger nodes, 2 sims take <~ 3 hours.
 #sim_types: ["030", "100", "143", "217", "353"]  # ext data freq channel
