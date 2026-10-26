@@ -4,6 +4,59 @@ from pixell import enmap
 from pixell import uharm
 from pixell import curvedsky
 import os
+import camb
+import sys
+sys.path.insert(0, "/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/misc")
+import mpi_utils as mpi  # noqa
+
+
+cosmo = {
+    "cosmomc_theta": 0.0104085,
+    "As": 2.1e-9,
+    "ombh2": 0.02237,
+    "omch2": 0.1200,
+    "ns": 0.9649,
+    "Alens": 1.0,
+    "tau": 0.0544,
+    "r": 0.0,
+}
+
+
+def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
+    """
+    Computes CAMB theory power spectra given an input cosmology.
+
+    Arguments
+    ---------
+    :param cosmo_params: dict
+        dictionary containing the cosmology parameters input to CAMB
+    :param lmax: int
+        maximum multipole to output
+    :param lmin: int
+        minimum multipole to output
+    :param beam_fwhm: float
+        Beam FWHM to convolve the theory spectrum with, in arcminutes
+    """
+    params = camb.set_params(**cosmo_params)
+    results = camb.get_results(params)
+    powers = results.get_cmb_power_spectra(params, CMB_unit='muK', raw_cl=True)
+    lth = np.arange(lmin, lmax+1)
+
+    cl_th = {
+        "TT": powers["total"][:, 0][lmin:lmax+1],
+        "EE": powers["total"][:, 1][lmin:lmax+1],
+        "TE": powers["total"][:, 3][lmin:lmax+1],
+        "BB": powers["total"][:, 2][lmin:lmax+1]
+    }
+    for spec in ["EB", "TB"]:
+        cl_th[spec] = np.zeros_like(lth)
+
+    if beam_fwhm is not None:
+        sig = beam_fwhm / np.sqrt(8. * np.log(2)) / 60. * np.pi/180.
+        bl = np.exp(-0.5*lth*(lth+1)*sig**2)
+        cl_th = {spec: cl_th[spec]*bl**2 for spec in cl_th}
+
+    return lth, cl_th
 
 
 def _check_pix_type(pix_type):
@@ -155,6 +208,7 @@ def main(args):
     pols_keep = args.pols_keep
     nside = args.nside
     car_template = args.car_template_map
+    cl_shape = args.cl_shape
 
     out_dir = args.out_dir
     if not os.path.isdir(out_dir):
@@ -187,29 +241,51 @@ def main(args):
     ells = np.arange(lmax_sim + 1)
     beam = hp.gauss_beam(np.radians(smooth_fwhm/60.), lmax_sim)
 
-    ps = 1 / (ells + 0.01)**2 * beam**2
+    if cl_shape in ["cmbee_like", "cmbbb_like"]:
+        ls, cl_cmb = get_theory_cls(cosmo, lmax=lmax_sim,
+                                    beam_fwhm=smooth_fwhm)
+        idx = "EE" if cl_shape == "cmbee_like" else "BB"
+        ps = np.concatenate(
+            [cl_cmb[idx][:100],
+             cl_cmb[idx][101]*(100+10)**2/(ls[100:]+0.01)**2 * beam[100:]**2]
+        )
+    else:
+        ps = 1 / (ells + 0.01)**2 * beam**2
+    ps[:2] = 0.
     fl = bandlim_sine2(ells, 650, 50)
+    label = "power_law" if cl_shape == "plaw" else cl_shape
+
+    np.savez(f"/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/{label}_cl_fwhm{smooth_fwhm}_lmax{lmax}.npz", cl=ps*fl, l=ells)  # noqa: E501
 
     pure_types = [f"pure{p}" for p in pols_keep]
 
-    for id_sim in range(id_start, id_start+n_sims):
+    # MPI initialization
+    rank, size, comm = mpi.init(True)
+
+    # Every rank must have the same shared list
+    mpi_shared_list = list(range(id_start, id_start+n_sims))
+    mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
+    task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list),
+                                    logger=None)
+    local_mpi_list = [mpi_shared_list[i] for i in task_ids]
+
+    for id_sim in local_mpi_list:
         print(f"sim {id_sim+1} / {id_start + n_sims}")
         np.random.seed(id_sim)
-        alms = hp.synalm(ps, lmax=lmax)  # TODO: check if CAR is biased
+        alms = hp.synalm(ps, lmax=lmax)
         alms = hp.almxfl(alms, fl)
 
         for tag in pure_types:
             i = {"pureT": 0, "pureE": 1, "pureB": 2}[tag]
-            alms_list = 3*[alms*0]
+            alms_list = np.array(3*[alms*0], dtype=np.complex128)
             alms_list[i] = alms
 
             if pix_type == "hp":
-                print("alms_list", len(alms_list), alms_list[0].shape)
                 map = hp.alm2map(
                     alms_list, nside, lmax=lmax
                 )
                 hp.write_map(
-                    f"{out_dir}/{tag}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
+                    f"{out_dir}/{tag}_nside{nside}_fwhm{int(smooth_fwhm)}_sim{id_sim:04d}_HP.fits",  # noqa
                     map,
                     overwrite=True,
                     dtype=np.float64
@@ -220,7 +296,7 @@ def main(args):
                     template
                 )
                 enmap.write_map(
-                    f"{out_dir}/{tag}_{res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
+                    f"{out_dir}/{tag}_{round(res_arcmin)}arcmin_fwhm{int(smooth_fwhm)}_sim{id_sim:04d}_CAR.fits",  # noqa
                     map
                 )
 
@@ -275,6 +351,11 @@ if __name__ == "__main__":
         help="Pure polarization types to keep, e.g. 'TEB' means that pureT,"
              "pureE, pureB will all be simulated.",
         default="TEB"
+    )
+    parser.add_argument(
+        "--cl_shape", type=str, default="plaw",
+        help="What power spectrum shape to load. Can be 'plaw', 'cmbee_like',"
+             " 'cmbbb_like'. Defaults to 'plaw'."
     )
     args = parser.parse_args()
 

@@ -1,5 +1,6 @@
 import healpy as hp
-from pixell import enmap, enplot, curvedsky, uharm
+from pixell import enmap, curvedsky, uharm
+# from pixell import enplot
 import numpy as np
 import os
 import camb
@@ -142,12 +143,12 @@ def main(args):
         print(f"sim {id_sim+1} / {id_start + n_sims}")
         alms = hp.synalm(
             [clth["TT"], clth["TE"], clth["EE"], clth["BB"]],
-            lmax=lmax  # TODO: check if CAR is biased
+            lmax=lmax
         )
         if args.pix_type == "hp":
             map = hp.alm2map(alms, nside=nside, lmax=lmax)
             hp.write_map(
-                f"{out_dir}/cmb{pols_keep}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa
+                f"{out_dir}/cmb{pols_keep}_nside{nside}_fwhm{int(smooth_fwhm)}_sim{id_sim:04d}_HP.fits",  # noqa
                 map,
                 overwrite=True,
                 dtype=np.float64
@@ -155,20 +156,20 @@ def main(args):
         elif args.pix_type == "car":
             map = curvedsky.alm2map(alms, template, copy=True)
             enmap.write_map(
-                f"{out_dir}/cmb{pols_keep}_{round(res)}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa
+                f"{out_dir}/cmb{pols_keep}_{round(res)}arcmin_fwhm{int(smooth_fwhm)}_sim{id_sim:04d}_CAR.fits",  # noqa
                 map
             )
-            if do_plots:
-                for i, fp in enumerate("TQU"):
-                    lim = 3e-6 if i else 2e-4
-                    plot = enplot.plot(
-                        map[i], color="planck", ticks=10, range=lim,
-                        colorbar=True
-                    )
-                    enplot.write(
-                        f"{out_dir}/plots/cmb{pols_keep}_{int(res)}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR_{fp}",  # noqa
-                        plot
-                    )
+            # if do_plots:
+            #     for i, fp in enumerate("TQU"):
+            #         lim = 3e-6 if i else 2e-4
+            #         plot = enplot.plot(
+            #             map[i], color="planck", ticks=20, range=lim,
+            #             colorbar=True
+            #         )
+            #         enplot.write(
+            #             f"{out_dir}/plots/cmb{pols_keep}_{int(res)}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR_{fp}",  # noqa
+            #             plot
+            #         )
 
 
 if __name__ == "__main__":

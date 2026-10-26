@@ -134,7 +134,7 @@ def main(args):
     The power-law shape is C_ell ~ 1/(0.01+ell)**2.
 
     The output file names will be
-    "{out_dir}/{map_label}{pols_keep}_{res_string}_fwhm{beam_string}_sim{id_sim:04d}_{PIX_TYPE}.fits"
+    "{out_dir}/plaw{pols_keep}_{res_string}_fwhm{beam_string}_sim{id_sim:04d}_{PIX_TYPE}.fits"  # noqa: E501
 
     Command line arguments are:
         - out_dir: str, output directory where to save sims at
@@ -147,15 +147,12 @@ def main(args):
         - car_template: str, path to Pixell geometry template file
         - pols_keep: str, can be "TEB" or any one- or two-letter subset; type
           of simulations to be generated for each realizations
-        - map_label: optional, str. Prefix for output file names. Default is
-          "plaw" for power law.
     """
     pix_type = args.pix_type
     n_sims = args.n_sims
     id_start = args.sim_id_start
     smooth_fwhm = args.smooth_fwhm
     nside = args.nside
-    map_label = args.map_label
     pols_keep = args.pols_keep
     car_template = args.car_template_map
 
@@ -191,15 +188,16 @@ def main(args):
     beam = hp.gauss_beam(np.radians(smooth_fwhm/60.), lmax_sim)
 
     ps = 1 / (ells + 0.01)**2 * beam**2
+    ps[:2] = 0.
     fl = bandlim_sine2(ells, 650, 50)
 
     for id_sim in range(id_start, id_start+n_sims):
+
         print(f"sim {id_sim+1} / {id_start + n_sims}")
         np.random.seed(id_sim)
         alms = hp.synalm(ps, lmax=lmax)  # TODO: check if CAR is biased
         alms = hp.almxfl(alms, fl)
-
-        alms_list = 3*[np.zeros_like(alms)]
+        alms_list = np.array(3*[np.zeros_like(alms)], dtype=np.complex128)
 
         for i, type in enumerate("TEB"):
             if type in pols_keep:
@@ -210,7 +208,7 @@ def main(args):
                 alms_list, nside, lmax=lmax
             )
             hp.write_map(
-                f"{out_dir}/{map_label}{pols_keep}_nside{nside}_fwhm{smooth_fwhm}_sim{id_sim:04d}_HP.fits",  # noqa: E501
+                f"{out_dir}/plaw{pols_keep}_nside{nside}_fwhm{int(smooth_fwhm)}_sim{id_sim:04d}_HP.fits",  # noqa: E501
                 map,
                 overwrite=True,
                 dtype=np.float64
@@ -221,7 +219,7 @@ def main(args):
                 template
             )
             enmap.write_map(
-                f"{out_dir}/{map_label}{pols_keep}_{res_arcmin:.1f}arcmin_fwhm{smooth_fwhm}_sim{id_sim:04d}_CAR.fits",  # noqa: E501
+                f"{out_dir}/plaw{pols_keep}_{round(res_arcmin)}arcmin_fwhm{int(smooth_fwhm)}_sim{id_sim:04d}_CAR.fits",  # noqa: E501
                 map
             )
 
@@ -276,12 +274,6 @@ if __name__ == "__main__":
         help="Polarization types to keep, e.g. 'TEB', 'EB', 'B'. "
              "Others will be set to zero in the maps.",
         default="TEB"
-    )
-    parser.add_argument(
-        "--map_label",
-        help="Label for each map. For TF estimation sims, use 'pure', for "
-             "validation sims, use 'plaw'.",
-        default="plaw"
     )
     args = parser.parse_args()
 
