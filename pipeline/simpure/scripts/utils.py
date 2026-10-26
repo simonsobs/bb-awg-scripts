@@ -20,6 +20,8 @@ import toast
 # * 2026/04/29: add class MatrixPurification
 # * 2026/06/18: add documentation
 # * 2026/08/24: add alternative matrix purification options.
+# * 2026/09/26: add bundles dimension to deproject_many and MatrixPurification.
+# * 2026/10/17: added no-filter option to deprojection and matrix purification
 
 
 class MatrixPurification:
@@ -49,7 +51,7 @@ class MatrixPurification:
         num_e = int(norm_eigvecs.shape[0]*thresh_lo)
         num_b = int(norm_eigvecs.shape[0]*thresh_hi)
         vE = norm_eigvecs[:, :num_e]  # pure-B modes: from 0 to thresh_hi
-        vB = norm_eigvecs[:, num_b:]  # pure-E modes: from thresh_hi to 1 
+        vB = norm_eigvecs[:, num_b:]  # pure-E modes: from thresh_hi to 1
         self.pmatE = np.tensordot(vE, vE, axes=((1,), (1,)))
         self.pmatB = np.tensordot(vB, vB, axes=((1,), (1,)))
 
@@ -65,7 +67,7 @@ class MatrixPurification:
             Full input path to TOAST observation matrix
         :param apply_map: bool
             Whether to multiply the observed map by the analysis mask
-        
+
         Returns
         -------
         array-like
@@ -83,18 +85,19 @@ class MatrixPurification:
             self.obsmat = obsmat[mask3][:, mask3]
         Rm = np.zeros_like(map)
         Rm[0] = map[0]  # don't do anything to temperature
-        Rm[1:, msk] = (self.obsmat @ map.copy()[1:,msk].ravel()).reshape((2,-1))
+        Rm[1:, msk] = (self.obsmat @ map.copy()[1:, msk].ravel()).reshape((2, -1))  # noqa: E501
         if not apply_mask:
             return Rm
         return Rm * self.mask_apo[None, :]
 
-    def purify_observed_map(self, map_obs, lmax, purify_b=True, purify_e=False):
+    def purify_observed_map(self, map_obs, lmax, purify_b=True,
+                            purify_e=False):
         """
         Apply matrix-based purification to observed and masked map.
 
         Parameters
         ----------
-        map_obs: np.ndarray, shape (nmaps, npix)
+        map_obs: np.ndarray, shape (nmaps, npix) or (nbundles, nmaps, npix)
             Observed and masked HEALPix map. nmaps is either 2 or 3.
         purify_b: bool
             Whether to apply B-mode matrix purification
@@ -103,38 +106,228 @@ class MatrixPurification:
         """
         if not purify_b and not purify_e:
             return map_obs
-        if map_obs.shape[0] != 3 or map_obs.ndim != 2:
-            raise ValueError("Map must be TQU healpix map.")
-    
-        npix = len(map_obs[0])
+
+        # Determine if map contains noise bundles
+        ndim = 3 if hasattr(map_obs, "wcs") else 2
+        assert map_obs.ndim in [ndim, ndim+1]
+        if map_obs.ndim == ndim+1 and map_obs.shape[0] == 1:
+            nbundles = 1
+        elif map_obs.ndim == ndim:
+            nbundles = 0
+        elif map_obs.ndim == ndim+1:
+            nbundles = map_obs.shape[0]
+        else:
+            raise ValueError(
+                "Map shape must be [3, npix] or [nbundles, 3, npix].")
+
+        npix = len(map_obs[0]) if nbundles == 0 else len(map_obs[0, 0])
         nside = hp.npix2nside(npix)
         msk = self.mask_bool
         PZRm = np.zeros_like(map_obs)
-        PZRm[0] = map_obs[0]  # don't do anything to temperature
+        # don't do anything to temperature
+        if nbundles == 0:
+            PZRm[0] = map_obs[0]
+        else:
+            PZRm[:, 0] = map_obs[:, 0]
 
         # Purify
         if purify_b:
-            # Variant A: take B component of purified ZRm
-            Bpure_ZRm = np.zeros((3, npix))
-            Bpure_ZRm[1:, msk] = (self.pmatB @ map_obs[1:,msk].ravel()).reshape((2,-1))
-            _, _, almB = hp.map2alm(Bpure_ZRm)
+            # Take B component of purified ZRm
+            if nbundles == 0:
+                Bpure_ZRm = np.zeros((3, npix))
+                Bpure_ZRm[1:, msk] = (self.pmatB @ map_obs[1:, msk].ravel()).reshape((2, -1))  # noqa: E501
+                _, _, almB = hp.map2alm(Bpure_ZRm)
+            else:
+                Bpure_ZRm = np.zeros((nbundles, 3, npix))
+                Bpure_ZRm[:, 1:, msk] = np.einsum(
+                    "ij,bj->bi",
+                    self.pmatB,
+                    map_obs[:, 1:, msk].reshape((nbundles, -1))
+                ).reshape((nbundles, 2, -1))
+                almB = np.array([hp.map2alm(bp)[2] for bp in Bpure_ZRm],
+                                dtype=np.complex128)
+
             # # Variant B: take purified B-component of ZRm
             # Bpure_ZRm_B = np.zeros((3, npix))
             # _, _, almB = hp.map2alm(map_obs)
-            # ZRm_B = hp.alm2map([np.zeros_like(almB), np.zeros_like(almB), almB], nside=nside)
-            # Bpure_ZRm_B[1:, msk] = (self.pmatB @ ZRm_B[1:,msk].ravel()).reshape((2,-1))
+            # ZRm_B = hp.alm2map([np.zeros_like(almB), np.zeros_like(almB), almB], nside=nside)  # noqa: E501
+            # Bpure_ZRm_B[1:, msk] = (self.pmatB @ ZRm_B[1:,msk].ravel()).reshape((2,-1))  # noqa: E501
             # _, _, almB = hp.map2alm(Bpure_ZRm_B)
-            if not purify_e:
-                _, almE, _ = hp.map2alm(map_obs)
+        else:
+            if nbundles == 0:
+                almB = hp.map2alm(map_obs)[2]
+            if nbundles > 0:
+                almB = np.array([hp.map2alm(mo)[2] for mo in map_obs],
+                                dtype=np.complex128)
         if purify_e:
-            Epure_ZRm = np.zeros((3, npix))
-            Epure_ZRm[1:, msk] = (self.pmatE @ map_obs[1:,msk].ravel()).reshape((2,-1))
-            _, almE, _ = hp.map2alm(Epure_ZRm)
-            if not purify_b:
-                _, almB, _ = hp.map2alm(map_obs)
+            if nbundles == 0:
+                Epure_ZRm = np.zeros((3, npix))
+                Epure_ZRm[1:, msk] = (
+                    self.pmatE @ map_obs[1:, msk].ravel()
+                ).reshape((2, -1))
+                _, almE, _ = hp.map2alm(Epure_ZRm)
+            else:
+                Epure_ZRm = np.zeros((nbundles, 3, npix))
+                Epure_ZRm[:, 1:, msk] = np.einsum(
+                    "ij,bj->bi",
+                    self.pmatE,
+                    map_obs[:, 1:, msk].reshape((nbundles, -1))
+                ).reshape((nbundles, 2, -1))
+                almE = np.array([hp.map2alm(bp)[2] for bp in Epure_ZRm],
+                                dtype=np.complex128)
+        else:
+            if nbundles == 0:
+                almE = hp.map2alm(map_obs)[1]
+            if nbundles > 0:
+                almE = np.array([hp.map2alm(mo)[1] for mo in map_obs],
+                                dtype=np.complex128)
 
-        PZRm[1:] = hp.alm2map([np.zeros_like(almE), almE, almB], nside, lmax)[1:]
+        if nbundles == 0:
+            PZRm[1:] = hp.alm2map([np.zeros_like(almE), almE, almB],
+                                  nside, lmax)[1:]
+        else:
+            PZRm[:, 1:] = np.array([
+                hp.alm2map([np.zeros_like(almE[ib]), almE[ib], almB[ib]],
+                           nside, lmax)[1:]
+                for ib in range(nbundles)
+            ], dtype=np.float64)
+
         return PZRm
+
+
+def no_filter_map(mp, obsmat=None, ignore_T=False, mask_bin=None,
+                  dkx=20, dky=0, type="cosine"):
+    if mask_bin is None:
+        mask_bin = np.ones_like(mp[0])
+    mp *= mask_bin[None, :]
+
+    return mp
+
+
+def obsmat_filter_map(mp, obsmat=None, ignore_T=False, mask_bin=None,
+                      dkx=20, dky=0, type="cosine"):
+    """
+    Apply an observation matrix to a QU polarization map, and return the
+    filtered QU map.
+
+    Parameters
+    ---------
+        mp: np.array
+            TQU map to be filtered.
+        obsmat: toast.Obsmat object
+            Observation matrix to filter simulations.
+        mask_binary: np.array
+            Binary mask to (optionally) mask the map before applying the obsmat
+
+    Returns
+    -------
+        mp_filtered: np.array
+            Filtered TQU map.
+    """
+    if mask_bin is None:
+        mask_bin = np.ones_like(mp[0])
+    mpT, mpQ, mpU = mask_bin[None, :] * mp.copy()
+    if obsmat is None:
+        return np.array([mpT, mpQ, mpU])
+    mpQ = hp.reorder(mpQ, r2n=True)
+    mpU = hp.reorder(mpU, r2n=True)
+    mpTf, mpQf, mpUf = obsmat.apply(np.hstack([mpT, mpQ, mpU])).reshape([3, -1])  # noqa: E501
+    mpTf = hp.reorder(mpTf, n2r=True)
+    mpQf = hp.reorder(mpQf, n2r=True)
+    mpUf = hp.reorder(mpUf, n2r=True)
+
+    if ignore_T:
+        np.array([mp.copy()[0], mpQf, mpUf])
+    return np.array([mpTf, mpQf, mpUf])
+
+
+def kspace_filter(m, dkx=0, dky=0, type="cosine", pix_type="car"):
+    """
+    Taken from SOOPERCOOL/soopercool/fft_utils.py
+    Filter the Fourier space of the map `m`
+
+    Parameters
+    ----------
+    m : enmap
+        The input map to be filtered.
+    dkx : float, optional
+        The cutoff in the kx direction.
+        Modes with |kx| < dkx will be filtered out.
+        Default is 0 (no filtering).
+    dky : float, optional
+        The cutoff in the ky direction.
+        Modes with |ky| < dky will be filtered out.
+        Default is 0 (no filtering).
+    type : str, optional
+        The type of filter to apply.
+        Options are "sharp" (default) for a hard cutoff
+        and "cosine" for a smooth cosine taper.
+    """
+    if pix_type == "hp":
+        raise NotImplementedError(
+            "k-space filtering is currently only implemented for CAR maps."
+        )
+
+    elif pix_type == "car":
+        ky, kx = m.lmap()
+        mf = enmap.fft(m)
+
+        if type == "sharp":
+            msk_x = np.abs(kx) < dkx
+            msk_y = np.abs(ky) < dky
+            msk = msk_x | msk_y
+            mf[:, msk] = 0.0
+        if type == "cosine":
+            w_x = cosine_taper(np.abs(kx), 0, dkx)
+            w_y = cosine_taper(np.abs(ky), 0, dky)
+            mf *= w_x * w_y
+        mf_back = enmap.ifft(mf).real
+        return mf_back
+
+
+def kspace_filter_map(mp, obsmat=None, ignore_T=False, mask_bin=None,
+                      dkx=20, dky=0, type="cosine"):
+    """
+    Apply a k-space filter to a CAR-pixelized map.
+    """
+    if not hasattr(mp, "wcs"):
+        raise NotImplementedError("Input map must be a pixell ndmap.")
+    kspace_pars = {"dkx": dkx, "dky": dky, "type": type}
+    mp_filtered = kspace_filter(
+        mp,
+        pix_type="car",
+        **kspace_pars
+    )
+    return mp_filtered
+
+
+def cosine_taper(k, kmin, kmax):
+    """
+    from SOOPERCOOL/soopercool/fft_utils.py
+    Utility function to create a cosine taper filter in Fourier space.
+    Transition smoothly from 0 to 1 between kmin and kmax.
+
+    Parameters
+    ----------
+    k : numpy.ndarray
+        The wavenumber array.
+    kmin : float
+        The minimum wavenumber for the taper.
+    kmax : float
+        The maximum wavenumber for the taper.
+
+    Returns
+    -------
+    numpy.ndarray
+        The taper filter.
+    """
+    if kmax == kmin:
+        return np.ones_like(k)
+    w = np.zeros_like(k)
+    mask = (k >= kmin) & (k <= kmax)
+    w[mask] = 0.5 * (1 - np.cos(np.pi * (k[mask] - kmin) / (kmax - kmin)))
+    w[k > kmax] = 1.0
+    return w
 
 
 def get_npix_integer_factors(nside):
@@ -162,8 +355,8 @@ def detrend_linear(tod, axis=1, dtype=float):
 def counter_1_over_f(freqs, fk=1., n=2):
     """
     Counter 1/f filter for noise w/ PSD that follows:
-    
-    w*(1 + (fk/f)**n) 
+
+    w*(1 + (fk/f)**n)
     where w is the white noise level, fk is the knee frequency, and
     n is the 1/f index.
     You need the (fk, n) pair or noise_fit_stats to apply this filter.
@@ -198,7 +391,7 @@ def subscan_polyfilter(tod, axis=1, nsamp_subscan=2048, degree=1):
     subscan_indices = np.arange(0, tod.shape[axis]+1, nsamp_subscan)
 
     for start, end in zip(subscan_indices[:-1], subscan_indices[1:]):
-        ### Normalization constant of legendre function 
+        #  Normalization constant of legendre function
         norm_vector = np.arange(degree_corr)
         norm_vector = 2./(2.*norm_vector+1)
 
@@ -218,7 +411,7 @@ def subscan_polyfilter(tod, axis=1, nsamp_subscan=2048, degree=1):
 
         # Make model to be subtracted
         coeffs = np.dot(arr_legendre, tod_mat.T)
-        model = np.dot((coeffs/norm_vector[:, np.newaxis]).T,arr_legendre)*dx
+        model = np.dot((coeffs/norm_vector[:, np.newaxis]).T, arr_legendre)*dx
 
         model += means
         tod[:, start:end] -= model
@@ -266,7 +459,7 @@ def toy_filter_healpix(map_in,
 
     # FFT filtering 
     ftod_buffered = np.fft.rfft(tod_buffered, axis=1)
-    freq = np.fft.fftfreq(ftod_buffered[0,:,0].size, d=Tsamp)
+    freq = np.fft.fftfreq(ftod_buffered[0, :, 0].size, d=Tsamp)
     ftod_buffered *= counter_1_over_f(freq, fk=fknee_coof, n=2)[None, :, None]
 
     # TOD 2 SKY
@@ -312,7 +505,7 @@ def get_theory_cls(cosmo_params, lmax, lmin=0, beam_fwhm=None):
         cl_th[spec] = np.zeros_like(lth)
 
     if beam_fwhm is not None:
-        sig = beam_fwhm / np.sqrt(8. * np.log(2)) /60. * np.pi/180.
+        sig = beam_fwhm / np.sqrt(8. * np.log(2)) / 60. * np.pi/180.
         bl = np.exp(-0.5*lth*(lth+1)*sig**2)
         cl_th = {spec: cl_th[spec]*bl**2 for spec in cl_th}
 
@@ -345,7 +538,7 @@ def get_plaw_cls(lmax, lmin=0, index=2, offset=0.01, beam_fwhm=None):
     for pol in ["TT", "TE", "ET", "TB", "BT", "EB", "BE"]:
         cl_th[pol] = 0. * clpl
     if beam_fwhm is not None:
-        sig = beam_fwhm / np.sqrt(8. * np.log(2)) /60. * np.pi/180.
+        sig = beam_fwhm / np.sqrt(8. * np.log(2)) / 60. * np.pi / 180.
         bl = np.exp(-0.5*lth*(lth+1)*sig**2)
         cl_th = {spec: cl_th[spec]*bl**2 for spec in cl_th}
     return lth, cl_th
@@ -537,7 +730,7 @@ def get_coupled_pseudo_cls(fields1, fields2, nmt_binning):
     """
     Compute the binned coupled pseudo-C_ell estimates from two
     (spin-0 or spin-2) NaMaster fields and a multipole binning scheme.
-   
+
     Arguments
     ----------
     :param fields1, fields2: NmtField objects
@@ -663,7 +856,7 @@ def lmax_from_map(map, pix_type="car"):
         return lmax
 
 
-def deproject_many(mp, simvec, mat):
+def deproject_many(mp, simvec, mat, verbose=False):
     """
     Deproject B-residuals from a given map. This is achieved by computing
 
@@ -674,9 +867,11 @@ def deproject_many(mp, simvec, mat):
 
     Parameters
     ----------
-        mp: np.array, shape [3, [map_shape]]
-            Polarization map to deproject B-mode residuals from.
-        simvec: np.array, shape [ndeproj, 3, [map_shape]]
+        mp: np.array, shape [nmap, [map_shape]] or
+            [nbundles, nmap, [map_shape]]
+            Polarization map to deproject B-mode residuals from, where 'nmap'
+            is the number of Stokes numbers, e.g. 2 or 3.
+        simvec: np.array, shape [ndeproj, nmap, [map_shape]]
             Simulated B-mode residuals to deproject.
         mat: np.array, shape [nsims, nsims]
             Projection matrix. Built from a number nsims >= ndeproj of
@@ -689,29 +884,75 @@ def deproject_many(mp, simvec, mat):
         mp_deproject: np.array
             Map template to deproject from map
     """
-    wcs = None if not hasattr(mp, "wcs") else mp.wcs
-    # [3*npix]
-    npix = len(mp[0].flatten())
-    mp_h = mp[-2:].flatten()
+    if verbose:
+        print("simvec Q/U", np.mean(simvec[0, -2]), np.mean(simvec[0, -1]))
+
+    # Determine if mp contains noise bundles
+    if hasattr(mp, "wcs"):
+        ndim = 3
+        wcs = mp.wcs
+    else:
+        ndim = 2
+        wcs = None
+    assert mp.ndim in [ndim, ndim+1]
+    assert mp.shape[-ndim] == 3
+    if mp.ndim == ndim+1:
+        nbundles = mp.shape[0]
+    else:
+        nbundles = 0
+
+    if nbundles == 0:
+        shapeQU = mp[-2:].shape
+        npix = len(mp[0].flatten())
+        mp_flat = mp[-2:].flatten()
+    else:
+        shapeQU = mp[:, -2:].shape
+        npix = len(mp[0, 0].flatten())
+        mp_flat = mp[:, -2:, :].reshape((nbundles, 2*npix))
+
     # [ndeproj, 2*npix]
     ndeproj = len(simvec)  # ndeproj is the number of sims to deproject
-    simvec_h = simvec[:, -2:, :].reshape([ndeproj, 2*npix])
+    simvec_flat = simvec[:, -2:, ...].reshape([ndeproj, 2*npix])
 
     # [ndeproj, ndeproj]
-    Nij = mat[:ndeproj][:, :ndeproj]
-    # [ndeproj]
-    prods = np.sum(simvec_h*mp_h[None, :], axis=-1)
+    Ndep = mat[:ndeproj][:, :ndeproj]
+    Npinv = pinvh(Ndep, rtol=1E-3)
 
-    # [ndeproj]
-    Niprod = np.dot(pinvh(Nij, rtol=1E-3), prods)
-    # Niprod = np.linalg.solve(Nij, prods)
-    # [ndeproj, 2*npix] * [ndeproj] = [2*npix]
-    mcont = np.dot(Niprod, simvec_h)
-    # [3, npix]
-    mp_deproject = np.array([mp[0]] + list(mcont.reshape(mp[-2:].shape)))
-    mp_deprojected = np.array(
-        [mp[0]] + list((mp_h - mcont).reshape(mp[-2:].shape))
-    )
+    if nbundles == 0:
+        if verbose:
+            print("nbundles = 0")
+        # [ndeproj]
+        prods = np.sum(simvec_flat*mp_flat[None, :], axis=-1)
+        # [ndeproj, ndeproj]
+        Nprod = np.dot(Npinv, prods)
+        # [2*npix]
+        mcont = np.dot(Nprod, simvec_flat)
+        # [3, npix]
+        mp_deproject = np.array([mp[0]] + list(mcont.reshape(shapeQU)))
+        mp_deprojected = np.array(
+            [mp[0]] + list((mp_flat - mcont).reshape(mp[-2:].shape))
+        )
+    else:
+        if verbose:
+            print(f"nbundles = {nbundles}")
+        # [nbundles, ndeproj]
+        Sm = np.sum(simvec_flat[None, :, :]*mp_flat[:, None, :], axis=-1)
+        # [nbundles, ndeproj]
+        NSm = np.einsum("ij,bj->bi", Npinv, Sm)
+        # [nbundles, 2*npix]
+        StNSm = np.einsum("ip,bi->bp", simvec_flat, NSm)
+        # [nbundles, 2, npix]
+        StNSm = StNSm.reshape(shapeQU)
+
+        # [nbundles, 3, npix]
+        mp_deproject = np.concatenate((0.*mp[:, :1], StNSm), axis=1)
+        mp_deprojected = mp - mp_deproject
+
+        if verbose:
+            print("T close?", np.allclose(mp_deprojected[0, 0], mp[0, 0]))
+            print("Q close?", np.allclose(mp_deprojected[0, 1], mp[0, 1]))
+            print("U close?", np.allclose(mp_deprojected[0, 2], mp[0, 2]))
+
     if wcs is not None:
         mp_deproject = enmap.ndmap(mp_deproject, wcs=wcs)
         mp_deprojected = enmap.ndmap(mp_deprojected, wcs=wcs)

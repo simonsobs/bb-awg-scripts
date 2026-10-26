@@ -5,12 +5,14 @@ import utils as ut
 from utils import MatrixPurification
 from simpure import SimPure
 import sys
+import argparse
+import yaml
 
 # TODO: Make it an actual module
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', 'misc'))
 )
-import mpi_utils as mpi
+import mpi_utils as mpi  # noqa
 
 
 # Changelog:
@@ -26,47 +28,64 @@ import mpi_utils as mpi
 # * 2026/05/05: tested power-law simulation validation
 # * 2026/05/27: added matrix-based purification
 # * 2026/08/24: added optimizd matrix purif. Added BBmaster obsmat at nside 64
+# * 2026/09/11: added argparse with yaml file
+# * 2026/09/24: load deprojection matrix from file, accept matrix_thresh as config  # noqa: E501
+# * 2026/10/17: added no-filter option to deprojection and matrix purification
+# * 2026/10/26: added option to compute TFs from CMB-EE-like power spectra
 
 
-def main():
-    # pixelization
-    pix_type = "hp"
-    nside = 64
-    car_template = "/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/band_car_fejer1_20arcmin.fits"  # noqa: E501
-    beam_fwhm = 60
-    nlb = 10  # number of multipoles per bin
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config",
+        type=str,
+        required=True,
+        help="Path to YAML configuration file",
+    )
+    return parser.parse_args()
 
-    # Computing cluster
-    # base_dir = "/cephfs/soukdata/user_data/kwolz/simpure"  # SO:UK
-    base_dir = "/pscratch/sd/k/kwolz/bbdev/simpure"  # NERSC
 
-    # Filtering choice
-    # filter_setup = "toy_apo_nside128"  # Toy filter
-    # filter_setup = f"obsmat_polyonly_apo_nside{nside}"  # Simple poly filter
-    filter_setup = f"obsmat_apo_nside{nside}"  # BBMASTER paper
+def main(config):
+    """
+    Perform advance purification on a validation setup of CMB and power-law
+    simulations.
+    """
+    pix_type = config["pix_type"]
+    nside = config["nside"]
+    beam_fwhm = config["beam_fwhm"]
+    nlb = config["nlb"]
+    plot_dl = config["plot_dl"]
+    lmax_plot = config["lmax_plot"]
+    car_template = config["car_template"]
+    mask_file = config["mask_file"]
 
-    # General parameters
-    overwrite = True  # If True, always recompute products.
-    purify_method = "matrix"  # Choose between "matrix", "deproj", None
-    nsims_purify = 2000  # number of pure-E sims used for template deprojection.
-                         # Only relevant if purify_method is "deproj"
-    nsims_val = 200  # number of validation sims
-    nsims_transfer = 200  # number of pure (E,B sims used for transfer function)
-    id_sim_transfer_start = 0
+    test_label = config["test_label"]
+    base_dir = config["base_dir"]
+    purify_method = config["purify_method"]
+    filter_setup = config["filter_setup"]
 
-    deproject_null = False  # Only applies to "deproj". Deproject a null matrix
-    ignore_filtering = False  # If True, only check mask-based purification.
-    plot_dl = False  # Plot D_ells or C_ells?
-    lmax_plot = 200  # Plot until what ell max?
+    threshold_quantile_matpure = config["threshold_quantile_matpure"]
+    nsims_purify = config["nsims_purify"]
+    nsims_val = config["nsims_val"]
+    nsims_transfer = config["nsims_transfer"]
+    add_noise = config["add_noise"]  # TODO
+    nbundles_noise = config["nbundles"]  # TODO
+    if "noise_level" in config:
+        noise_level = config["noise_level"]
+    else:
+        noise_level = 7  # muKamin
+    if "tf_sims_cl_shape" in config:
+        tf_sims_cl_shape = config["tf_sims_cl_shape"]
+    else:
+        tf_sims_cl_shape = "plaw"
 
-    # NOTE: This will be the name of the output folder.
-    # Choose a representative name for the test case at hand.
-    test_label = f"paper_{purify_method}_bbmaster"
+    overwrite = config["overwrite"]
+    deproject_null = config["deproject_null"]
+    ignore_filtering = config["ignore_filtering"]
 
     out_dir = f"{base_dir}/purification/{test_label}"
     plot_dir = f"{out_dir}/plots"
-    mask_file = f"/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside{nside}.fits"  # NERSC # noqa: E501
-    # mask_file = f"/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside{nside}.fits"  # SO:UK noqa: E501
+    id_sim_transfer_start = 0
 
     sp = SimPure(pix_type,
                  base_dir,
@@ -112,22 +131,98 @@ def main():
                     sim_dir, sim_fn, mat_fn, nsims_purify, overwrite,
                     mat_plot_fn)
             else:
-                mp = sp.load_cmb_sim(0, filtered=True)
+                mp = sp.load_val_sim(0, filtered=True, typ="cmb")
                 deproj_sims = np.zeros((nsims_purify,) + mp.shape)
                 deproj_mat = np.eye(nsims_purify)
         elif purify_method == "matrix":
             if sp.rank == 0:
                 print("   1B. Prepare matrix purification")
             if filter_setup == "obsmat_polyonly_apo_nside64":
-                # NOTE: eigen_spectrum_nside64 is polyonly-filtered and apo-masked
-                eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_nside64.npz"
+                # NOTE: eigen_spectrum_nside64 is polyonly-filtered and apo-masked  # noqa: E501
+                eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_nside64.npz"  # noqa: E501
             elif filter_setup == "obsmat_apo_nside64":
-                # NOTE: obsmat_apo_nside64 means bbmaster-filtered and apo-masked
-                eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_apo_mask_bbmaster_nside64.npz"
+                # NOTE: obsmat_apo_nside64 means bbmaster-filtered and apo-masked  # noqa: E501
+                eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_apo_mask_bbmaster_nside64.npz"  # noqa: E501
+            elif filter_setup is None:
+                eigspec_fn = "/pscratch/sd/k/kwolz/bbdev/matrixpure/eigen_spectrum_apo_mask_nofilter_nside64.npz"  # noqa: E501
+
+            # Plot eigenvalues
+            eigspec = np.load(eigspec_fn)
+            eigvals = eigspec["eigvals"]
+            plt.figure()
+            filter_label = "NOFILTER" if filter_setup is None else filter_setup
+            plt.plot(eigvals,
+                     label=filter_label+"\n thresh_hi "+f"{threshold_quantile_matpure}")  # noqa: E501
+            plt.axvline(0.25*len(eigvals), c="k")
+            plt.axvline(threshold_quantile_matpure*len(eigvals), c="k")
+            plt.yscale("log")
+            plt.legend()
+            plt.xlabel("Rank")
+            plt.ylabel("Eigenvalue")
+            plt.savefig(f"{plot_dir}/M_matrix_eigvals_thresh{threshold_quantile_matpure}.pdf")  # noqa: E501
+            print(f"{plot_dir}/M_matrix_eigvals_thresh{threshold_quantile_matpure}.pdf")  # noqa: E501
+
+            # Plot eigenvectors
+            if sp.pix_type == "hp":
+                import healpy as hp
+
+                cmap = "RdYlBu_r"
+                norm_eigvecs = eigspec['norm_eigvecs']
+                vec_pureb = norm_eigvecs[:, -25:] * eigvals[-25:]  # highest 25 pure-B eigenvectors  # noqa: E501
+                vec_puree = norm_eigvecs[:, :25] * eigvals[:25]  # highest 25 pure-E eigenvectors  # noqa: E501
+
+                msk = sp.mask_bin.astype(bool)
+                maps_pureb = np.zeros((2,) + (25,) + msk.shape)
+                maps_puree = np.zeros((2,) + (25,) + msk.shape)
+                for i in range(25):
+                    maps_pureb[:, i, msk] = vec_pureb[:, i].reshape((2, -1))
+                    maps_puree[:, i, msk] = vec_puree[:, i].reshape((2, -1))
+
+                from matplotlib.cm import ScalarMappable
+                from matplotlib.colors import Normalize
+                fig = plt.figure(figsize=(15, 10))
+                ext = np.max((np.fabs(np.min(maps_pureb)),
+                              np.fabs(np.max(maps_pureb))))
+                RA0, Dec0 = 15, -40
+                lonra = [-75, 75]
+                latra = [-45, 30]
+                for i in range(25):
+                    hp.cartview(
+                        maps_pureb[0, i],
+                        fig=fig.number,
+                        sub=(5, 5, i + 1),   # subplot indexing starts at 1
+                        title=f"PureB, Q, {i + 1}",
+                        min=-ext,
+                        max=ext,
+                        cmap=cmap,
+                        cbar=False,
+                        notext=True,
+                        rot=(RA0, Dec0, 0),
+                        lonra=lonra,
+                        latra=latra,
+                        xsize=640
+                    )
+                cax = fig.add_axes([0.20, -0.04, 0.60, 0.02])
+                sm = ScalarMappable(
+                    norm=Normalize(vmin=-ext, vmax=ext),
+                    cmap=cmap
+                )
+                sm.set_array([])
+
+                cbar = fig.colorbar(
+                    sm,
+                    cax=cax,
+                    orientation="horizontal"
+                )
+                cbar.set_label("Value")
+                plt.savefig(f"{plot_dir}/pureB_Q_eigenvectors.png",
+                            bbox_inches="tight")
+                print(f"{plot_dir}/pureB_Q_eigenvectors.png")
+
             matpure = MatrixPurification(sp.mask,
                                          eigspec_fn,
                                          thresh_lo=0.25,
-                                         thresh_hi=0.75)
+                                         thresh_hi=threshold_quantile_matpure)
         sp.comm.barrier()
 
         print("  2. Transfer function computation")
@@ -136,7 +231,8 @@ def main():
         for id in local_task_ids:
             kwargs = {"deproj_sims": deproj_sims,
                       "deproj_mat": deproj_mat,
-                      "matpure": matpure}
+                      "matpure": matpure,
+                      "cl_shape": tf_sims_cl_shape}
             if id == 0:
                 print("  2A. TF sims unfiltered w/o purification")
                 kwargs.update({"filtered": False, "purified": False, "method": None})  # noqa: E501
@@ -159,7 +255,7 @@ def main():
                 print("  2D. TF sims filtered w/ purification")
                 kwargs.update({"filtered": True, "purified": True, "method": None})  # noqa: E501
                 cls_tf_filtered_pure = sp.get_tf_spectra(
-                    out_dir, nsims_transfer, overwrite=overwrite, 
+                    out_dir, nsims_transfer, overwrite=overwrite,
                     id_sim_start=id_sim_transfer_start, **kwargs)
             if id == 4:
                 print("  2E. TF sims filtered w/ advanced purification")
@@ -243,7 +339,7 @@ def main():
                 print(cc)
                 tf = {"nopure": transfer_nopure["full_tf"],
                       "pure": transfer_pure["full_tf"],
-                      f"pure_{purify_method}": transfer_pure_adv["full_tf"]}[cc]
+                      f"pure_{purify_method}": transfer_pure_adv["full_tf"]}[cc]  # noqa: E501
                 purify = {
                     "nopure": False,
                     "pure": True,
@@ -299,14 +395,15 @@ def main():
         _ = sp.get_val_spectra(
             out_dir, nsims_val, overwrite=overwrite_cls, plot_dir=plot_dir,
             **kwargs, tf=tf, deproj_sims=deproj_sims, deproj_mat=deproj_mat,
-            matpure=matpure
+            matpure=matpure, add_noise=add_noise,
+            nbundles_noise=nbundles_noise, noise_level=noise_level
         )
 
     # Plotting
     sp.comm.barrier()
     if sp.rank != 0:
         return
-    
+
     print("  4. Plotting")
     os.makedirs(f"{out_dir}/plots", exist_ok=True)
 
@@ -376,8 +473,9 @@ def main():
         plt.savefig(f"{plot_dir}/cl_{mtyp}_masked_BB.pdf", bbox_inches="tight")
         plt.close()
 
-        thbb = sp.bins.bin_cell(clth["BB"][:sp.bins.lmax+1])
-        y = np.mean(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl
+        # thbb = sp.bins.bin_cell(clth["BB"][:sp.bins.lmax+1])
+        thbb = clth_msk_nopure["BB"]
+        y = np.mean(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa: E501
         yerr = np.std(np.array([cl["BB"] for cl in cls_noe_masked]), axis=0)*cl2dl  # noqa: E501
         plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'b-', alpha=0.5, label=f"Masked {mtyp}, B only")  # noqa: E501
 
@@ -468,19 +566,20 @@ def main():
                 if pols == "BB":
                     plt.yscale('log')
                     ylim = (1e-6, 2e-3) if plot_dl else (1e-8, 1e-5)
-                    #plt.ylim(ylim)
+                    # plt.ylim(ylim)
                 elif pols == "EE":
                     plt.yscale('log')
                     ylim = (1e-4, 1e0) if plot_dl else (1e-6, 1e-2)
-                    #plt.ylim(ylim)
+                    # plt.ylim(ylim)
                 plt.legend()
-                print(f"    PLOT SAVED {plot_dir}/cl_{mtyp}_filtered_tfed_{pols}.pdf")
+                print(f"    PLOT SAVED {plot_dir}/cl_{mtyp}_filtered_tfed_{pols}.pdf")  # noqa: E501
                 plt.savefig(f"{plot_dir}/cl_{mtyp}_filtered_tfed_{pols}.pdf", bbox_inches="tight")  # noqa: E501
                 plt.close()
 
             for pols in ["EE", "EB", "BB"]:
                 plt.title('Cl w/ filtering, TFed')
-                thbb = sp.bins.bin_cell(clth[pols][:sp.bins.lmax+1])
+                # thbb = sp.bins.bin_cell(clth[pols][:sp.bins.lmax+1])
+                thbb = clth_fil_nopure[pols]
                 y = np.mean(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)  # noqa: E501
                 yerr = np.std(np.array([cl[pols] for cl in cls_noe_filtered_tfed]), axis=0)  # noqa: E501
                 plt.plot(sp.leff, (y - thbb)/(yerr/np.sqrt(nsims_val)), 'b-', alpha=0.5, label=f"Filtered {mtyp}, B only")  # noqa: E501
@@ -584,10 +683,10 @@ def main():
                 if pols == "BB":
                     plt.yscale('log')
                     ylim = (1e-6, 2e-3) if plot_dl else (1e-8, 1e-5)
-                    #plt.ylim(ylim)
+                    # plt.ylim(ylim)
                 elif pols == "EE":
                     plt.yscale('log')
-                    #ylim = (1e-4, 1e0) if plot_dl else (1e-6, 1e-2)
+                    # ylim = (1e-4, 1e0) if plot_dl else (1e-6, 1e-2)
                     plt.ylim(ylim)
                 plt.xlabel(r"$\ell$", fontsize=14)
                 lab = "D" if plot_dl else "C"
@@ -600,4 +699,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    with open(args.config, "r") as f:
+        config = yaml.safe_load(f)
+
+    main(config)
