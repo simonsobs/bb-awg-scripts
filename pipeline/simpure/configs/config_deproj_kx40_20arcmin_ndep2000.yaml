@@ -1,0 +1,31 @@
+pix_type: car
+nside: null
+beam_fwhm: 60
+nlb: 10  # number of multipoles per bin
+plot_dl: False  # Plot D_ells or C_ells?
+lmax_plot: 200  # Plot until what ell max?
+car_template: /global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/fullsky_car_fejer1_20arcmin.fits
+mask_file: /global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_fullsky_20arcmin.fits
+
+# NOTE: This will be the name of the output folder.
+# Choose a representative name for the test case at hand.
+test_label: paper_deproj_kx40
+# base_dir: /cephfs/soukdata/user_data/kwolz/simpure  # SO:UK
+base_dir: /pscratch/sd/k/kwolz/bbdev/simpure  # NERSC
+purify_method: deproj  # Choose between matrix, deproj, None
+# filter_setup: toy_apo_nside128  # Toy filter
+# filter_setup: obsmat_polyonly_apo_nside128  # Simple poly filter
+# filter_setup: obsmat_apo_nside128  # BBMASTER paper
+filter_setup: kx40  # kspace filter
+
+threshold_quantile_matpure: 0.75  # Quantile of eigenvalue ranks which defines pure B modes in matrix-based purification.
+nsims_purify: 2000  # number of pure-E sims used for template deprojection.
+                    # Only relevant if purify_method is deproj
+nsims_val: 200  # number of validation sims
+nsims_transfer: 200  # number of pure (E,B sims used for transfer function)
+add_noise: False
+nbundles: null
+
+overwrite: False  # If True, always recompute products
+deproject_null: False  # Only applies to deproj. Deproject a null matrix
+ignore_filtering: False  # If True, only check mask-based purification
