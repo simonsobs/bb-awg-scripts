@@ -45,8 +45,8 @@ ignore_T = True  # Do not filter T
 overwrite = True
 base_dir = "/pscratch/sd/k/kwolz/bbdev/simpure"  # NERSC
 filter_setup = f"obsmat_apo_nside{nside}"  # BBMASTER paper
-#filter_setup = f"obsmat_polyonly_apo_nside{nside}"  # Simple polynomial filter
-what_sims = "plaw"  # "cmb"  # "pure" # "plaw"
+# filter_setup = f"obsmat_polyonly_apo_nside{nside}"  # Simple polynomial filter  # noqa: E501
+what_sims = "pure_cmbbb_like"  # "cmb"  # "pure" # "plaw" # "pure_cmbee_like"
 sim_ids = list(range(0, 200))
 
 output_dir = f"{base_dir}/filtered_{what_sims}_sims/{filter_setup}"
@@ -55,7 +55,13 @@ if what_sims == "cmb":
     sim_types = ["cmbB", "cmbEB"]
 elif what_sims == "pure":
     sim_dir = f"{base_dir}/input_sims"
-    sim_types = [f"pure{p}" for p in "TB"]
+    sim_types = [f"pure{p}" for p in "TEB"]
+elif what_sims == "pure_cmbee_like":
+    sim_dir = f"{base_dir}/input_sims_cmbee_like"
+    sim_types = [f"pure{p}" for p in "TEB"]
+elif what_sims == "pure_cmbbb_like":
+    sim_dir = f"{base_dir}/input_sims_cmbbb_like"
+    sim_types = [f"pure{p}" for p in "TEB"]
 elif what_sims == "plaw":
     sim_dir = f"{base_dir}/plaw_sims"
     sim_types = ["plawB", "plawEB"]
@@ -64,17 +70,17 @@ else:
 
 os.makedirs(output_dir, exist_ok=True)
 print(output_dir)
-sim_string_format = "{sim_type}_nside"+str(nside)+f"_fwhm{beam_fwhm:.1f}"+"_sim{sim_id:04d}_HP.fits"  # noqa: E501
+sim_string_format = "{sim_type}_nside"+str(nside)+f"_fwhm{round(beam_fwhm)}"+"_sim{sim_id:04d}_HP.fits"  # noqa: E501
 if filter_setup == f"obsmat_polyonly_apo_nside{nside}":
     obsmat_dir = f"/global/cfs/cdirs/sobs/awg_bb/bbmaster_paper/obs_mat_nside{nside}_fpthin8_onlypoly/obsmat_coadd-full.npz"  # noqa: E501
 else:
     if nside == 128:
-        obsmat_dir = f"/pscratch/sd/c/chervias/SimonsObs/BBMASTER/toast/output/obs_mat_nside128_fpthin8/obsmat_coadd-full.npz"  # noqa: E501
+        obsmat_dir = "/pscratch/sd/c/chervias/SimonsObs/BBMASTER/toast/output/obs_mat_nside128_fpthin8/obsmat_coadd-full.npz"  # noqa: E501
     elif nside == 64:
         obsmat_dir = "/global/cfs/cdirs/sobs/awg_bb/bbmaster_paper/obs_mat_nside64_fpthin8/obsmat_coadd-full.npz"  # noqa: E501
 obsmat = toast.ObsMat(obsmat_dir)
 mask_file = f"/global/homes/k/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside{nside}.fits"  # NERSC # noqa: E501
-# mask_file = f"/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside{nside}.fits"  # SO:UK noqa: E501
+# mask_file = f"/shared_home/kwolz/bbdev/bb-awg-scripts/pipeline/simpure/data/mask_apo_nside{nside}.fits"  # SO:UK # noqa: E501
 mask_bin = hp.read_map(mask_file, dtype=bool)
 
 
