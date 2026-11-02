@@ -51,6 +51,7 @@ class _Cfg:
             'bundling': BundleCfg,
             'filtering': FilteringCfg,
             'signflip': SignFlipCfg,
+            'leakage': LeakageCfg,
         }
         for k, v in sub_blocks.items():
             if k in d.keys():
@@ -179,6 +180,26 @@ class SignFlipCfg(_Cfg):
     n_sims: Optional[int] = None
     overwrite_sf: bool = False
 
+@dataclass
+class LeakageCfg(_Cfg):
+    """
+    Config class for simulating dipole leakage.
+
+    Args
+    --------
+    """
+    run: bool = False
+    leakage_type: Optional[str] = None
+    planck_map_freq: Optional[int] = None
+    nside: Optional[int] = None
+    field_max: Optional[int] = None
+    sat: Optional[str] = None
+    cool: Optional[str] = None
+    sim_dir: Optional[str] = None
+    leak_beam_dir: Optional[str] = None
+    second_der: bool = False
+    zeroTmap: bool = False
+
 
 @dataclass
 class FilteringCfg(_Cfg):
@@ -220,6 +241,8 @@ class FilteringCfg(_Cfg):
         Removes atomic maps from disk upon coadding them
     overwrite_atomics: bool
         Overwrites atomic sim maps if they exist
+    apply_wobble: bool
+        Apply wobble
     """
 
     preprocess_config_init: str
@@ -237,6 +260,7 @@ class FilteringCfg(_Cfg):
     nbatch_atomics: Optional[int] = None
     remove_atomics: bool = False
     overwrite_atomics: bool = True
+    apply_wobble: bool = False
 
 
 @dataclass
@@ -289,6 +313,7 @@ class Cfg(_Cfg):
     query_restrict: str = ""
     freq_channel: Union[str, Sequence[str], None] = None
     pix_type: str = 'car'
+    pix_type_output: Optional[str] = None
     car_map_template: Optional[str] = None
     intra_obs_splits: Optional[Sequence] = None
     intra_obs_pair: Optional[Sequence[str]] = None
@@ -297,6 +322,7 @@ class Cfg(_Cfg):
     bundling: Optional[BundleCfg] = None
     filtering: Optional[FilteringCfg] = None
     signflip: Optional[SignFlipCfg] = None
+    leakage: Optional[LeakageCfg] = None
     verbosity: int = 2
 
     @property

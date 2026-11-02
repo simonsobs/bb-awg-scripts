@@ -59,6 +59,7 @@ def main(args):
 
     # Arguments related to pixellization
     pix_type, mfmt, car_map_template, nside, wcs = fu.get_pix_type_args(args)
+    pix_type_output, car_map_template_output, nside_output, wcs_output = fu.get_pix_type_output_args(args)
 
     # Bundle query arguments
     bundle_id = args.filtering.bundle_id
@@ -141,6 +142,11 @@ def main(args):
     # * read simulated map
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
+    if args.apply_wobble:
+        apply_wobble = True
+    else:
+        apply_wobble = False
+
     for task_element in local_mpi_list:
         patch, freq_channel, obs_id, wafer = task_element
         local_task_id = local_mpi_list.index(task_element)
@@ -224,8 +230,12 @@ def main(args):
             logger.debug(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer}) to filter {sim_type}, sim {sim_id}")
             start0 = time.time()
 
-            logger.debug(f"Loading {pix_type} map: {map_file}")
-            sim = read_map(map_file, pix_type, fields_hp=[0, 1, 2])
+            if args.leakage:
+                logger.debug(f"Leakage skip for loading {pix_type} map: {map_file}")
+                sim = None
+            else:
+                logger.debug(f"Loading {pix_type} map: {map_file}")
+                sim = read_map(map_file, pix_type, fields_hp=[0, 1, 2])
 
             try:
                 aman = pp_util.multilayer_load_and_preprocess_sim(
@@ -237,6 +247,8 @@ def main(args):
                     logger=logger,
                     ignore_cfg_check=True,
                     data_amans=data_aman,
+                    apply_wobble=apply_wobble,
+                    leakage=args.leakage,
                 )
             # After focal plane thinning, the sim AxisManager might not have
             # any detectors, resulting in one of several errors caught below.
@@ -257,7 +269,7 @@ def main(args):
 
             # Run the mapmaker
             wmap_dict, weights_dict = fu.make_map_wrapper(
-                aman, intra_obs_splits, pix_type, shape=None, wcs=wcs, nside=nside, logger=logger
+                aman, intra_obs_splits, pix_type_output, shape=None, wcs=wcs_output, nside=nside_output, logger=logger
             )
 
             for split_label in intra_obs_splits:
@@ -275,8 +287,8 @@ def main(args):
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
 
-                    write_map(f_wmap, wmap, pix_type=pix_type, dtype=np.float32, nest=True)
-                    write_map(f_w, w, pix_type=pix_type, dtype=np.float32, nest=True)
+                    write_map(f_wmap, wmap, pix_type=pix_type_output, dtype=np.float32, nest=True)
+                    write_map(f_w, w, pix_type=pix_type_output, dtype=np.float32, nest=True)
             end0 = time.time()
             logger.debug(
                 f"Filtered in {end0 - start0:.1f} seconds: "
