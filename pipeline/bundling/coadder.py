@@ -75,34 +75,7 @@ class _Coadder:
         return obs_ids
 
     def _prefixpath2fname(self, path, map_dir=None, depth=1):
-        """
-        Replace prefix path with the given map_dir.
-
-        Parameters
-        ----------
-        path: str
-            prefix_path from atomic db: full map path except for final '_wmap.fits'
-        map_dir: str
-            New path to map directory
-        depth: int
-            How many levels of prefix_path to keep
-            depth=0 keeps just the filename. depth=1 keeps one parent directory, etc.
-
-        Returns
-        -------
-        new_path: str
-            %s-style format string. Full file path will be new_path % maptype
-            where maptype = 'wmap', 'weights', or 'hits'
-        """
-        # For now, assume HEALPix maps are gzipped fits and CAR maps are fits.
-        suffix = ".fits.gz" if self.pix_type == "hp" else ".fits"
-        if map_dir is None:
-            # Keep the default path
-            return f"{path}_%s{suffix}"
-        else:
-            split_prefix = [dr for dr in path.split('/') if dr]  # Split and remove double slashes
-            basename = '/'.join(split_prefix[-depth-1:])
-            return os.path.join(map_dir, basename) + f"_%s{suffix}"
+        return utils.prefixpath2fname(path, map_dir=map_dir, depth=depth, pix_type=self.pix_type)
 
     def _check_maps_exist(self, fname, check_hits=True):
         """
