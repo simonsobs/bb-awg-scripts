@@ -122,6 +122,7 @@ def get_info_obs_info(obs_id, cols, info_entry):
     return out
 
 def add_all_info(obslist, atomic_db, input_cols, context=None, info_db=None):
+    atomic_db = atomic_db.copy(deep=True)
     entries = read_obs_info_db(info_db)
     obs_ids_infodb = np.array([e['obs:obs_id'] for e in entries])
 
@@ -180,5 +181,5 @@ def main():
 
     add_atomic_info(config, columns, args.context, args.obs_info_db, force_include, overwrite=overwrite)
 
-if __name__ == "__main__" or True:
+if __name__ == "__main__":
     main()
