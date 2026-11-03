@@ -1,142 +1,116 @@
-from sotodlib.utils.procs_pool import get_exec_env
-import sqlite3, numpy as np
-import os, shutil
-from pixell import enmap
-import argparse
-import bundling_utils as utils
 import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append("/shared_home/erosenberg/code/bb-awg-scripts/pipeline/")
+sys.path.append("/shared_home/erosenberg/code/bb-awg-scripts/pipeline/bundling")
 from configs import Cfg
+import bundling_utils
+from pixell import enmap
+import os, shutil
+import sqlite3
+import pandas as pd
+import numpy as np
+import argparse
+from sotodlib.utils.procs_pool import get_exec_env
 
-
-def get_col_names(con, table_name):
-    """Get column names from an sqlite table"""
-    query = f"SELECT * FROM {table_name}"
-    if isinstance(con, str):
-        con = sqlite3.connect(con)
-        cur = con.execute(query)
-        con.close()
+def get_weight(row, shape, wcs, pix_type, map_dir):
+    """
+    Read weight map. Entries with valid=0 return the scalar value 0.
+    row is a single row (pd.Series) of an atomic_db.
+    shape, wcs are the geometry of the template output map.
+    map_dir is the directory containing the atomics.
+    """
+    if row.valid == 1:
+        fname = bundling_utils.prefixpath2fname(row.prefix_path, map_dir, pix_type=pix_type) % "weights"
+        ww = bundling_utils.read_map(fname, pix_type, is_weights=True)
+        if pix_type == 'car':
+            ww = enmap.extract(ww, shape, wcs)
     else:
-        cur = con.execute(query)
-    desc = cur.description
-    return [entry[0] for entry in desc]
+        ww = 0
+    return ww
 
+def weight_stats(weight):
+    """Get statistics from a weight map. Assume T, Q, U."""
+    mean_qu = np.mean(weight[1:], axis=0)
+    positive = np.where(mean_qu > 0)
+    sub_weights = mean_qu[positive]
+    if len(sub_weights) == 0:
+        return None, None, None
+    sumw = np.sum(sub_weights)
+    mean = np.mean(sub_weights)
+    median = np.median(sub_weights)
+    return sumw, mean, median
 
-def calc_science(atomic_path, coadd_pair, rows, shape, wcs, i_ctime, col_dict):
-    row = list(rows[i_ctime])
-    nmissing_sub = 0
-    out = []
-    ctime = row[4]
-    for freq in ['f090', 'f150']:
-        for waf in ['ws0', 'ws1', 'ws2', 'ws3', 'ws4', 'ws5', 'ws6']:
-            list_of_avail_splits = []
-            for spl in coadd_pair:
-                if os.path.isfile(
-                    os.path.join(
-                        atomic_path, '%s/atomic_%i_%s_%s_%s_weights.fits' % (str(ctime)[0:5], ctime, waf, freq, spl)
-                    )
-                ):
-                    list_of_avail_splits.append(spl)
-            Nsplits = len(list_of_avail_splits)
-            if Nsplits > 0:
-                # I need to co-add the weights of scan_left and scan_right
-                div_stack = enmap.zeros((3,) + shape, wcs=wcs)
-                for spl in coadd_pair:
-                    nm0 = 0
-                    try:
-                        div = enmap.read_map(
-                            os.path.join(
-                                atomic_path,
-                                '%s/atomic_%i_%s_%s_%s_weights.fits' % (str(ctime)[0:5], ctime, waf, freq, spl),
-                            )
-                        )
-                        div = enmap.extract(div, shape, wcs)
-                        div_stack += div
-                    except FileNotFoundError:
-                        nm0 += 1
-                        if nm0 == 2:
-                            nmissing_sub += 1
-                            continue
+def _make_science_split(rows, split_pair, shape, wcs, pix_type, map_dir, list_of_avail_splits):
+    """Given a dataframe of split rows compute a new one for the science split."""
+    r1 = rows.iloc[0]
+    weights = []
+    for ii, (_, row) in enumerate(rows.iterrows()):
+        assert all([r1[col] == row[col] for col in ['obs_id', 'freq_channel', 'wafer']])
+        assert row.split_label == sorted(split_pair)[ii]
+        weights.append(get_weight(row, shape, wcs, pix_type, map_dir))
+    weight = sum(weights)
+    sumw, meanw, medianw = weight_stats(weight)
+    if sumw is None:
+        return None
+    new_row = r1.copy()
+    replacements = {"split_label": "science", "valid": 0, "prefix_path": '', "total_weight_qu": sumw,
+                    "split_detail": ','.join(map(str, list_of_avail_splits)), "mean_weight_qu": meanw, "median_weight_qu": medianw}
+    for key, val in replacements.items():
+        new_row[key] = val
+    return new_row
 
-                # Now we calculate the new weight
-                sub_weights = div_stack
-                mean_qu = np.mean(sub_weights[1:], axis=0)
-                positive = np.where(mean_qu > 0)
-                sumweights = np.sum(mean_qu[positive])
-                meanweights = np.mean(mean_qu[positive])
-                medianweights = np.median(mean_qu[positive])
+def make_science_split(rows, config, shape, wcs):
+    """Given all rows corresponding to a single obs/wafer/freq, return the science row"""
+    split_labels = rows['split_label'].to_list()
+    split_pair = config.bundling.coadd_split_pair
+    row_pair = rows[rows['split_label'].isin(split_pair)]
+    if (len(row_pair) != len(split_pair)) or not ((row_pair.valid==1).any()):
+        return None ## Failure
+    row_out = _make_science_split(row_pair, split_pair, shape, wcs,
+                                  config.pix_type, config.bundling.map_dir, split_labels)
+    return row_out
 
-                # we prepare the list to insert. This will have all of the info for the obs, but with a random freq, wafer, split
-                list_to_insert = row.copy()
-
-                list_to_insert[col_dict["freq_channel"]] = freq
-                list_to_insert[col_dict["wafer"]] = waf
-                list_to_insert[col_dict["split_label"]] = 'science'
-                list_to_insert[col_dict["valid"]] = 0
-                list_to_insert[col_dict["split_detail"]] = ','.join(map(str, list_of_avail_splits))
-                list_to_insert[col_dict["prefix_path"]] = ''
-                list_to_insert[col_dict["total_weight_qu"]] = sumweights
-                list_to_insert[col_dict["mean_weight_qu"]] = meanweights
-                list_to_insert[col_dict["median_weight_qu"]] = medianweights
-
-                # print(list_to_insert)
-                tuple_ = tuple(list_to_insert)
-                out.append(tuple_)
-            else:
-                nmissing_sub += 1
-                continue
-
-    return out, nmissing_sub
+def backup_db(dbname):
+    backup_db_name = dbname + ".save"
+    if not os.path.exists(backup_db_name):
+        shutil.copy2(dbname, backup_db_name)
 
 
 def main(config, executor, as_completed_callable):
-    shape, wcs = enmap.read_map_geometry(config.car_map_template)
-    coadd_pair = config.bundling.coadd_split_pair
-    atomic_path = config.bundling.map_dir
     atomic_db = config.atomic_db
-    backup_db = atomic_db + ".save"
-    if not os.path.exists(backup_db):
-        shutil.copy2(atomic_db, backup_db)
-    con = sqlite3.connect(atomic_db)
-    cur = con.cursor()
-    cur.execute("SELECT * FROM atomic ")
-    rows = cur.fetchall()
-    rows = np.array(rows)
+    backup_db(atomic_db)
+    conn = sqlite3.connect(atomic_db)
+    df = pd.read_sql_query("SELECT * FROM atomic ORDER BY obs_id,freq_channel,wafer,split_label", conn)
+    conn.close()
 
-    ctime_list = rows[:, 4]
-    ctime_list = np.unique(ctime_list)
+    if df['split_label'].eq('science').any():
+        print("Already contains science splits")
+        return
 
-    # find indices of unique ctimes
-    indices = []
-    for ctime in ctime_list:
-        indices.append(np.where(rows[:, 4] == ctime)[0][0])
+    if config.pix_type == 'car':
+        shape, wcs = enmap.read_map_geometry(config.car_map_template)
+    else:
+        shape, wcs = None, None
 
-    col_names = np.array(get_col_names(con, 'atomic'))
-    col_dict = {}
-    for ii, col_name in enumerate(col_names):
-        col_dict[col_name] = ii
-
-    print(len(indices))
+    rows_out = []
     nmissing = 0
-    ncomplete = 0
-    futures = [
-        executor.submit(calc_science, atomic_path, coadd_pair, rows, shape, wcs, i_ctime, col_dict)
-        for i_ctime in indices
-    ]
+    group_it = df.groupby(['obs_id', 'freq_channel', 'wafer'], sort=False, dropna=False)
+    futures = [executor.submit(make_science_split, rows, config, shape, wcs) for _, rows in group_it]
     for future in as_completed_callable(futures):
-        row_out, nmissing_sub = future.result()
-        nmissing += nmissing_sub
-        for tuple_ in row_out:
-            # cur.executemany("INSERT INTO atomic VALUES(?)", sites)
-            cur.execute(f"INSERT INTO atomic VALUES ({', '.join(['?'] * len(tuple_))})", tuple_)
-        ncomplete += 1
-        if ncomplete % 100 == 0:
-            print(f'{ncomplete + 1} / {len(indices)}')
-    con.commit()
-    con.close()
-    print(f"{nmissing} missing")
+        row_out = future.result()
+        if row_out is None: # Correct slits not available
+            nmissing += 1
+        else:
+            rows_out.append(row_out)
 
+    print(f"Missing {nmissing}")
+    science_df = pd.DataFrame(rows_out)
+    if len(rows_out) > 0:
+        print(f"Writing science rows to {atomic_db}")
+        conn = sqlite3.connect(atomic_db)
+        science_df.to_sql('atomic', conn, if_exists='append', index=False)
+        conn.close()
+    else:
+        print("No science rows produced")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Make science splits")
