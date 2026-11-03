@@ -39,7 +39,7 @@ def weight_stats(weight):
     median = np.median(sub_weights)
     return sumw, mean, median
 
-def _make_science_split(rows, split_pair, shape, wcs, pix_type, map_dir, list_of_avail_splits):
+def _make_science_split(rows, split_pair, shape, wcs, pix_type, map_dir):
     """Given a dataframe of split rows compute a new one for the science split."""
     r1 = rows.iloc[0]
     weights = []
@@ -53,20 +53,19 @@ def _make_science_split(rows, split_pair, shape, wcs, pix_type, map_dir, list_of
         return None
     new_row = r1.copy()
     replacements = {"split_label": "science", "valid": 0, "prefix_path": '', "total_weight_qu": sumw,
-                    "split_detail": ','.join(map(str, list_of_avail_splits)), "mean_weight_qu": meanw, "median_weight_qu": medianw}
+                    "split_detail": ','.join(map(str, split_pair)), "mean_weight_qu": meanw, "median_weight_qu": medianw}
     for key, val in replacements.items():
         new_row[key] = val
     return new_row
 
 def make_science_split(rows, config, shape, wcs):
     """Given all rows corresponding to a single obs/wafer/freq, return the science row"""
-    split_labels = rows['split_label'].to_list()
     split_pair = config.bundling.coadd_split_pair
     row_pair = rows[rows['split_label'].isin(split_pair)]
     if (len(row_pair) != len(split_pair)) or not ((row_pair.valid==1).any()):
         return None ## Failure
     row_out = _make_science_split(row_pair, split_pair, shape, wcs,
-                                  config.pix_type, config.bundling.map_dir, split_labels)
+                                  config.pix_type, config.bundling.map_dir)
     return row_out
 
 def backup_db(dbname):
