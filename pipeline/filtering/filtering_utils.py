@@ -259,6 +259,7 @@ def get_pix_type_args(args):
         nside = args.filtering.nside
         mfmt = ".fits"  # TODO: test fits.gz for HEALPix
         car_map_template = None
+        wcs = None
     elif pix_type == "car":
         nside = None
         mfmt = ".fits"
@@ -268,3 +269,24 @@ def get_pix_type_args(args):
         else:
             _, wcs = get_fullsky_geometry()  # Could be problematic if using all default values! # noq
     return pix_type, mfmt, car_map_template, nside, wcs
+
+def get_pix_type_output_args(args):
+    # Pixelization arguments
+    if args.pix_type_output is None:
+        pix_type = args.pix_type
+    else:
+        pix_type = args.pix_type_output
+    if pix_type == "hp":
+        nside = args.filtering.nside
+        mfmt = ".fits"  # TODO: test fits.gz for HEALPix
+        car_map_template = None
+        wcs = None
+    elif pix_type == "car":
+        nside = None
+        mfmt = ".fits"
+        car_map_template = args.car_map_template
+        if car_map_template is not None:
+            _, wcs = enmap.read_map_geometry(car_map_template)
+        else:
+            _, wcs = get_fullsky_geometry()  # Could be problematic if using all default values! # noq
+    return pix_type, car_map_template, nside, wcs
