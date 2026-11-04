@@ -142,10 +142,10 @@ def main(args):
     # * read simulated map
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
-    if args.apply_wobble:
-        apply_wobble = True
-    else:
-        apply_wobble = False
+    apply_wobble = bool(args.filtering.apply_wobble)
+    # Simulate leakage only if the block exists *and* run is True
+    # (a dataclass instance is always truthy).
+    leakage = args.leakage if (args.leakage is not None and args.leakage.run) else None
 
     for task_element in local_mpi_list:
         patch, freq_channel, obs_id, wafer = task_element
@@ -230,7 +230,7 @@ def main(args):
             logger.debug(f"Loading ({patch}, {freq_channel}, {obs_id}, {wafer}) to filter {sim_type}, sim {sim_id}")
             start0 = time.time()
 
-            if args.leakage:
+            if leakage is not None:
                 logger.debug(f"Leakage skip for loading {pix_type} map: {map_file}")
                 sim = None
             else:
@@ -248,7 +248,7 @@ def main(args):
                     ignore_cfg_check=True,
                     data_amans=data_aman,
                     apply_wobble=apply_wobble,
-                    leakage=args.leakage,
+                    leakage=leakage,
                 )
             # After focal plane thinning, the sim AxisManager might not have
             # any detectors, resulting in one of several errors caught below.
@@ -269,7 +269,8 @@ def main(args):
 
             # Run the mapmaker
             wmap_dict, weights_dict = fu.make_map_wrapper(
-                aman, intra_obs_splits, pix_type_output, shape=None, wcs=wcs_output, nside=nside_output, logger=logger
+                aman, intra_obs_splits, pix_type_output, shape=None, wcs=wcs_output, nside=nside_output, logger=logger,
+                apply_wobble=apply_wobble,
             )
 
             for split_label in intra_obs_splits:

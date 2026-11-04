@@ -192,7 +192,6 @@ class LeakageCfg(_Cfg):
     leakage_type: Optional[str] = None
     planck_map_freq: Optional[int] = None
     nside: Optional[int] = None
-    field_max: Optional[int] = None
     sat: Optional[str] = None
     cool: Optional[str] = None
     sim_dir: Optional[str] = None
