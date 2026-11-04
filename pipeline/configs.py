@@ -187,10 +187,30 @@ class LeakageCfg(_Cfg):
 
     Args
     --------
+    run: bool
+        If True, run the leakage simulation
+    leakage_type: str
+        Type of leakage to simulate, currently only 'dipole', but can be extended to other types in the future.
+    planck_map_freq: int/str/dict
+        Frequency of Planck map to use for leakage simulation. Can be an int, str, or a dict mapping band names to frequencies.
+    nside: int
+        HEALPix NSIDE parameter for the Planck map.
+    sat: str
+        telescope name, e.g. 'satp3'.
+    cool: str
+        telescope cooling run, e.g. 'run13' for SAT3.
+    sim_dir: str
+        Path to directory containing unfiltered input sims.
+    leak_beam_dir: str
+        Path to directory containing leakage beam models.
+    second_der: bool
+        If True, use second derivative of the Planck map for frist derivative TOD simulation.
+    zeroTmap: bool
+        If True, set the temperature map to zero when simulating leakage so that we can mitigate the TtoP leakage.
     """
     run: bool = False
     leakage_type: Optional[str] = None
-    planck_map_freq: Optional[int] = None
+    planck_map_freq: Optional[Union[int, str, dict]] = None  # int/str, or {band: freq}, e.g. {f090: 100, f150: 143}
     nside: Optional[int] = None
     sat: Optional[str] = None
     cool: Optional[str] = None
