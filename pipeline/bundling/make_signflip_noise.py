@@ -104,6 +104,7 @@ def _make_signflip(args, size, rank, comm, split_intra_obs=None, split_inter_obs
                         split_label=split_intra_obs,
                         map_dir=map_dir_i,
                         abscal=args.bundling.abscal,
+                        method=args.signflip.method,
                     ),
                 )
             )

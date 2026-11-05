@@ -58,6 +58,7 @@ signflip:
   output_dir_signflip: !path [*base_dir, 'signflip/']
   n_sims: 200
   overwrite_sf: False
+  method: obs_weight
 
 filtering:
   preprocess_config_init: configs/preprocessing_config_init.yaml

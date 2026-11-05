@@ -178,6 +178,7 @@ class SignFlipCfg(_Cfg):
     output_dir_signflip: Optional[str] = None
     n_sims: Optional[int] = None
     overwrite_sf: bool = False
+    method: str = "obs_weight"
 
 
 @dataclass
