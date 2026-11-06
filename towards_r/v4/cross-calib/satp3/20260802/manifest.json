@@ -1,0 +1,488 @@
+[
+  {
+    "index": 0,
+    "split": "science",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_science_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/science_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/science_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 1,
+    "split": "science",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_science_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/science_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/science_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 2,
+    "split": "det_in",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_in_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_in_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_in_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 3,
+    "split": "det_in",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_in_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_in_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_in_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 4,
+    "split": "det_out",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_out_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_out_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_out_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 5,
+    "split": "det_out",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_out_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_out_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_out_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 6,
+    "split": "det_left",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_left_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_left_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_left_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 7,
+    "split": "det_left",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_left_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_left_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_left_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 8,
+    "split": "det_right",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_right_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_right_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_right_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 9,
+    "split": "det_right",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_right_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_right_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_right_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 10,
+    "split": "det_upper",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_upper_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_upper_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_upper_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 11,
+    "split": "det_upper",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_upper_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_upper_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_upper_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 12,
+    "split": "det_lower",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_lower_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_lower_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_lower_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 13,
+    "split": "det_lower",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_det_lower_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/det_lower_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/det_lower_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 14,
+    "split": "scan_left",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_scan_left_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/scan_left_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/scan_left_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 15,
+    "split": "scan_left",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_scan_left_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/scan_left_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/scan_left_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 16,
+    "split": "scan_right",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_scan_right_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/scan_right_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/scan_right_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 17,
+    "split": "scan_right",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_scan_right_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/scan_right_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/scan_right_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 18,
+    "split": "low_pwv",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_pwv_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_pwv_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_pwv_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 19,
+    "split": "low_pwv",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_pwv_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_pwv_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_pwv_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 20,
+    "split": "high_pwv",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_pwv_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_pwv_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_pwv_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 21,
+    "split": "high_pwv",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_pwv_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_pwv_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_pwv_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 22,
+    "split": "low_dpwv",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_dpwv_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_dpwv_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_dpwv_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 23,
+    "split": "low_dpwv",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_dpwv_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_dpwv_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_dpwv_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 24,
+    "split": "high_dpwv",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_dpwv_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_dpwv_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_dpwv_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 25,
+    "split": "high_dpwv",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_dpwv_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_dpwv_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_dpwv_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 26,
+    "split": "low_sun_distance",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_sun_distance_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_sun_distance_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_sun_distance_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 27,
+    "split": "low_sun_distance",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_sun_distance_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_sun_distance_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_sun_distance_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 28,
+    "split": "high_sun_distance",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_sun_distance_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_sun_distance_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_sun_distance_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 29,
+    "split": "high_sun_distance",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_sun_distance_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_sun_distance_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_sun_distance_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 30,
+    "split": "low_ambient_temperature",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_ambient_temperature_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_ambient_temperature_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_ambient_temperature_f090",
+    "upstream_ready": false
+  },
+  {
+    "index": 31,
+    "split": "low_ambient_temperature",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_ambient_temperature_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_ambient_temperature_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_ambient_temperature_f150",
+    "upstream_ready": false
+  },
+  {
+    "index": 32,
+    "split": "high_ambient_temperature",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_ambient_temperature_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_ambient_temperature_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_ambient_temperature_f090",
+    "upstream_ready": false
+  },
+  {
+    "index": 33,
+    "split": "high_ambient_temperature",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_ambient_temperature_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_ambient_temperature_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_ambient_temperature_f150",
+    "upstream_ready": false
+  },
+  {
+    "index": 34,
+    "split": "rising_azimuth",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_rising_azimuth_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/rising_azimuth_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/rising_azimuth_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 35,
+    "split": "rising_azimuth",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_rising_azimuth_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/rising_azimuth_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/rising_azimuth_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 36,
+    "split": "setting_azimuth",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_setting_azimuth_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/setting_azimuth_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/setting_azimuth_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 37,
+    "split": "setting_azimuth",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_setting_azimuth_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/setting_azimuth_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/setting_azimuth_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 38,
+    "split": "low_ctime",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_ctime_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_ctime_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_ctime_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 39,
+    "split": "low_ctime",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_ctime_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_ctime_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_ctime_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 40,
+    "split": "high_ctime",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_ctime_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_ctime_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_ctime_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 41,
+    "split": "high_ctime",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_ctime_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_ctime_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_ctime_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 42,
+    "split": "low_moon_distance",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_moon_distance_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_moon_distance_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_moon_distance_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 43,
+    "split": "low_moon_distance",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_moon_distance_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_moon_distance_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_moon_distance_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 44,
+    "split": "high_moon_distance",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_moon_distance_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_moon_distance_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_moon_distance_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 45,
+    "split": "high_moon_distance",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_moon_distance_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_moon_distance_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_moon_distance_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 46,
+    "split": "low_wind_speed",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_wind_speed_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_wind_speed_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_wind_speed_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 47,
+    "split": "low_wind_speed",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_low_wind_speed_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_wind_speed_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_wind_speed_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 48,
+    "split": "high_wind_speed",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_wind_speed_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_wind_speed_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_wind_speed_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 49,
+    "split": "high_wind_speed",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_high_wind_speed_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/high_wind_speed_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/high_wind_speed_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 50,
+    "split": "day_utc_hour",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_day_utc_hour_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/day_utc_hour_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/day_utc_hour_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 51,
+    "split": "day_utc_hour",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_day_utc_hour_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/day_utc_hour_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/day_utc_hour_f150",
+    "upstream_ready": true
+  },
+  {
+    "index": 52,
+    "split": "night_utc_hour",
+    "frequency": "f090",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_night_utc_hour_f090.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/night_utc_hour_cross_Planck_f090/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/night_utc_hour_f090",
+    "upstream_ready": true
+  },
+  {
+    "index": 53,
+    "split": "night_utc_hour",
+    "frequency": "f150",
+    "config": "/home/sa5705/SO/analysis/fit_params/20260802_t2pcut_MT/configs/config_night_utc_hour_f150.yaml",
+    "sacc": "/scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/night_utc_hour_cross_Planck_f150/saccs/cl_and_cov_sacc.fits",
+    "output": "/scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/night_utc_hour_f150",
+    "upstream_ready": true
+  }
+]

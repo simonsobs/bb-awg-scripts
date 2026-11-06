@@ -1,0 +1,247 @@
+# Generated from /home/sa5705/SO/analysis/fit_params/config_satp3_iso_v4_calib_20260806_msk60blob_bn0_planckT.yml
+# Upstream spectra: /scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_wind_speed_cross_Planck_f090/saccs/cl_and_cov_sacc.fits
+# Run: 20260802_t2pcut_MT; split: low_wind_speed; frequency: f090
+chains_dir: /scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_wind_speed_f090
+covar_sacc: /scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_wind_speed_cross_Planck_f090/saccs/cl_and_cov_sacc.fits
+output_dir: /scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_wind_speed_f090
+global:
+  nside: 256
+  delta_ell: 15
+  compute_dell: true
+  sim_ids: null
+  config_copy: /scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_wind_speed_f090/config_copy.yaml
+  data:
+    cells_coadded: /scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_wind_speed_cross_Planck_f090/saccs/cl_and_cov_sacc.fits
+    cells_noise: null
+    cells_fiducial: null
+    cells_coadded_cov: /scratch/gpfs/SIMONSOBS/sat-iso/v4_paper/spectra/satp3/south/full-dataset_20260802_t2pcut_splits_MT/low_wind_speed_cross_Planck_f090/saccs/cl_and_cov_sacc.fits
+  map_sets:
+    satp3_f090_south_low_wind_speed:
+      beam_file: /scratch/gpfs/SIMONSOBS/sat-iso/beams/planets/20260602_bessel_analytic_cov_effective_v4_paper_20260520_science/satp3_science_v4_paper_f090_norm0.dat
+    Planck_f100_filtered_satp3_f090_south_low_wind_speed:
+      beam_file: /scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_100_long.txt
+    Planck_f143_filtered_satp3_f090_south_low_wind_speed:
+      beam_file: /scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_143_long.txt
+    Planck_f353_filtered_satp3_f090_south_low_wind_speed:
+      beam_file: /scratch/gpfs/SIMONSOBS/external_data_e2e/unfiltered_data/planck/beam_window_functions/beam_pol_353_long.txt
+BBCompSep:
+  output_dir: /scratch/gpfs/SIMONSOBS/users/sa5705/BBPower_outputs/iso_v4_paper_compsep/20260802_t2pcut_MT/low_wind_speed_f090
+  sampler: emcee
+  nlive: 50
+  nrepeat: 50
+  nwalkers: 76
+  n_iters: 5000
+  resume: true
+  predict_to_sacc: false
+  likelihood_type: chi2
+  covariance_mode: full
+  r_init: 0.001
+  pol_channels:
+  - T
+  - E
+  - B
+  fit_spectrum_rules:
+  - name: gain_tt_planck_100_143
+    spectra:
+    - TT
+    unordered: false
+    tracer1:
+    - satp3_*
+    tracer2:
+    - planck_f100_*
+    - planck_f143_*
+  - name: te_tb_planck_temperature_only
+    spectra:
+    - ET
+    unordered: false
+    tracer1:
+    - satp3_*
+    tracer2:
+    - planck_f100_*
+    - planck_f143_*
+  - name: dust_pol_all_sat_ext
+    spectra:
+    - EE
+    - EB
+    - BE
+    tracer1:
+    - satp3_*
+    - planck_f100_*
+    - planck_f143_*
+    - planck_f353_*
+    tracer2:
+    - planck_f100_*
+    - planck_f143_*
+    - planck_f353_*
+  l_min: 60
+  l_max: 400
+  cmb_model:
+    cmb_templates:
+    - /home/sa5705/software/BBPower/examples/data/camb_lens_nobb.dat
+    - /home/sa5705/software/BBPower/examples/data/camb_lens_r1.dat
+    params:
+      r_tensor:
+      - r_tensor
+      - fixed
+      - - 0.0
+      A_lens:
+      - A_lens
+      - fixed
+      - - 1.0
+  fg_model:
+    use_moments: false
+    moments_lmax: 192
+    component_1:
+      name: Dust
+      sed: Dust
+      cl:
+        EE: ClPowerLaw
+        BB: ClPowerLaw
+      sed_parameters:
+        beta_d:
+        - beta_d
+        - Gaussian
+        - - 1.4
+          - 0.3
+        temp_d:
+        - temp
+        - fixed
+        - - 20.0
+        nu0_d:
+        - nu0
+        - fixed
+        - - 353.0
+      cl_parameters:
+        EE:
+          amp_d_ee:
+          - amp
+          - Gaussian
+          - - 12.0
+            - 10.0
+          alpha_d_ee:
+          - alpha
+          - tophat
+          - - -2.0
+            - -0.5
+            - -0.01
+          l0_d_ee:
+          - ell0
+          - fixed
+          - - 80.0
+        BB:
+          amp_d_bb:
+          - amp
+          - Gaussian
+          - - 6.0
+            - 5.0
+          alpha_d_bb:
+          - alpha
+          - tophat
+          - - -2.0
+            - -0.5
+            - -0.01
+          l0_d_bb:
+          - ell0
+          - fixed
+          - - 80.0
+      moments:
+        gamma_d_beta:
+        - gamma_beta
+        - tophat
+        - - -6.0
+          - -3.5
+          - -2.0
+        amp_d_beta:
+        - amp_beta
+        - tophat
+        - - 0.0
+          - 0.0
+          - 1.0
+  systematics:
+    bandpasses:
+      satp3_f090_south_low_wind_speed:
+        parameters:
+          gain_satp3_f090:
+          - gain
+          - tophat
+          - - 0.7
+            - 1.0
+            - 1.3
+          poleff_satp3_f090:
+          - poleff
+          - tophat
+          - - 0.7
+            - 0.87
+            - 1.0
+          angle_satp3_f090:
+          - angle
+          - Gaussian
+          - - 0.5
+            - 2.0
+      Planck_f100_filtered_satp3_f090_south_low_wind_speed:
+        parameters:
+          gain_planck_f100:
+          - gain
+          - fixed
+          - - 1.0
+          poleff_planck_f100:
+          - poleff
+          - fixed
+          - - 1.0
+          angle_planck_f100:
+          - angle
+          - fixed
+          - - 0.0
+      Planck_f143_filtered_satp3_f090_south_low_wind_speed:
+        parameters:
+          gain_planck_f143:
+          - gain
+          - fixed
+          - - 1.0
+          poleff_planck_f143:
+          - poleff
+          - fixed
+          - - 1.0
+          angle_planck_f143:
+          - angle
+          - fixed
+          - - 0.0
+      Planck_f353_filtered_satp3_f090_south_low_wind_speed:
+        parameters:
+          gain_planck_f353:
+          - gain
+          - fixed
+          - - 1.0
+          poleff_planck_f353:
+          - poleff
+          - fixed
+          - - 1.0
+          angle_planck_f353:
+          - angle
+          - fixed
+          - - 0.0
+BBPlotter:
+  pol_channels:
+  - E
+  - B
+  lmin_plot: 90
+  lmax_plot: 400
+  plot_coadded_total: false
+  plot_noise: false
+  plot_nulls: false
+  plot_likelihood: true
+  params_plot:
+  - beta_d
+  - amp_d_ee
+  - alpha_d_ee
+  - amp_d_bb
+  - alpha_d_bb
+  - beta_s
+  - amp_s_ee
+  - alpha_s_ee
+  - amp_s_bb
+  - alpha_s_bb
+  - epsilon_ds
+  - gain_satp3_f090
+  - poleff_satp3_f090
+  - angle_satp3_f090
