@@ -104,6 +104,73 @@ def taskrange(imax, imin=0, shift=0, logger=None):
     return subrange
 
 
+class DynamicTaskCounter:
+    """
+    Dynamic (work-stealing) task distribution through a shared counter.
+
+    A single int64 counter lives in an MPI one-sided window on rank 0.
+    Each call to next() atomically fetches the current value and increments
+    it (MPI_Fetch_and_op), so every task index in [0, ntasks) is handed out
+    exactly once, and a rank asks for new work as soon as it finishes its
+    current task. No rank is dedicated to bookkeeping.
+
+    Creation and free() are collective: every rank in comm must call them.
+
+    Usage
+    -----
+        counter = DynamicTaskCounter(comm, ntasks)
+        for itask in counter:
+            ...
+        counter.free()
+    """
+
+    def __init__(self, comm, ntasks):
+        self.ntasks = int(ntasks)
+        self.comm = comm
+        self.win = None
+        self._serial_next = 0
+        if comm is None:
+            return
+        from mpi4py import MPI
+        self._MPI = MPI
+        if comm.Get_rank() == 0:
+            self._buf = np.zeros(1, dtype=np.int64)
+        else:
+            self._buf = np.zeros(0, dtype=np.int64)
+        self.win = MPI.Win.Create(self._buf, disp_unit=self._buf.itemsize,
+                                  comm=comm)
+        self._one = np.ones(1, dtype=np.int64)
+        self._res = np.zeros(1, dtype=np.int64)
+
+    def next(self):
+        """ Returns the next unclaimed task index, or None if none is left. """
+        if self.win is None:
+            itask = self._serial_next
+            self._serial_next += 1
+        else:
+            MPI = self._MPI
+            self.win.Lock(0, MPI.LOCK_SHARED)
+            self.win.Fetch_and_op([self._one, MPI.INT64_T],
+                                  [self._res, MPI.INT64_T],
+                                  0, 0, MPI.SUM)
+            self.win.Unlock(0)
+            itask = int(self._res[0])
+        return itask if itask < self.ntasks else None
+
+    def __iter__(self):
+        while True:
+            itask = self.next()
+            if itask is None:
+                return
+            yield itask
+
+    def free(self):
+        """ Collective: frees the MPI window. """
+        if self.win is not None:
+            self.win.Free()
+            self.win = None
+
+
 def distribute_tasks(size, rank, ntasks, id_start=0, logger=None):
     """
     Distributes [ntasks] tasks among [size] workers, and outputs
