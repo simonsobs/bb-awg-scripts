@@ -129,27 +129,33 @@ def main(args):
 
     # Every rank must have the same shared list
     mpi_shared_list = comm.bcast(mpi_shared_list, root=0)
-    task_ids = mpi.distribute_tasks(size, rank, len(mpi_shared_list), logger=logger)
-    local_mpi_list = [mpi_shared_list[i] for i in task_ids]
+    ntasks = len(mpi_shared_list)
+    if rank == 0:
+        logger.info(f"Distributing {ntasks} tasks dynamically over {size} ranks.")
+        if size > ntasks:
+            logger.warning(f"You assign {ntasks} tasks to {size} workers. Consider using less workers.")
 
-    # Ensure that idle workers finish and don't hang
-    if not task_ids:
-        comm.barrier()
+    # Dynamic distribution: each rank claims the next unprocessed task as
+    # soon as it is free, so no rank sits idle while others still have a
+    # long fixed queue.
+    task_counter = mpi.DynamicTaskCounter(comm, ntasks)
+    n_local_done = 0
 
-    # Loop over set of local tasks (patch, freq_channel, obs_id, wafer).
+    # Loop over tasks (patch, freq_channel, obs_id, wafer) claimed by this rank.
     # For each of these, loop over (sim_id, sim_type) and do:
     # * read simulated map
     # * load map into timestreams, apply preprocessing
     # * apply mapmaking
-    for task_element in local_mpi_list:
-        patch, freq_channel, obs_id, wafer = task_element
-        local_task_id = local_mpi_list.index(task_element)
-        logger.debug(f"Starting task: ({patch}, {freq_channel}, {obs_id}, {wafer})")
+    for task_id in task_counter:
+        patch, freq_channel, obs_id, wafer = mpi_shared_list[task_id]
+        n_local_done += 1
+        logger.debug(f"Starting task {task_id}/{ntasks}: ({patch}, {freq_channel}, {obs_id}, {wafer})")
 
-        start = time.time()
+        task_start = time.time()
 
         # First, check if atomic maps already exist.
         maps_exist = True
+        n_expected = 0
         for sim_id, sim_type in product(sim_ids, sim_types):
             # Path to unfiltered simulation
             map_fname = sim_string_format.format(sim_id=sim_id, sim_type=sim_type, freq_channel=freq_channel)
@@ -164,10 +170,15 @@ def main(args):
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
 
+                    n_expected += 1
                     if not (os.path.isfile(f_wmap) and os.path.isfile(f_w)):
                         maps_exist = False
-                else:
-                    maps_exist = False
+                # Splits this atomic is not part of are never written, so
+                # they must not count as missing.
+
+        # Nothing expected on disk means nothing to skip.
+        if n_expected == 0:
+            maps_exist = False
 
         # If they exist and we don't overwrite, skip this atomic.
         if maps_exist and not args.filtering.overwrite_atomics:
@@ -286,10 +297,12 @@ def main(args):
         logger.debug(
             f"Processed {len(sim_ids)} simulations for "
             f"({patch}, {freq_channel}, {obs_id}, {wafer}) in "
-            f"{time.time() - start:.1f} seconds."
+            f"{time.time() - task_start:.1f} seconds."
         )
-        logger.info(f"Done: {local_task_id + 1}/{len(local_mpi_list)} for rank {rank}.")
+        logger.info(f"Done: task {task_id + 1}/{ntasks} (rank {rank}, {n_local_done} tasks claimed).")
 
+    logger.info(f"Rank {rank} finished, claimed {n_local_done} tasks.")
+    task_counter.free()
     comm.Barrier()
     if rank == 0:
         end = time.time()
