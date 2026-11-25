@@ -155,6 +155,7 @@ def main(args):
 
         # First, check if atomic maps already exist.
         maps_exist = True
+        n_expected = 0
         for sim_id, sim_type in product(sim_ids, sim_types):
             # Path to unfiltered simulation
             map_fname = sim_string_format.format(sim_id=sim_id, sim_type=sim_type, freq_channel=freq_channel)
@@ -169,10 +170,15 @@ def main(args):
                     f_wmap += f"/{atomic_fname.replace(mfmt, '_wmap' + mfmt)}"
                     f_w = f_wmap.replace('_wmap' + mfmt, '_weights' + mfmt)
 
+                    n_expected += 1
                     if not (os.path.isfile(f_wmap) and os.path.isfile(f_w)):
                         maps_exist = False
-                else:
-                    maps_exist = False
+                # Splits this atomic is not part of are never written, so
+                # they must not count as missing.
+
+        # Nothing expected on disk means nothing to skip.
+        if n_expected == 0:
+            maps_exist = False
 
         # If they exist and we don't overwrite, skip this atomic.
         if maps_exist and not args.filtering.overwrite_atomics:
